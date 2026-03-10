@@ -37,4 +37,11 @@ void image_free(image_t *img);
 /* Build the cache file path for a URL (URL hash-based). */
 void image_cache_path(const char *url, char *out_path, int out_size);
 
+/* Decode raw RGBA bytes from a QByteArray (JPEG/PNG/etc.).
+ * Returns 0 on success, fills *out. Caller must image_free(). */
+int image_decode_memory(const uint8_t *data, int len, image_t *out);
+
+/* Write image to disk cache for the given URL. */
+void image_write_disk_cache(const char *url, const image_t *img);
+
 #endif /* SKEETS_IMAGE_H */

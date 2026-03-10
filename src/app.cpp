@@ -7,6 +7,7 @@
 #include "ui/font.h"
 #include "util/config.h"
 #include "util/image.h"
+#include "util/image_cache.h"
 #include "util/str.h"
 
 #include <QCoreApplication>
@@ -198,6 +199,10 @@ void app_run(app_state_t *state) {
     input_event_t ev{};
     while (state->running) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+
+        /* If async images arrived, repaint the current view. */
+        if (image_cache_redraw_needed())
+            app_switch_view(state, state->current_view);
 
         if (!state->input) {
             struct timespec ts = { 0, 50000000 };

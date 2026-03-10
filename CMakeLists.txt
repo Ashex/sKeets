@@ -91,6 +91,7 @@ set(SOURCES
     src/util/str.cpp
     src/util/config.cpp
     src/util/image.cpp
+    src/util/image_cache.cpp
 )
 
 add_executable(sKeets ${SOURCES})
@@ -114,10 +115,11 @@ target_link_options(sKeets PRIVATE -Wl,--gc-sections)
 
 set(KOBO_INSTALL_PREFIX "mnt/onboard/.adds/sKeets")
 install(TARGETS sKeets RUNTIME DESTINATION ${KOBO_INSTALL_PREFIX})
+install(PROGRAMS run.sh DESTINATION ${KOBO_INSTALL_PREFIX})
 
 add_custom_target(kobo-package
     COMMAND ${CMAKE_COMMAND} --install . --prefix kobo-pkg
-    COMMAND tar czf sKeets-koboroot.tgz -C kobo-pkg .
+    COMMAND tar czf KoboRoot.tgz -C kobo-pkg .
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Packaging KoboRoot.tgz"
     DEPENDS sKeets

@@ -3,6 +3,7 @@
 #include "font.h"
 #include "../util/str.h"
 #include "../util/image.h"
+#include "../util/image_cache.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -109,7 +110,16 @@ static void draw_post(fb_t *fb, int draw_y, const Bsky::Post& post,
     int y = screen_y + POST_PAD;
 
     int av_x = POST_MARGIN;
-    fb_fill_rect(fb, av_x, y, AVATAR_SIZE, AVATAR_SIZE, COLOR_LGRAY);
+    if (!post.author.avatar_url.empty()) {
+        const image_t *av = image_cache_lookup(post.author.avatar_url.c_str(),
+                                               AVATAR_SIZE, AVATAR_SIZE);
+        if (av)
+            fb_blit_rgba(fb, av_x, y, av->width, av->height, av->pixels);
+        else
+            fb_fill_rect(fb, av_x, y, AVATAR_SIZE, AVATAR_SIZE, COLOR_LGRAY);
+    } else {
+        fb_fill_rect(fb, av_x, y, AVATAR_SIZE, AVATAR_SIZE, COLOR_LGRAY);
+    }
 
     draw_author_line(fb, CONTENT_X, y, post);
     y += FONT_CHAR_H + 4;
@@ -121,15 +131,16 @@ static void draw_post(fb_t *fb, int draw_y, const Bsky::Post& post,
     switch (post.embed_type) {
         case Bsky::EmbedType::Image:
             if (images_enabled && !post.image_urls.empty()) {
-                image_t img = {};
-                if (image_load_url(post.image_urls[0].c_str(), &img) == 0) {
-                    image_scale_to_fit(&img, CONTENT_W, 112);
-                    fb_blit_rgba(fb, CONTENT_X, y, img.width, img.height, img.pixels);
-                    y += img.height + 8;
-                    image_free(&img);
+                const image_t *embed = image_cache_lookup(
+                        post.image_urls[0].c_str(), CONTENT_W, 112);
+                if (embed) {
+                    fb_blit_rgba(fb, CONTENT_X, y, embed->width, embed->height,
+                                 embed->pixels);
+                    y += embed->height + 8;
                 } else {
                     fb_fill_rect(fb, CONTENT_X, y, CONTENT_W, 112, COLOR_LGRAY);
-                    font_draw_string(fb, CONTENT_X + 4, y + 48, "[image]", COLOR_GRAY, COLOR_LGRAY);
+                    font_draw_string(fb, CONTENT_X + 4, y + 48, "[image]",
+                                     COLOR_GRAY, COLOR_LGRAY);
                     y += 120;
                 }
             }
