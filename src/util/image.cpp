@@ -27,6 +27,54 @@
 #include <QUrl>
 #include <QByteArray>
 
+/* ── Disk cache helpers ────────────────────────────────────────────── */
+
+#define CACHE_MAGIC 0x534B4943  /* "SKIC" */
+
+/* Read a raw cached image (magic + w + h + RGBA pixels). */
+static int image_load_cached(const char *path, image_t *out) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    uint32_t magic = 0;
+    int w = 0, h = 0;
+    if (fread(&magic, sizeof(magic), 1, f) != 1 || magic != CACHE_MAGIC) {
+        fclose(f);
+        /* Not our raw format — try stbi (handles legacy or real image files). */
+        int channels;
+        out->pixels = stbi_load(path, &out->width, &out->height, &channels, 4);
+        return out->pixels ? 0 : -1;
+    }
+    if (fread(&w, sizeof(int), 1, f) != 1 ||
+        fread(&h, sizeof(int), 1, f) != 1 || w <= 0 || h <= 0) {
+        fclose(f); return -1;
+    }
+
+    size_t sz = (size_t)w * (size_t)h * 4;
+    uint8_t *px = (uint8_t *)malloc(sz);
+    if (!px) { fclose(f); return -1; }
+    if (fread(px, 1, sz, f) != sz) { free(px); fclose(f); return -1; }
+    fclose(f);
+
+    out->pixels = px;
+    out->width  = w;
+    out->height = h;
+    return 0;
+}
+
+/* Write a raw cached image with magic header. */
+static void image_write_cache(const char *path, const image_t *img) {
+    (void)mkdir(IMAGE_CACHE_DIR, 0755);
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    uint32_t magic = CACHE_MAGIC;
+    fwrite(&magic, sizeof(magic), 1, f);
+    fwrite(&img->width,  sizeof(int), 1, f);
+    fwrite(&img->height, sizeof(int), 1, f);
+    fwrite(img->pixels, 1, (size_t)(img->width * img->height * 4), f);
+    fclose(f);
+}
+
 /* ── public API ───────────────────────────────────────────────────── */
 
 void image_cache_path(const char *url, char *out_path, int out_size) {
@@ -48,7 +96,7 @@ int image_load_url(const char *url, image_t *out) {
 
     struct stat st;
     if (stat(cache_path, &st) == 0 && st.st_size > 0) {
-        return image_load_file(cache_path, out);
+        return image_load_cached(cache_path, out);
     }
 
     /* Download using Qt Network */
@@ -80,14 +128,7 @@ int image_load_url(const char *url, image_t *out) {
     if (!out->pixels) return -1;
 
     /* Write to cache */
-    (void)mkdir(IMAGE_CACHE_DIR, 0755);
-    FILE *f = fopen(cache_path, "wb");
-    if (f) {
-        fwrite(&out->width,  sizeof(int), 1, f);
-        fwrite(&out->height, sizeof(int), 1, f);
-        fwrite(out->pixels, 1, (size_t)(out->width * out->height * 4), f);
-        fclose(f);
-    }
+    image_write_cache(cache_path, out);
 
     return 0;
 }
@@ -118,20 +159,22 @@ int image_scale_to_fit(image_t *img, int max_w, int max_h) {
     return 0;
 }
 
-void image_to_rgb565(const image_t *img, uint16_t *dst) {
-    if (!img || !img->pixels || !dst) return;
-    int n = img->width * img->height;
-    const uint8_t *src = img->pixels;
-    for (int i = 0; i < n; i++, src += 4) {
-        uint16_t r = (src[0] >> 3) & 0x1F;
-        uint16_t g = (src[1] >> 2) & 0x3F;
-        uint16_t b = (src[2] >> 3) & 0x1F;
-        dst[i] = (uint16_t)((r << 11) | (g << 5) | b);
-    }
-}
-
 void image_free(image_t *img) {
     if (!img) return;
-    if (img->pixels) { stbi_image_free(img->pixels); img->pixels = NULL; }
+    if (img->pixels) { free(img->pixels); img->pixels = NULL; }
     img->width = img->height = 0;
+}
+
+int image_decode_memory(const uint8_t *data, int len, image_t *out) {
+    if (!data || len <= 0 || !out) return -1;
+    int channels;
+    out->pixels = stbi_load_from_memory(data, len, &out->width, &out->height, &channels, 4);
+    return out->pixels ? 0 : -1;
+}
+
+void image_write_disk_cache(const char *url, const image_t *img) {
+    if (!url || !img || !img->pixels) return;
+    char path[512];
+    image_cache_path(url, path, sizeof(path));
+    image_write_cache(path, img);
 }

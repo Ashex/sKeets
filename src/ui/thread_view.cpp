@@ -2,6 +2,7 @@
 #include "fb.h"
 #include "font.h"
 #include "../util/str.h"
+#include "../util/image_cache.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -41,7 +42,19 @@ static void draw_thread_post(fb_t *fb, int y, const Bsky::Post* post,
     if (indent > 0)
         fb_vline(fb, UI_MARGIN + indent - 8, sy, h, COLOR_LGRAY);
 
-    fb_fill_rect(fb, UI_MARGIN + indent, sy + THREAD_PAD, AVATAR_SZ, AVATAR_SZ, COLOR_LGRAY);
+    if (!post->author.avatar_url.empty()) {
+        const image_t *av = image_cache_lookup(post->author.avatar_url.c_str(),
+                                               AVATAR_SZ, AVATAR_SZ);
+        if (av)
+            fb_blit_rgba(fb, UI_MARGIN + indent, sy + THREAD_PAD,
+                         av->width, av->height, av->pixels);
+        else
+            fb_fill_rect(fb, UI_MARGIN + indent, sy + THREAD_PAD,
+                         AVATAR_SZ, AVATAR_SZ, COLOR_LGRAY);
+    } else {
+        fb_fill_rect(fb, UI_MARGIN + indent, sy + THREAD_PAD,
+                     AVATAR_SZ, AVATAR_SZ, COLOR_LGRAY);
+    }
 
     int iy = sy + THREAD_PAD;
 

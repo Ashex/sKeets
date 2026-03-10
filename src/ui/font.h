@@ -4,11 +4,16 @@
 #include "fb.h"
 #include <stddef.h>
 
-/* ── Glyph metrics ───────────────────────────────────────────────── */
-#define FONT_CHAR_W   8   /* pixels per character width */
-#define FONT_CHAR_H  16   /* pixels per character height */
-#define FONT_FIRST   0x20 /* first renderable ASCII codepoint */
-#define FONT_LAST    0x7E /* last  renderable ASCII codepoint */
+/* ── Glyph metrics (approximate, for layout calculations) ────────── */
+#define FONT_CHAR_W   8   /* approximate average character width */
+#define FONT_CHAR_H  16   /* approximate line height */
+#define FONT_FIRST   0x20
+#define FONT_LAST    0x7E
+
+/* ── Init / shutdown ─────────────────────────────────────────────── */
+
+/* Store FBInk fd for font measurement functions. Call after fb_load_fonts(). */
+void font_init(fb_t *fb);
 
 /* ── Text drawing ────────────────────────────────────────────────── */
 

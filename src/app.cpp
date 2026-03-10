@@ -4,8 +4,10 @@
 #include "ui/thread_view.h"
 #include "ui/compose_view.h"
 #include "ui/settings_view.h"
+#include "ui/font.h"
 #include "util/config.h"
 #include "util/image.h"
+#include "util/image_cache.h"
 #include "util/str.h"
 
 #include <QCoreApplication>
@@ -32,6 +34,11 @@ int app_init(app_state_t *state) {
         fprintf(stderr, "app_init: failed to open framebuffer\n");
         return -1;
     }
+
+    /* Load OpenType fonts and initialise the font subsystem. */
+    if (fb_load_fonts(&state->fb, "/usr/share/fonts") != 0)
+        fprintf(stderr, "app_init: warning: failed to load fonts\n");
+    font_init(&state->fb);
 
     state->input = input_open();
     if (!state->input)
@@ -192,6 +199,10 @@ void app_run(app_state_t *state) {
     input_event_t ev{};
     while (state->running) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+
+        /* If async images arrived, repaint the current view. */
+        if (image_cache_redraw_needed())
+            app_switch_view(state, state->current_view);
 
         if (!state->input) {
             struct timespec ts = { 0, 50000000 };
