@@ -104,9 +104,10 @@ make kobo-package
 menu_item :main  :sKeets  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/run.sh
 ```
 
-The `run.sh` wrapper pauses Nickel so sKeets can take over the framebuffer,
-then resumes it when sKeets exits. The `:quiet` flag suppresses the PID
-notification popup.
+The `run.sh` wrapper kills Nickel and its companion processes so sKeets can
+take over the framebuffer, feeds the hardware watchdog, and reboots the device
+on exit to bring Nickel back. The `:quiet` flag suppresses the PID notification
+popup. Logs are written to `/mnt/onboard/.adds/sKeets/sKeets.log`.
 
 ### KFMon entry (with app icon)
 
