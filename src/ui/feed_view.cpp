@@ -121,9 +121,17 @@ static void draw_post(fb_t *fb, int draw_y, const Bsky::Post& post,
     switch (post.embed_type) {
         case Bsky::EmbedType::Image:
             if (images_enabled && !post.image_urls.empty()) {
-                fb_fill_rect(fb, CONTENT_X, y, CONTENT_W, 112, COLOR_LGRAY);
-                font_draw_string(fb, CONTENT_X + 4, y + 48, "[image]", COLOR_GRAY, COLOR_LGRAY);
-                y += 120;
+                image_t img = {};
+                if (image_load_url(post.image_urls[0].c_str(), &img) == 0) {
+                    image_scale_to_fit(&img, CONTENT_W, 112);
+                    fb_blit_rgba(fb, CONTENT_X, y, img.width, img.height, img.pixels);
+                    y += img.height + 8;
+                    image_free(&img);
+                } else {
+                    fb_fill_rect(fb, CONTENT_X, y, CONTENT_W, 112, COLOR_LGRAY);
+                    font_draw_string(fb, CONTENT_X + 4, y + 48, "[image]", COLOR_GRAY, COLOR_LGRAY);
+                    y += 120;
+                }
             }
             break;
         case Bsky::EmbedType::Quote:

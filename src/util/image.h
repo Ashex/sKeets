@@ -31,10 +31,6 @@ int image_load_file(const char *path, image_t *out);
  * Replaces img->pixels with a new allocation. */
 int image_scale_to_fit(image_t *img, int max_w, int max_h);
 
-/* Convert RGBA to RGB565 for direct framebuffer blit.
- * dst must have at least (img->width * img->height * 2) bytes. */
-void image_to_rgb565(const image_t *img, uint16_t *dst);
-
 /* Free pixel data. */
 void image_free(image_t *img);
 

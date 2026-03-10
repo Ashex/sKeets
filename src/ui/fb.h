@@ -7,8 +7,6 @@
 /* ── Display constants ───────────────────────────────────────────── */
 #define FB_WIDTH    1448
 #define FB_HEIGHT   1072
-#define FB_BPP      16     /* RGB565 */
-#define FB_STRIDE   (FB_WIDTH * (FB_BPP / 8))
 
 
 /* ── Colors (RGB565) ─────────────────────────────────────────────── */
@@ -21,7 +19,6 @@
 /* ── Framebuffer context ─────────────────────────────────────────── */
 typedef struct {
     int       fd;         /* FBInk file descriptor */
-    uint16_t *mem;        /* framebuffer pixels (owned by FBInk) */
     int       width;
     int       height;
 } fb_t;
@@ -31,6 +28,10 @@ int  fb_open(fb_t *fb);
 
 /* Close framebuffer. */
 void fb_close(fb_t *fb);
+
+/* Load OpenType fonts for text rendering. Call after fb_open().
+ * font_dir: path to directory containing NotoSans-*.ttf files. */
+int  fb_load_fonts(fb_t *fb, const char *font_dir);
 
 /* Fill the entire framebuffer with color. */
 void fb_clear(fb_t *fb, uint16_t color);
@@ -47,8 +48,8 @@ void fb_hline(fb_t *fb, int x, int y, int len, uint16_t color);
 /* Draw a vertical line. */
 void fb_vline(fb_t *fb, int x, int y, int len, uint16_t color);
 
-/* Blit an RGB565 pixel buffer into the framebuffer at (x, y). */
-void fb_blit(fb_t *fb, int x, int y, int w, int h, const uint16_t *pixels);
+/* Blit an RGBA pixel buffer via FBInk (handles format conversion). */
+void fb_blit_rgba(fb_t *fb, int x, int y, int w, int h, const uint8_t *rgba);
 
 /* Convenience: full-screen GC16 refresh. */
 void fb_refresh_full(fb_t *fb);
@@ -58,11 +59,5 @@ void fb_refresh_partial(fb_t *fb, int x, int y, int w, int h);
 
 /* Fast A2 refresh for a region (very fast, binary only). */
 void fb_refresh_fast(fb_t *fb, int x, int y, int w, int h);
-
-/* Set a single pixel. Bounds-checked. */
-static inline void fb_set_pixel(fb_t *fb, int x, int y, uint16_t color) {
-    if (x < 0 || y < 0 || x >= fb->width || y >= fb->height) return;
-    fb->mem[y * fb->width + x] = color;
-}
 
 #endif /* SKEETS_FB_H */

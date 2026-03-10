@@ -118,18 +118,6 @@ int image_scale_to_fit(image_t *img, int max_w, int max_h) {
     return 0;
 }
 
-void image_to_rgb565(const image_t *img, uint16_t *dst) {
-    if (!img || !img->pixels || !dst) return;
-    int n = img->width * img->height;
-    const uint8_t *src = img->pixels;
-    for (int i = 0; i < n; i++, src += 4) {
-        uint16_t r = (src[0] >> 3) & 0x1F;
-        uint16_t g = (src[1] >> 2) & 0x3F;
-        uint16_t b = (src[2] >> 3) & 0x1F;
-        dst[i] = (uint16_t)((r << 11) | (g << 5) | b);
-    }
-}
-
 void image_free(image_t *img) {
     if (!img) return;
     if (img->pixels) { stbi_image_free(img->pixels); img->pixels = NULL; }
