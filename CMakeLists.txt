@@ -41,6 +41,41 @@ FetchContent_MakeAvailable(stb)
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE ${stb_SOURCE_DIR})
 
+# ── FBInk (e-ink framebuffer library) ──────────────────────────────────
+include(ExternalProject)
+
+if(CMAKE_CROSSCOMPILING)
+    string(REGEX REPLACE "-g\\+\\+$" "" _FBINK_CROSS_TC "${CMAKE_CXX_COMPILER}")
+    set(_FBINK_BUILD_CMD
+        ${CMAKE_COMMAND} -E env "CROSS_TC=${_FBINK_CROSS_TC}"
+        make -j4 staticlib KOBO=1 MINIMAL=1 IMAGE=1 OPENTYPE=1
+    )
+else()
+    set(_FBINK_BUILD_CMD make -j4 staticlib LINUX=1 MINIMAL=1 IMAGE=1 OPENTYPE=1)
+endif()
+
+ExternalProject_Add(fbink_ext
+    GIT_REPOSITORY    https://github.com/NiLuJe/FBInk.git
+    GIT_TAG           ede0a8d0a107768609fde9a68aab5f5c583be398
+    GIT_SUBMODULES    stb libunibreak i2c-tools
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND     ${_FBINK_BUILD_CMD}
+    INSTALL_COMMAND   ""
+    BUILD_IN_SOURCE   TRUE
+    BUILD_BYPRODUCTS  <SOURCE_DIR>/Release/libfbink.a
+)
+
+ExternalProject_Get_Property(fbink_ext SOURCE_DIR)
+set(FBINK_SOURCE_DIR ${SOURCE_DIR})
+file(MAKE_DIRECTORY ${FBINK_SOURCE_DIR})
+
+add_library(fbink STATIC IMPORTED GLOBAL)
+set_target_properties(fbink PROPERTIES
+    IMPORTED_LOCATION ${FBINK_SOURCE_DIR}/Release/libfbink.a
+    INTERFACE_INCLUDE_DIRECTORIES ${FBINK_SOURCE_DIR}
+)
+add_dependencies(fbink fbink_ext)
+
 set(SOURCES
     src/main.cpp
     src/app.cpp
@@ -67,6 +102,7 @@ target_include_directories(sKeets PRIVATE
 target_link_libraries(sKeets PRIVATE
     libatproto
     stb_image
+    fbink
     Qt6::Core
     Qt6::Network
     Qt6::Quick

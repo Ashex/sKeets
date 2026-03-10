@@ -10,15 +10,6 @@
 #define FB_BPP      16     /* RGB565 */
 #define FB_STRIDE   (FB_WIDTH * (FB_BPP / 8))
 
-/* ── MXCFB e-ink waveform modes ─────────────────────────────────── */
-#define WAVEFORM_MODE_INIT  0x0  /* Full init flash */
-#define WAVEFORM_MODE_DU    0x1  /* Direct update – fast, monochrome */
-#define WAVEFORM_MODE_GC16  0x2  /* High quality 16-level grayscale */
-#define WAVEFORM_MODE_GL16  0x3  /* GL16 mode */
-#define WAVEFORM_MODE_A2    0x6  /* Very fast, binary only */
-#define WAVEFORM_MODE_AUTO  0xFF
-
-#define TEMP_USE_AMBIENT 0x1000
 
 /* ── Colors (RGB565) ─────────────────────────────────────────────── */
 #define COLOR_BLACK  ((uint16_t)0x0000)
@@ -29,16 +20,16 @@
 
 /* ── Framebuffer context ─────────────────────────────────────────── */
 typedef struct {
-    int       fd;
-    uint16_t *mem;        /* mmap'd framebuffer */
+    int       fd;         /* FBInk file descriptor */
+    uint16_t *mem;        /* framebuffer pixels (owned by FBInk) */
     int       width;
     int       height;
 } fb_t;
 
-/* Open /dev/fb0. Returns 0 on success. */
+/* Open framebuffer via FBInk. Returns 0 on success. */
 int  fb_open(fb_t *fb);
 
-/* Close and unmap. */
+/* Close framebuffer. */
 void fb_close(fb_t *fb);
 
 /* Fill the entire framebuffer with color. */
@@ -62,8 +53,11 @@ void fb_blit(fb_t *fb, int x, int y, int w, int h, const uint16_t *pixels);
 /* Convenience: full-screen GC16 refresh. */
 void fb_refresh_full(fb_t *fb);
 
-/* Convenience: partial DU refresh for a region. */
+/* Partial DU refresh for a region (fast, monochrome). */
 void fb_refresh_partial(fb_t *fb, int x, int y, int w, int h);
+
+/* Fast A2 refresh for a region (very fast, binary only). */
+void fb_refresh_fast(fb_t *fb, int x, int y, int w, int h);
 
 /* Set a single pixel. Bounds-checked. */
 static inline void fb_set_pixel(fb_t *fb, int x, int y, uint16_t color) {

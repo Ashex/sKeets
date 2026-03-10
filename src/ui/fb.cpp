@@ -1,71 +1,53 @@
 #include "fb.h"
 
-#include <fcntl.h>
-#include <unistd.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <sys/ioctl.h>
-#include <linux/fb.h>
-
-/* ── MXCFB structures (Kobo/Freescale e-ink driver) ─────────────── */
-
-#define MXCFB_SEND_UPDATE   _IOW('F', 0x2E, struct mxcfb_update_data)
-
-struct mxcfb_rect {
-    uint32_t top;
-    uint32_t left;
-    uint32_t width;
-    uint32_t height;
-};
-
-#define UPDATE_MODE_PARTIAL  0x0
-#define UPDATE_MODE_FULL     0x1
-
-struct mxcfb_update_data {
-    struct mxcfb_rect update_region;
-    uint32_t          waveform_mode;
-    uint32_t          update_mode;
-    uint32_t          update_marker;
-    int               temp;
-    uint32_t          flags;
-    void             *alt_buffer_data;  /* unused */
-};
+#include <stdio.h>
+#include <fbink.h>
 
 /* ── Open / close ─────────────────────────────────────────────────── */
 
 int fb_open(fb_t *fb) {
     if (!fb) return -1;
     memset(fb, 0, sizeof(*fb));
+    fb->fd = -1;
 
-    fb->fd = open("/dev/fb0", O_RDWR);
-    if (fb->fd < 0) return -1;
-
-    struct fb_var_screeninfo vinfo;
-    if (ioctl(fb->fd, FBIOGET_VSCREENINFO, &vinfo) < 0) {
-        close(fb->fd);
+    fb->fd = fbink_open();
+    if (fb->fd < 0) {
+        fprintf(stderr, "fb_open: fbink_open failed\n");
         return -1;
     }
-    fb->width  = (int)vinfo.xres;
-    fb->height = (int)vinfo.yres;
 
-    size_t fb_size = (size_t)(fb->width * fb->height * (FB_BPP / 8));
-    fb->mem = static_cast<uint16_t*>(mmap(NULL, fb_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0));
-    if (fb->mem == MAP_FAILED) {
-        close(fb->fd);
-        fb->mem = NULL;
+    FBInkConfig cfg = {};
+    cfg.is_quiet = true;
+    if (fbink_init(fb->fd, &cfg) < 0) {
+        fprintf(stderr, "fb_open: fbink_init failed\n");
+        fbink_close(fb->fd);
+        fb->fd = -1;
         return -1;
     }
+
+    FBInkState state = {};
+    fbink_get_state(&cfg, &state);
+    fb->width  = (int)state.screen_width;
+    fb->height = (int)state.screen_height;
+
+    size_t buf_size = 0;
+    unsigned char *ptr = fbink_get_fb_pointer(fb->fd, &buf_size);
+    if (!ptr) {
+        fprintf(stderr, "fb_open: fbink_get_fb_pointer failed\n");
+        fbink_close(fb->fd);
+        fb->fd = -1;
+        return -1;
+    }
+    fb->mem = reinterpret_cast<uint16_t*>(ptr);
+
     return 0;
 }
 
 void fb_close(fb_t *fb) {
     if (!fb) return;
-    if (fb->mem) {
-        size_t fb_size = (size_t)(fb->width * fb->height * (FB_BPP / 8));
-        munmap(fb->mem, fb_size);
-        fb->mem = NULL;
-    }
-    if (fb->fd >= 0) { close(fb->fd); fb->fd = -1; }
+    fb->mem = NULL;  /* FBInk owns the framebuffer mapping */
+    if (fb->fd >= 0) { fbink_close(fb->fd); fb->fd = -1; }
 }
 
 /* ── Drawing primitives ───────────────────────────────────────────── */
@@ -129,36 +111,34 @@ void fb_blit(fb_t *fb, int x, int y, int w, int h, const uint16_t *pixels) {
     }
 }
 
-/* ── E-ink refresh ───────────────────────────────────────────────── */
+/* ── E-ink refresh (via FBInk) ────────────────────────────────────── */
 
-static const uint32_t FIRST_UPDATE_MARKER = 1;
+void fb_refresh_full(fb_t *fb) {
+    if (!fb || fb->fd < 0) return;
+    FBInkConfig cfg = {};
+    cfg.is_flashing = true;
+    /* Empty region (0×0 @ 0,0) triggers a full-screen refresh. */
+    fbink_refresh(fb->fd, 0, 0, 0, 0, &cfg);
+}
 
-static void fb_refresh_region(fb_t *fb, int x, int y, int w, int h,
-                               int waveform, uint32_t update_mode) {
+void fb_refresh_partial(fb_t *fb, int x, int y, int w, int h) {
     if (!fb || fb->fd < 0) return;
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
     if (w <= 0 || h <= 0) return;
 
-    struct mxcfb_update_data upd = {0};
-    upd.update_region.left   = (uint32_t)x;
-    upd.update_region.top    = (uint32_t)y;
-    upd.update_region.width  = (uint32_t)w;
-    upd.update_region.height = (uint32_t)h;
-    upd.waveform_mode        = (uint32_t)waveform;
-    upd.update_mode          = update_mode;
-    upd.update_marker        = FIRST_UPDATE_MARKER;
-    upd.temp                 = TEMP_USE_AMBIENT;
-    upd.flags                = 0;
-
-    ioctl(fb->fd, MXCFB_SEND_UPDATE, &upd);
+    FBInkConfig cfg = {};
+    cfg.wfm_mode = WFM_DU;
+    fbink_refresh(fb->fd, (uint32_t)y, (uint32_t)x, (uint32_t)w, (uint32_t)h, &cfg);
 }
 
-void fb_refresh_full(fb_t *fb) {
-    fb_refresh_region(fb, 0, 0, fb->width, fb->height,
-                      WAVEFORM_MODE_GC16, UPDATE_MODE_FULL);
-}
+void fb_refresh_fast(fb_t *fb, int x, int y, int w, int h) {
+    if (!fb || fb->fd < 0) return;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (w <= 0 || h <= 0) return;
 
-void fb_refresh_partial(fb_t *fb, int x, int y, int w, int h) {
-    fb_refresh_region(fb, x, y, w, h, WAVEFORM_MODE_DU, UPDATE_MODE_PARTIAL);
+    FBInkConfig cfg = {};
+    cfg.wfm_mode = WFM_A2;
+    fbink_refresh(fb->fd, (uint32_t)y, (uint32_t)x, (uint32_t)w, (uint32_t)h, &cfg);
 }
