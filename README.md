@@ -101,10 +101,12 @@ make kobo-package
 ### NickelMenu entry (`/mnt/onboard/.adds/nm/sKeets`)
 
 ```
-menu_item :main  :sKeets  :cmd_spawn  :/mnt/onboard/.adds/sKeets/sKeets
+menu_item :main  :sKeets  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/run.sh
 ```
 
-NickelMenu adds a text-only entry to the main menu — it does not support custom icons.
+The `run.sh` wrapper pauses Nickel so sKeets can take over the framebuffer,
+then resumes it when sKeets exits. The `:quiet` flag suppresses the PID
+notification popup.
 
 ### KFMon entry (with app icon)
 
