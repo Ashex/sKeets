@@ -1,0 +1,137 @@
+# Dockerfile.cross — ARM (armhf) cross-compilation environment for sKeets
+#
+# Builds Qt6 6.5.2 from source to match the Kobo Libra Colour's runtime.
+# Works on both Intel and Apple Silicon Macs via Docker Desktop.
+#
+# The image provides:
+#   • ARM cross-compiler    (arm-linux-gnueabihf-g++, GCC 13, C++23)
+#   • Qt6 6.5.2 host tools  (moc, rcc, uic, qsb, qmltyperegistrar — native arch)
+#   • Qt6 6.5.2 armhf libs  (Core, Network, Gui, Quick, QuickControls2)
+#
+# First build takes ~30 min to compile Qt; subsequent builds use Docker cache.
+#
+# Usage: see docker-build.sh
+
+# ── Stage 1a: Build host Qt 6.5.2 (native tools) ─────────────────
+# This stage has NO armhf deps so its cache survives armhf package changes.
+FROM ubuntu:24.04 AS qt-host-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV QT_VERSION=6.5.2
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build pkg-config \
+        wget ca-certificates python3 perl \
+        libgl-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download Qt 6.5.2 source
+RUN wget -q https://download.qt.io/archive/qt/6.5/${QT_VERSION}/single/qt-everywhere-src-${QT_VERSION}.tar.xz \
+        -O /tmp/qt-src.tar.xz \
+    && mkdir /qt-src \
+    && tar xf /tmp/qt-src.tar.xz -C /qt-src --strip-components=1 \
+    && rm /tmp/qt-src.tar.xz
+
+# Build host Qt6 (native tools: moc, rcc, uic, qsb, qmltyperegistrar …)
+RUN mkdir /qt-build-host && cd /qt-build-host \
+    && /qt-src/configure \
+        -prefix /opt/qt6-host \
+        -release \
+        -nomake examples -nomake tests \
+        -submodules qtbase,qtshadertools,qtdeclarative \
+        -- -GNinja \
+    && cmake --build . --parallel \
+    && cmake --install . \
+    && rm -rf /qt-build-host
+
+# ── Stage 1b: Cross-compile Qt 6.5.2 for armhf ──────────────────
+# Separate stage so armhf package changes don't invalidate the host build.
+FROM ubuntu:24.04 AS qt-target-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV QT_VERSION=6.5.2
+
+# armhf packages live on ports.ubuntu.com, not archive.ubuntu.com
+RUN dpkg --add-architecture armhf \
+    && sed -i 's/^Types:/Architectures: amd64\nTypes:/' /etc/apt/sources.list.d/ubuntu.sources \
+    && printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble noble-updates noble-backports\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble-security\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+        > /etc/apt/sources.list.d/armhf-ports.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build pkg-config python3 perl \
+        g++-arm-linux-gnueabihf \
+        zlib1g-dev:armhf \
+        libssl-dev:armhf \
+        # Host Qt tools (qsb, moc, etc) need native X11/GL runtime libs
+        libgl-dev libx11-6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Bring in the host Qt tools and Qt source
+COPY --from=qt-host-builder /opt/qt6-host /opt/qt6-host
+COPY --from=qt-host-builder /qt-src /qt-src
+
+# Minimal toolchain for Qt's own armhf cross-compilation
+RUN printf '%s\n' \
+    'set(CMAKE_SYSTEM_NAME Linux)' \
+    'set(CMAKE_SYSTEM_PROCESSOR arm)' \
+    'set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)' \
+    'set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)' \
+    'set(CMAKE_C_FLAGS_INIT "-mcpu=cortex-a35 -mfpu=neon-fp-armv8 -mfloat-abi=hard -D_FILE_OFFSET_BITS=64")' \
+    'set(CMAKE_CXX_FLAGS_INIT "-mcpu=cortex-a35 -mfpu=neon-fp-armv8 -mfloat-abi=hard -D_FILE_OFFSET_BITS=64")' \
+    > /tmp/qt-armhf.cmake
+
+# Cross-compile Qt6 for armhf (Kobo Libra Colour target)
+RUN mkdir /qt-build-target && cd /qt-build-target \
+    && /qt-src/configure \
+        -prefix /opt/qt6-armhf \
+        -release \
+        -nomake examples -nomake tests \
+        -submodules qtbase,qtshadertools,qtdeclarative \
+        -no-opengl \
+        -no-dbus \
+        -no-icu \
+        -no-fontconfig \
+        -qt-freetype \
+        -qt-pcre \
+        -system-zlib \
+        -qt-doubleconversion \
+        -openssl-runtime \
+        -qt-host-path /opt/qt6-host \
+        -- -GNinja \
+           -DCMAKE_TOOLCHAIN_FILE=/tmp/qt-armhf.cmake \
+    && cmake --build . --parallel \
+    && cmake --install . \
+    && rm -rf /qt-build-target /qt-src
+
+# ── Stage 2: Final cross-compilation image ────────────────────────
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# armhf packages live on ports.ubuntu.com, not archive.ubuntu.com
+RUN dpkg --add-architecture armhf \
+    && sed -i 's/^Types:/Architectures: amd64\nTypes:/' /etc/apt/sources.list.d/ubuntu.sources \
+    && printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble noble-updates noble-backports\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble-security\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+        > /etc/apt/sources.list.d/armhf-ports.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        # ── Build tools ──
+        build-essential \
+        cmake \
+        ninja-build \
+        git \
+        ca-certificates \
+        pkg-config \
+        # ── ARM cross-compiler (GCC 13 — C++23 capable) ──
+        g++-arm-linux-gnueabihf \
+        # ── Target armhf: libraries Qt links against at build time ──
+        libssl-dev:armhf \
+        zlib1g-dev:armhf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Qt6 6.5.2: host tools (native) + armhf target libraries
+COPY --from=qt-host-builder /opt/qt6-host /opt/qt6-host
+COPY --from=qt-target-builder /opt/qt6-armhf /opt/qt6-armhf
+
+WORKDIR /build

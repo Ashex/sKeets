@@ -1,0 +1,30 @@
+# Build artifacts
+build/
+build-*/
+*.o
+*.a
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+install_manifest.txt
+kobo-pkg/
+*.tgz
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Compiled binary
+kobo-bluesky
+
+# Fetched dependencies (FetchContent)
+_deps/
+
+# Generated config / cache (do not commit user data)
+config.ini
+cache/
