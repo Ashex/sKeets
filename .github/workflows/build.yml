@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ashex/skeets-cross
-
 permissions:
   contents: read
   packages: read
@@ -20,7 +16,7 @@ jobs:
     timeout-minutes: 15
 
     container:
-      image: ghcr.io/${{ env.IMAGE_NAME }}:latest
+      image: ghcr.io/ashex/skeets-crosslatest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
