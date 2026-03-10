@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 15
 
     container:
-      image: ghcr.io/ashex/skeets-crosslatest
+      image: ghcr.io/ashex/skeets-cross:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
