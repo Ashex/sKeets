@@ -18,8 +18,8 @@ jobs:
     container:
       image: ghcr.io/ashex/skeets-cross:latest
       credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        username: Ashex
+        password: ${{ secrets.GH_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
