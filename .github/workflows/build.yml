@@ -1,0 +1,57 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/skeets-cross
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    container:
+      image: ghcr.io/${{ github.repository }}/skeets-cross:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake . -B build \
+            -DCMAKE_TOOLCHAIN_FILE=toolchain/arm-kobo-linux-gnueabihf.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=/opt/qt6-armhf \
+            -DQT_HOST_PATH=/opt/qt6-host \
+            -GNinja
+
+      - name: Build
+        run: ninja -C build -j$(nproc)
+
+      - name: Package
+        run: ninja -C build kobo-package
+
+      - name: Verify output
+        run: |
+          file build/sKeets
+          ls -lh build/sKeets build/sKeets-koboroot.tgz
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sKeets-kobo
+          path: |
+            build/sKeets
+            build/sKeets-koboroot.tgz
