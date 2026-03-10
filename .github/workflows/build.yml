@@ -41,7 +41,6 @@ jobs:
 
       - name: Verify output
         run: |
-          file build/sKeets
           ls -lh build/sKeets build/sKeets-koboroot.tgz
 
       - name: Upload artifacts
