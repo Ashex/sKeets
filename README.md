@@ -101,8 +101,30 @@ make kobo-package
 ### NickelMenu entry (`/mnt/onboard/.adds/nm/sKeets`)
 
 ```
-menu_item :main  :Bluesky  :cmd_spawn  :/mnt/onboard/.adds/sKeets/sKeets
+menu_item :main  :sKeets  :cmd_spawn  :/mnt/onboard/.adds/sKeets/sKeets
 ```
+
+NickelMenu adds a text-only entry to the main menu — it does not support custom icons.
+
+### KFMon entry (with app icon)
+
+[KFMon](https://github.com/NiLuJe/kfmon) lets you launch sKeets by tapping a
+cover image in your library. Place a PNG on the Kobo and create a config file:
+
+1. Copy your icon image to `/mnt/onboard/sKeets.png`.
+2. Create `/mnt/onboard/.adds/kfmon/config/sKeets.ini`:
+
+```ini
+[watch]
+filename = /mnt/onboard/sKeets.png
+action = /mnt/onboard/.adds/sKeets/sKeets
+label = sKeets
+hidden = false
+```
+
+3. Reboot. The PNG appears as a book cover in your library — tapping it launches sKeets.
+
+You can use both launchers simultaneously (NickelMenu for the menu shortcut, KFMon for the visual icon).
 
 ## Configuration
 
@@ -195,6 +217,6 @@ network calls to a background thread.
 
 ## License
 
-MIT — see individual source files for copyright notices.  
+GPLv3 — see individual source files for copyright notices.  
 
 stb_image: MIT/Public Domain, Copyright (c) 2017 Sean Barrett.

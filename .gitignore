@@ -28,3 +28,7 @@ _deps/
 # Generated config / cache (do not commit user data)
 config.ini
 cache/
+
+#rootfs
+update
+update.tar
