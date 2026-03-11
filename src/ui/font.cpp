@@ -86,6 +86,17 @@ static int font_draw_wrapped_fallback(fb_t *fb, int x, int y, int max_w,
         }
 
         if (line_len > 0) line[line_len++] = ' ';
+        /* B9: guard against buffer overflow for very long words */
+        if (line_len + word_len + 1 > (int)sizeof(line) - 1) {
+            if (line_len > 0) {
+                line[line_len] = '\0';
+                font_draw_string_fallback(fb, x, cursor_y, line, fg, bg);
+                cursor_y += s_font_h + line_spacing;
+                line_len = 0;
+            }
+            int max_chunk = (int)sizeof(line) - 2;
+            if (word_len > max_chunk) word_len = max_chunk;
+        }
         memcpy(line + line_len, word, (size_t)word_len);
         line_len += word_len;
         word = word_end;

@@ -42,4 +42,8 @@ int image_decode_memory(const uint8_t *data, int len, image_t *out);
 /* Write image to disk cache for the given URL. */
 void image_write_disk_cache(const char *url, const image_t *img);
 
+/* Scan disk cache and delete files (oldest first) to keep total size under
+ * max_bytes.  Pass 0 to delete all cached files. */
+void image_evict_disk_cache(size_t max_bytes);
+
 #endif /* SKEETS_IMAGE_H */

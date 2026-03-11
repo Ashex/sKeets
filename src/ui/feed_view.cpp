@@ -272,6 +272,13 @@ void feed_view_handle(app_state_t *state, const input_event_t *ev) {
             int dy = last_down.y - ev->touch.y;
             state->feed_scroll = last_scroll + dy;
             feed_view_draw(state);
+        } else if (ev->touch.type == TOUCH_SWIPE_UP || ev->touch.type == TOUCH_SWIPE_DOWN) {
+            int step = state->fb.height / 2;
+            if (ev->touch.type == TOUCH_SWIPE_UP)
+                state->feed_scroll += step;
+            else
+                state->feed_scroll -= step;
+            feed_view_draw(state);
         } else if (ev->touch.type == TOUCH_UP) {
             int tx = ev->touch.x;
             int ty = ev->touch.y;

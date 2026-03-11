@@ -5,7 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
 #include <sys/stat.h>
+#include <time.h>
 
 /* Pull in stb_image */
 #define STB_IMAGE_IMPLEMENTATION
@@ -178,4 +180,55 @@ void image_write_disk_cache(const char *url, const image_t *img) {
     char path[512];
     image_cache_path(url, path, sizeof(path));
     image_write_cache(path, img);
+}
+
+void image_evict_disk_cache(size_t max_bytes) {
+    const char *cache_dir = skeets_cache_dir();
+    DIR *d = opendir(cache_dir);
+    if (!d) return;
+
+    struct cache_file_info {
+        char   path[512];
+        size_t size;
+        time_t mtime;
+    };
+
+    static struct cache_file_info files[4096];
+    int    nfiles = 0;
+    size_t total  = 0;
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL && nfiles < 4096) {
+        if (ent->d_name[0] == '.') continue;
+        struct cache_file_info *fi = &files[nfiles];
+        snprintf(fi->path, sizeof(fi->path), "%s/%s", cache_dir, ent->d_name);
+        struct stat st;
+        if (stat(fi->path, &st) != 0) continue;
+        if (!S_ISREG(st.st_mode)) continue;
+        fi->size  = (size_t)st.st_size;
+        fi->mtime = st.st_mtime;
+        total    += fi->size;
+        nfiles++;
+    }
+    closedir(d);
+
+    if (total <= max_bytes) return;
+
+    /* Bubble sort ascending by mtime (oldest first) — small arrays only. */
+    for (int i = 0; i < nfiles - 1; i++) {
+        for (int j = i + 1; j < nfiles; j++) {
+            if (files[j].mtime < files[i].mtime) {
+                struct cache_file_info tmp = files[i];
+                files[i] = files[j];
+                files[j] = tmp;
+            }
+        }
+    }
+
+    for (int i = 0; i < nfiles && total > max_bytes; i++) {
+        if (remove(files[i].path) == 0) {
+            total -= files[i].size;
+            fprintf(stderr, "image_evict_disk_cache: evicted %s\n", files[i].path);
+        }
+    }
 }

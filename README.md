@@ -4,14 +4,36 @@ A [Bluesky](https://bsky.app) (ATProto) social client for the **Kobo Clara Colou
 
 ## Features
 
-- Login with Bluesky handle/email and app password
-- Scrollable home timeline feed
-- Post thread / comments view
-- Compose new posts and replies
+- Login via `login.txt` (see Getting Started below)
+- Scrollable home timeline feed with swipe gestures
+- Post thread / comments view with recursive reply display
 - Optional profile image and post image display (off by default)
-- Quote post rendering with visual indent
+- Quote post and external link rendering
+- Repost attribution display
 - Settings persistence via INI config file
 - Optimised for 1448×1072 e-ink display with MXCFB partial refresh
+
+## Getting Started
+
+### Authentication
+
+sKeets uses a `login.txt` file for initial authentication:
+
+1. Connect your Kobo device via USB
+2. Create the file `.adds/sKeets/login.txt` with the following content:
+   ```
+   handle=yourhandle.bsky.social
+   password=your-app-password
+   ```
+   Optional fields:
+   ```
+   pds_url=https://bsky.social
+   appview=https://api.bsky.app
+   ```
+3. Get an App Password from bsky.app → Settings → App Passwords
+4. Eject USB and restart sKeets
+
+After successful login, the `login.txt` file is automatically deleted and your session is saved to `config.ini`. On subsequent launches, sKeets uses the saved session tokens and refreshes them automatically before they expire.
 
 ## Project Structure
 

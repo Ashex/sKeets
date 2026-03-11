@@ -209,6 +209,20 @@ void AtprotoClient::getTimeline(int limit, const std::optional<std::string>& cur
     loop.exec();
 }
 
+static void flattenReplies(const ATProto::AppBskyFeed::ThreadViewPost::SharedPtr& tvp,
+                           Post& post, int depth) {
+    if (!tvp || depth > 10) return;
+    for (auto& reply : tvp->mReplies) {
+        if (!reply) continue;
+        if (reply->mType != ATProto::AppBskyFeed::PostElementType::THREAD_VIEW_POST) continue;
+        auto* rtvp = std::get_if<ATProto::AppBskyFeed::ThreadViewPost::SharedPtr>(&reply->mPost);
+        if (!rtvp || !*rtvp || !(*rtvp)->mPost) continue;
+        auto child = std::make_shared<Post>(convertPostView((*rtvp)->mPost));
+        flattenReplies(*rtvp, *child, depth + 1);
+        post.replies.push_back(std::move(child));
+    }
+}
+
 void AtprotoClient::getPostThread(const std::string& uri,
                                    const PostCb& successCb, const ErrorCb& errorCb) {
     QEventLoop loop;
@@ -220,14 +234,7 @@ void AtprotoClient::getPostThread(const std::string& uri,
                 auto* tvp = std::get_if<ATProto::AppBskyFeed::ThreadViewPost::SharedPtr>(&thread->mThread->mPost);
                 if (tvp && *tvp && (*tvp)->mPost) {
                     Post root = convertPostView((*tvp)->mPost);
-                    for (auto& reply : (*tvp)->mReplies) {
-                        if (!reply) continue;
-                        if (reply->mType == ATProto::AppBskyFeed::PostElementType::THREAD_VIEW_POST) {
-                            auto* rtvp = std::get_if<ATProto::AppBskyFeed::ThreadViewPost::SharedPtr>(&reply->mPost);
-                            if (rtvp && *rtvp && (*rtvp)->mPost)
-                                root.replies.push_back(std::make_shared<Post>(convertPostView((*rtvp)->mPost)));
-                        }
-                    }
+                    flattenReplies(*tvp, root, 0);
                     successCb(root);
                     loop.quit();
                     return;

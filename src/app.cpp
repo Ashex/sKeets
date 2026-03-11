@@ -34,6 +34,8 @@ int app_init(app_state_t *state) {
                 skeets_data_dir());
     }
 
+    image_evict_disk_cache(50UL * 1024 * 1024);
+
     if (fb_open(&state->fb) != 0) {
         fprintf(stderr, "app_init: failed to open framebuffer\n");
         return -1;
@@ -83,7 +85,10 @@ int app_init(app_state_t *state) {
 
             bool session_resumed = false;
             state->atproto_client->resumeSession(state->session,
-                [&session_resumed]() { session_resumed = true; },
+                [&session_resumed, state]() {
+                    session_resumed = true;
+                    state->session_last_refresh = time(nullptr);
+                },
                 [](const std::string&) {});
             if (session_resumed)
                 state->current_view = VIEW_FEED;
@@ -134,6 +139,7 @@ int app_init(app_state_t *state) {
                     remove(login_txt);
 
                     if (ok) {
+                        state->session_last_refresh = time(nullptr);
                         config_t *cfg2 = config_open(skeets_config_path());
                         if (cfg2) {
                             config_set_str(cfg2, "handle",      state->session.handle.c_str());
@@ -188,6 +194,25 @@ void app_set_error(app_state_t *state, const char *msg) {
 int app_ensure_auth(app_state_t *state) {
     if (!state || !state->atproto_client) return -1;
     if (state->session.access_jwt.empty()) return -1;
+
+    /* Proactively refresh if token is >85 minutes old */
+    time_t now = time(nullptr);
+    const time_t REFRESH_THRESHOLD_SECS = 85 * 60;
+    if (state->session_last_refresh > 0 &&
+        (now - state->session_last_refresh) > REFRESH_THRESHOLD_SECS) {
+        bool refreshed = false;
+        state->atproto_client->resumeSession(state->session,
+            [state, &refreshed, now]() {
+                refreshed = true;
+                state->session_last_refresh = now;
+            },
+            [](const std::string&) {});
+        if (!refreshed) {
+            app_switch_view(state, VIEW_AUTH_WAIT);
+            return -1;
+        }
+    }
+
     if (state->atproto_client->hasSession()) return 0;
 
     bool ok = false;

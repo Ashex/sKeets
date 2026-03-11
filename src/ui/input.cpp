@@ -24,6 +24,8 @@ static constexpr int LINUX_KEY_POWER = KEY_POWER;
 #define TAP_MAX_DIST      30   /* pixels */
 #define TAP_MAX_MS        300  /* milliseconds */
 #define LONG_PRESS_MS     500  /* milliseconds */
+#define SWIPE_MIN_DIST    80   /* pixels - minimum displacement for a swipe */
+#define SWIPE_MIN_VEL     0.2f /* pixels/ms - minimum velocity */
 
 struct input_device {
     int fd;
@@ -194,7 +196,22 @@ bool input_poll(input_ctx_t *ctx, input_event_t *ev, int timeout_ms) {
     }
 
     int ret = poll(pfds, (nfds_t)ctx->nfds, timeout_ms);
-    if (ret <= 0) return false;
+    if (ret < 0) return false;
+    if (ret == 0) {
+        /* Poll timed out — check for stationary long press */
+        if (ctx->touching && ctx->last_emit_type != TOUCH_LONG_PRESS) {
+            long long held = now_ms() - ctx->touch_down_ms;
+            if (held >= LONG_PRESS_MS) {
+                ctx->last_emit_type = TOUCH_LONG_PRESS;
+                ev->type       = INPUT_TOUCH;
+                ev->touch.type = TOUCH_LONG_PRESS;
+                ev->touch.x    = ctx->touch_down_x;
+                ev->touch.y    = ctx->touch_down_y;
+                return true;
+            }
+        }
+        return false;
+    }
 
     for (int i = 0; i < ctx->nfds; i++) {
         if (!(pfds[i].revents & POLLIN)) continue;
@@ -227,7 +244,7 @@ bool input_poll(input_ctx_t *ctx, input_event_t *ev, int timeout_ms) {
                                 ctx->touch_down_ms = now_ms();
                                 ctx->touch_down_x  = mapped_x;
                                 ctx->touch_down_y  = mapped_y;
-                                ctx->last_emit_type = TOUCH_DOWN;
+                                ctx->last_emit_type = TOUCH_NONE;
                                 ev->type       = INPUT_TOUCH;
                                 ev->touch.type = TOUCH_DOWN;
                                 ev->touch.x    = mapped_x;
@@ -239,6 +256,34 @@ bool input_poll(input_ctx_t *ctx, input_event_t *ev, int timeout_ms) {
                                 int mapped_y = ctx->cur_y;
                                 if (device.has_touch_axes)
                                     map_touch_point(ctx, device, ctx->cur_x, ctx->cur_y, &mapped_x, &mapped_y);
+
+                                /* Check for swipe */
+                                long long elapsed = now_ms() - ctx->touch_down_ms;
+                                if (elapsed > 0) {
+                                    int dx  = mapped_x - ctx->touch_down_x;
+                                    int dy  = mapped_y - ctx->touch_down_y;
+                                    int adx = dx < 0 ? -dx : dx;
+                                    int ady = dy < 0 ? -dy : dy;
+                                    float vx = (float)adx / (float)elapsed;
+                                    float vy = (float)ady / (float)elapsed;
+                                    if (adx > SWIPE_MIN_DIST && adx > ady && vx >= SWIPE_MIN_VEL) {
+                                        ctx->touching = false;
+                                        ev->type       = INPUT_TOUCH;
+                                        ev->touch.type = dx > 0 ? TOUCH_SWIPE_RIGHT : TOUCH_SWIPE_LEFT;
+                                        ev->touch.x    = mapped_x;
+                                        ev->touch.y    = mapped_y;
+                                        return true;
+                                    }
+                                    if (ady > SWIPE_MIN_DIST && ady > adx && vy >= SWIPE_MIN_VEL) {
+                                        ctx->touching = false;
+                                        ev->type       = INPUT_TOUCH;
+                                        ev->touch.type = dy > 0 ? TOUCH_SWIPE_DOWN : TOUCH_SWIPE_UP;
+                                        ev->touch.x    = mapped_x;
+                                        ev->touch.y    = mapped_y;
+                                        return true;
+                                    }
+                                }
+
                                 ctx->touching = false;
                                 ctx->last_emit_type = TOUCH_NONE;
                                 ev->type       = INPUT_TOUCH;

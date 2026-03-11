@@ -24,6 +24,7 @@ struct app_state {
     std::string     status_msg;
     bool            status_is_error = false;
     Bsky::AtprotoClient* atproto_client = nullptr;
+    time_t          session_last_refresh = 0; /* time_t of last successful session refresh */
 };
 
 typedef struct app_state app_state_t;

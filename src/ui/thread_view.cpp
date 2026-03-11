@@ -213,6 +213,13 @@ void thread_view_handle(app_state_t *state, const input_event_t *ev) {
             int dy = last_down.y - ev->touch.y;
             state->thread_scroll = last_scroll + dy;
             thread_view_draw(state);
+        } else if (ev->touch.type == TOUCH_SWIPE_UP || ev->touch.type == TOUCH_SWIPE_DOWN) {
+            int step = state->fb.height / 2;
+            if (ev->touch.type == TOUCH_SWIPE_UP)
+                state->thread_scroll += step;
+            else
+                state->thread_scroll -= step;
+            thread_view_draw(state);
         } else if (ev->touch.type == TOUCH_UP) {
             if (!input_is_tap(&last_down, &ev->touch)) return;
             int tx = ev->touch.x;
