@@ -140,7 +140,7 @@ input_ctx_t *input_open(int fb_w, int fb_h) {
         if (strncmp(ent->d_name, "event", 5) != 0) continue;
         char path[PATH_MAX];
         int n = snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name);
-        if (n < 0 || (size_t)n >= sizeof(path)) continue;
+        if (n < 0 || n >= (int)sizeof(path)) continue;
         int fd = open(path, O_RDONLY | O_NONBLOCK);
         if (fd < 0) continue;
 

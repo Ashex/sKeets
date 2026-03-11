@@ -193,12 +193,17 @@ void image_evict_disk_cache(size_t max_bytes) {
         time_t mtime;
     };
 
-    static struct cache_file_info files[4096];
+    /* Heap-allocate to avoid stack overflow on embedded targets. */
+#define MAX_CACHE_SCAN 2048
+    struct cache_file_info *files =
+        (struct cache_file_info *)malloc(MAX_CACHE_SCAN * sizeof(struct cache_file_info));
+    if (!files) { closedir(d); return; }
+
     int    nfiles = 0;
     size_t total  = 0;
 
     struct dirent *ent;
-    while ((ent = readdir(d)) != NULL && nfiles < 4096) {
+    while ((ent = readdir(d)) != NULL && nfiles < MAX_CACHE_SCAN) {
         if (ent->d_name[0] == '.') continue;
         struct cache_file_info *fi = &files[nfiles];
         snprintf(fi->path, sizeof(fi->path), "%s/%s", cache_dir, ent->d_name);
@@ -214,7 +219,7 @@ void image_evict_disk_cache(size_t max_bytes) {
 
     if (total <= max_bytes) return;
 
-    /* Bubble sort ascending by mtime (oldest first) — small arrays only. */
+    /* Bubble sort ascending by mtime (oldest first). */
     for (int i = 0; i < nfiles - 1; i++) {
         for (int j = i + 1; j < nfiles; j++) {
             if (files[j].mtime < files[i].mtime) {
@@ -231,4 +236,7 @@ void image_evict_disk_cache(size_t max_bytes) {
             fprintf(stderr, "image_evict_disk_cache: evicted %s\n", files[i].path);
         }
     }
+
+    free(files);
+#undef MAX_CACHE_SCAN
 }

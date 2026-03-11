@@ -17,6 +17,11 @@
 #define QUOTE_INDENT     24
 #define QUOTE_BORDER     3
 
+/* Approximate pixel width of the like stats field ("♡ NNN") before the repost icon.
+ * This is used to split the stats tap zone into like vs repost halves. */
+#define STATS_LIKE_ZONE_W  100
+#define STATS_REPOST_ZONE_W 100
+
 #define MAX_CACHED_POSTS 200
 static int s_post_heights[MAX_CACHED_POSTS];
 static int s_post_y[MAX_CACHED_POSTS];
@@ -306,9 +311,9 @@ void feed_view_handle(app_state_t *state, const input_event_t *ev) {
                             stats_content_y <  stats_y_in_post + font_cell_h() + 8) {
                             int screen_tx = ev->touch.x;
                             int like_x_approx   = CONTENT_X;
-                            int repost_x_approx = CONTENT_X + 120;
+                            int repost_x_approx = CONTENT_X + STATS_LIKE_ZONE_W;
 
-                            if (screen_tx < like_x_approx + 60) {
+                            if (screen_tx < like_x_approx + STATS_LIKE_ZONE_W) {
                                 // Like / unlike
                                 Bsky::Post& p = state->feed.items[i];
                                 if (p.viewer_like.empty()) {
@@ -341,7 +346,7 @@ void feed_view_handle(app_state_t *state, const input_event_t *ev) {
                                         });
                                 }
                                 return;
-                            } else if (screen_tx < repost_x_approx + 60) {
+                            } else if (screen_tx < repost_x_approx + STATS_REPOST_ZONE_W) {
                                 // Repost / unrepost
                                 Bsky::Post& p = state->feed.items[i];
                                 if (p.viewer_repost.empty()) {
