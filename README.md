@@ -66,6 +66,18 @@ A pre-built sysroot can be obtained from the
 
 ## Building
 
+### Convenience targets
+
+Use the top-level `Makefile` when you want a repeatable Docker build and a
+clean step that can remove root-owned build artifacts left behind by bind
+mounts inside Docker:
+
+```sh
+make build    # run ./docker-build.sh
+make clean    # sudo rm -rf build-kobo build-local build build-arm
+make rebuild  # clean first, then build again
+```
+
 ### Native (for development / testing on ARM Linux)
 
 ```sh
@@ -88,13 +100,13 @@ make -j$(nproc)
 
 ```sh
 make kobo-package
-# Produces: build-arm/sKeets-koboroot.tgz
+# Produces: build-arm/KoboRoot.tgz
 ```
 
 ## Installation
 
-1. Copy `sKeets-koboroot.tgz` to the root of the Kobo's SD card (via USB).
-2. Safely eject the Kobo. The firmware will extract `KoboRoot.tgz` automatically on next boot.
+1. Copy `KoboRoot.tgz` to `/mnt/onboard/.kobo/KoboRoot.tgz` on the mounted Kobo storage (via USB).
+2. Safely eject the Kobo. The firmware will extract `KoboRoot.tgz` automatically on the next reboot.
 3. The binary lands at `/mnt/onboard/.adds/sKeets/sKeets`.
 4. Add a launcher entry via [NickelMenu](https://github.com/pgaskin/NickelMenu) or [KFMon](https://github.com/NiLuJe/kfmon).
 
@@ -120,7 +132,7 @@ cover image in your library. Place a PNG on the Kobo and create a config file:
 ```ini
 [watch]
 filename = /mnt/onboard/sKeets.png
-action = /mnt/onboard/.adds/sKeets/sKeets
+action = /mnt/onboard/.adds/sKeets/run.sh
 label = sKeets
 hidden = false
 ```
@@ -146,6 +158,10 @@ All fields except `images_enabled` are written automatically by the login flow
 (see below). Tokens are stored in plain text. Use a dedicated
 [app password](https://bsky.app/settings/app-passwords) rather than your main
 account password.
+
+For development and future plugin migration work, the storage root can be
+overridden with the `SKEETS_DATA_DIR` environment variable. If unset, the app
+defaults to `/mnt/onboard/.adds/sKeets`.
 
 ### Quick Setup (pre-fill from computer)
 
@@ -217,6 +233,15 @@ main.c
 The ATProto layer is synchronous (blocking HTTP). On slow networks or large
 feeds this may cause brief pauses; a future improvement would be to offload
 network calls to a background thread.
+
+## Nickel Plugin Port
+
+A real Nickel plugin port is not a drop-in build change. The public Kobo plugin
+examples target QWidget plugins on Qt Embedded 4.6, while sKeets currently uses
+Qt6. The backend now resolves config and cache paths at runtime so storage can
+be preserved during a future port, but the UI and build stack still need a
+separate Nickel-specific implementation. See `docs/plugin-port.md` for the
+constraints and migration plan.
 
 ## License
 

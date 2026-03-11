@@ -1,4 +1,5 @@
 #include "image.h"
+#include "paths.h"
 #include "str.h"
 
 #include <stdio.h>
@@ -64,7 +65,7 @@ static int image_load_cached(const char *path, image_t *out) {
 
 /* Write a raw cached image with magic header. */
 static void image_write_cache(const char *path, const image_t *img) {
-    (void)mkdir(IMAGE_CACHE_DIR, 0755);
+    (void)skeets_ensure_data_dirs();
     FILE *f = fopen(path, "wb");
     if (!f) return;
     uint32_t magic = CACHE_MAGIC;
@@ -79,7 +80,7 @@ static void image_write_cache(const char *path, const image_t *img) {
 
 void image_cache_path(const char *url, char *out_path, int out_size) {
     unsigned long h = str_hash(url);
-    snprintf(out_path, out_size, "%s%lx.img", IMAGE_CACHE_DIR, h);
+    snprintf(out_path, out_size, "%s/%lx.img", skeets_cache_dir(), h);
 }
 
 int image_load_file(const char *path, image_t *out) {

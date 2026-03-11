@@ -77,4 +77,4 @@ docker run --rm \
 echo ""
 echo "Done!"
 echo "  Binary:  ${BUILD_DIR}/sKeets"
-echo "  Package: ${BUILD_DIR}/sKeets-koboroot.tgz"
+echo "  Package: ${BUILD_DIR}/KoboRoot.tgz"

@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#define IMAGE_CACHE_DIR "/mnt/onboard/.adds/sKeets/cache/"
-
 /*
  * RGBA pixel buffer returned by image_load_*.
  * Caller is responsible for calling image_free().

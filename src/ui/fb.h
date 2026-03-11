@@ -5,8 +5,8 @@
 #include <stdbool.h>
 
 /* ── Display constants ───────────────────────────────────────────── */
-#define FB_WIDTH    1448
-#define FB_HEIGHT   1072
+#define FB_WIDTH    1072
+#define FB_HEIGHT   1448
 
 
 /* ── Colors (RGB565) ─────────────────────────────────────────────── */

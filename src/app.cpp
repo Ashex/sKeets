@@ -6,19 +6,17 @@
 #include "ui/settings_view.h"
 #include "ui/font.h"
 #include "util/config.h"
+#include "util/device.h"
 #include "util/image.h"
 #include "util/image_cache.h"
+#include "util/paths.h"
 #include "util/str.h"
 
 #include <QCoreApplication>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/stat.h>
 #include <time.h>
-
-/* Root data directory – all sKeets files live beneath this path. */
-static constexpr const char* SKEETS_DATA_DIR = "/mnt/onboard/.adds/sKeets";
 
 int app_init(app_state_t *state) {
     if (!state) return -1;
@@ -26,25 +24,37 @@ int app_init(app_state_t *state) {
     state->running = true;
     state->current_view = VIEW_LOGIN;
 
-    mkdir("/mnt/onboard/.adds", 0755);
-    mkdir(SKEETS_DATA_DIR, 0755);
-    mkdir(IMAGE_CACHE_DIR, 0755);
+    const std::string kobo_version = device_kobo_version_string();
+    const std::string kobo_model = device_kobo_model_string();
+    fprintf(stderr, "app_init: device model=%s version=%s\n",
+            kobo_model.c_str(),
+            kobo_version.empty() ? "unknown" : kobo_version.c_str());
+
+    if (skeets_ensure_data_dirs() != 0) {
+        fprintf(stderr, "app_init: warning: failed to prepare data directories under %s\n",
+                skeets_data_dir());
+    }
 
     if (fb_open(&state->fb) != 0) {
         fprintf(stderr, "app_init: failed to open framebuffer\n");
         return -1;
     }
+    fprintf(stderr, "app_init: framebuffer ready width=%d height=%d\n",
+            state->fb.width, state->fb.height);
 
-    /* Load OpenType fonts and initialise the font subsystem. */
-    if (fb_load_fonts(&state->fb, "/usr/share/fonts") != 0)
-        fprintf(stderr, "app_init: warning: failed to load fonts\n");
+    /* OpenType rendering is disabled for now because FBInk bitmap text is the
+       only path that renders reliably on-device across current builds. */
     font_init(&state->fb);
+    font_set_ot_enabled(false);
+    fprintf(stderr, "app_init: font subsystem initialised (FBInk fallback text)\n");
 
     state->input = input_open();
     if (!state->input)
         fprintf(stderr, "app_init: warning: failed to open input devices\n");
+    else
+        fprintf(stderr, "app_init: input devices opened\n");
 
-    config_t *cfg = config_open(CONFIG_PATH);
+    config_t *cfg = config_open(skeets_config_path());
     std::string saved_pds_url;
     if (cfg) {
         state->images_enabled = config_get_bool(cfg, "images_enabled", false);
@@ -53,6 +63,8 @@ int app_init(app_state_t *state) {
 
     /* Create the client pointed at the saved PDS (or default bsky.social). */
     state->atproto_client = new Bsky::AtprotoClient(saved_pds_url);
+        fprintf(stderr, "app_init: atproto client initialised host=%s\n",
+            saved_pds_url.empty() ? "https://bsky.social" : saved_pds_url.c_str());
 
     if (cfg) {
         const char *saved_handle   = config_get_str(cfg, "handle",       "");
@@ -123,10 +135,12 @@ int app_init(app_state_t *state) {
 
 void app_shutdown(app_state_t *state) {
     if (!state) return;
+    fprintf(stderr, "app_shutdown: begin\n");
     delete state->atproto_client;
     state->atproto_client = nullptr;
     if (state->input) input_close(state->input);
     fb_close(&state->fb);
+    fprintf(stderr, "app_shutdown: complete\n");
 }
 
 void app_set_info(app_state_t *state, const char *msg) {
@@ -150,7 +164,7 @@ int app_ensure_auth(app_state_t *state) {
     state->atproto_client->resumeSession(state->session,
         [&ok, state]() {
             ok = true;
-            config_t *cfg = config_open(CONFIG_PATH);
+            config_t *cfg = config_open(skeets_config_path());
             if (cfg) {
                 config_set_str(cfg, "access_jwt",  state->session.access_jwt.c_str());
                 config_set_str(cfg, "refresh_jwt", state->session.refresh_jwt.c_str());
@@ -194,7 +208,9 @@ void app_switch_view(app_state_t *state, app_view_t view) {
 void app_run(app_state_t *state) {
     if (!state) return;
 
+    fprintf(stderr, "app_run: drawing initial view=%d\n", (int)state->current_view);
     app_switch_view(state, state->current_view);
+    fprintf(stderr, "app_run: initial view draw complete\n");
 
     input_event_t ev{};
     while (state->running) {
@@ -213,7 +229,8 @@ void app_run(app_state_t *state) {
         bool got_ev = input_poll(state->input, &ev, 100);
         if (!got_ev) continue;
 
-        if (ev.type == INPUT_KEY && ev.key == KEY_POWER) {
+        if (ev.type == INPUT_KEY &&
+            (ev.key == KEY_POWER || ev.key == KEY_BACK || ev.key == KEY_HOME)) {
             state->running = false;
             break;
         }

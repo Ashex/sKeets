@@ -41,7 +41,7 @@ jobs:
 
       - name: Verify output
         run: |
-          ls -lh build/sKeets build/sKeets-koboroot.tgz
+          ls -lh build/sKeets build/KoboRoot.tgz
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -49,4 +49,4 @@ jobs:
           name: sKeets-kobo
           path: |
             build/sKeets
-            build/sKeets-koboroot.tgz
+            build/KoboRoot.tgz

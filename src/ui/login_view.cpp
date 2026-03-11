@@ -2,6 +2,7 @@
 #include "fb.h"
 #include "font.h"
 #include "../atproto/atproto_client.h"
+#include "../util/paths.h"
 #include "../util/str.h"
 #include "../util/config.h"
 
@@ -19,6 +20,10 @@
 #define BTN_Y            (PDS_Y + FIELD_H + 40)
 #define BTN_W            200
 #define BTN_H            52
+#define EXIT_BTN_X       16
+#define EXIT_BTN_Y       16
+#define EXIT_BTN_W       96
+#define EXIT_BTN_H       40
 #define LOGIN_TITLE_Y    200
 #define LOGIN_SUBTITLE_Y 240
 
@@ -111,7 +116,7 @@ void login_view_draw(app_state_t *state) {
     fb_t *fb = &state->fb;
     fb_clear(fb, COLOR_WHITE);
 
-    const char *title = "sKeets — Bluesky for Kobo";
+    const char *title = "sKeets - Bluesky for Kobo";
     int title_w = font_measure_string(title);
     font_draw_string(fb, (FB_WIDTH - title_w) / 2, LOGIN_TITLE_Y,
                      title, COLOR_BLACK, COLOR_WHITE);
@@ -120,6 +125,8 @@ void login_view_draw(app_state_t *state) {
     int subtitle_w = font_measure_string(subtitle);
     font_draw_string(fb, (FB_WIDTH - subtitle_w) / 2, LOGIN_SUBTITLE_Y,
                      subtitle, COLOR_GRAY, COLOR_WHITE);
+
+    draw_inactive_button(fb, EXIT_BTN_X, EXIT_BTN_Y, EXIT_BTN_W, EXIT_BTN_H, "Exit");
 
     draw_text_field(fb, FIELD_X, HANDLE_Y, FIELD_W, FIELD_H,
                     "Handle or email", s_handle, s_focus == FOCUS_HANDLE);
@@ -142,7 +149,7 @@ void login_view_draw(app_state_t *state) {
                          s_error, COLOR_BLACK, COLOR_WHITE);
     }
 
-    const char *hint = "Tap a field, then use the on-screen keyboard";
+    const char *hint = "Tap a field to focus it";
     int hint_w = font_measure_string(hint);
     font_draw_string(fb, (FB_WIDTH - hint_w) / 2, BTN_Y + BTN_H + 60,
                      hint, COLOR_GRAY, COLOR_WHITE);
@@ -155,6 +162,11 @@ void login_view_handle(app_state_t *state, const input_event_t *ev) {
 
     int tx = ev->touch.x;
     int ty = ev->touch.y;
+
+    if (hit_test_rect(tx, ty, EXIT_BTN_X, EXIT_BTN_Y, EXIT_BTN_W, EXIT_BTN_H)) {
+        state->running = false;
+        return;
+    }
 
     if (hit_test_rect(tx, ty, FIELD_X, HANDLE_Y, FIELD_W, FIELD_H)) {
         s_focus = FOCUS_HANDLE;
@@ -202,7 +214,7 @@ void login_view_handle(app_state_t *state, const input_event_t *ev) {
             });
 
         if (sign_in_succeeded) {
-            config_t *cfg = config_open(CONFIG_PATH);
+            config_t *cfg = config_open(skeets_config_path());
             if (cfg) {
                 config_set_str(cfg, "handle",      state->session.handle.c_str());
                 config_set_str(cfg, "access_jwt",  state->session.access_jwt.c_str());

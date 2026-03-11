@@ -15,6 +15,10 @@
 /* Store FBInk fd for font measurement functions. Call after fb_load_fonts(). */
 void font_init(fb_t *fb);
 
+/* Enable or disable OpenType rendering. Disabled mode falls back to FBInk's
+ * built-in bitmap font support. */
+void font_set_ot_enabled(bool enabled);
+
 /* ── Text drawing ────────────────────────────────────────────────── */
 
 /*

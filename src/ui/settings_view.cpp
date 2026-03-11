@@ -2,6 +2,7 @@
 #include "fb.h"
 #include "font.h"
 #include "../util/config.h"
+#include "../util/paths.h"
 #include "../util/str.h"
 
 #include <string.h>
@@ -136,7 +137,7 @@ void settings_view_handle(app_state_t *state, const input_event_t *ev) {
 
     if (hit_test_rect(tx, ty, logout_btn_x(), logout_btn_y(), LOGOUT_BTN_W, LOGOUT_BTN_H)) {
         state->session = Bsky::Session{};
-        config_t *cfg = config_open(CONFIG_PATH);
+        config_t *cfg = config_open(skeets_config_path());
         if (cfg) {
             config_set_str(cfg, "access_jwt",  "");
             config_set_str(cfg, "refresh_jwt", "");
@@ -148,7 +149,7 @@ void settings_view_handle(app_state_t *state, const input_event_t *ev) {
 }
 
 void settings_save(const app_state_t *state) {
-    config_t *cfg = config_open(CONFIG_PATH);
+    config_t *cfg = config_open(skeets_config_path());
     if (!cfg) return;
     config_set_bool(cfg, "images_enabled", state->images_enabled);
     config_save(cfg);
