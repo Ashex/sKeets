@@ -190,9 +190,8 @@ void AtprotoClient::getTimeline(int limit, const std::optional<std::string>& cur
                 for (auto& item : output->mFeed) {
                     if (!item || !item->mPost) continue;
                     Post p = convertPostView(item->mPost);
-                    if (item->mReason &&
-                        item->mReason->mType == ATProto::AppBskyFeed::FeedViewPostReasonType::REASON_REPOST) {
-                        auto* rr = std::get_if<ATProto::AppBskyFeed::ReasonRepost::SharedPtr>(&item->mReason->mReason);
+                    if (item->mReason) {
+                        auto* rr = std::get_if<ATProto::AppBskyFeed::ReasonRepost::SharedPtr>(&*item->mReason);
                         if (rr && *rr && (*rr)->mBy)
                             p.reposted_by = (*rr)->mBy->mHandle.toStdString();
                     }
@@ -259,6 +258,7 @@ void AtprotoClient::likePost(const std::string& uri, const std::string& cid,
     ATProto::PostMaster pm(*mClient);
     QEventLoop loop;
     pm.like(QString::fromStdString(uri), QString::fromStdString(cid),
+        QString(), QString(),
         [&loop, successCb](const QString& like_uri, const QString&) {
             successCb(like_uri.toStdString());
             loop.quit();
@@ -288,6 +288,7 @@ void AtprotoClient::repostPost(const std::string& uri, const std::string& cid,
     ATProto::PostMaster pm(*mClient);
     QEventLoop loop;
     pm.repost(QString::fromStdString(uri), QString::fromStdString(cid),
+        QString(), QString(),
         [&loop, successCb](const QString& repost_uri, const QString&) {
             successCb(repost_uri.toStdString());
             loop.quit();

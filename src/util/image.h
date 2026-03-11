@@ -1,6 +1,7 @@
 #ifndef SKEETS_IMAGE_H
 #define SKEETS_IMAGE_H
 
+#include <cstddef>
 #include <stdint.h>
 
 /*
