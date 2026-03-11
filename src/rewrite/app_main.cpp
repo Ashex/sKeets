@@ -1,4 +1,5 @@
 #include "rewrite/bootstrap.h"
+#include "rewrite/feed.h"
 #include "rewrite/platform/device.h"
 #include "rewrite/platform/framebuffer.h"
 #include "rewrite/platform/input.h"
@@ -6,6 +7,7 @@
 #include "rewrite/platform/power.h"
 #include "ui/fb.h"
 #include "ui/font.h"
+#include "util/str.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -40,6 +42,16 @@ constexpr std::uint8_t kColorStatus = 0xE2;
 constexpr int kOuterMargin = 28;
 constexpr int kCardGap = 20;
 constexpr int kCardPadding = 18;
+constexpr int kPostSeparator = 12;
+constexpr std::uint8_t kColorPostBorder = 0xC0;
+constexpr std::uint8_t kColorAuthor = 0x10;
+constexpr std::uint8_t kColorMeta = 0x60;
+constexpr std::uint8_t kColorRepost = 0x50;
+
+enum class rewrite_view_mode_t {
+    dashboard,
+    feed,
+};
 
 struct rewrite_button_t {
     rewrite_rect_t rect;
@@ -59,6 +71,15 @@ struct rewrite_app_t {
     std::string input_line = "Exit via the on-screen button or the hardware power key";
     rewrite_button_t refresh_button;
     rewrite_button_t exit_button;
+
+    // Feed view state
+    rewrite_view_mode_t view_mode = rewrite_view_mode_t::dashboard;
+    rewrite_feed_result_t feed_result;
+    int feed_page_start = 0;      // Index of first visible post
+    int feed_page_count = 0;      // Number of posts that fit on last render
+    rewrite_button_t feed_back_button;
+    rewrite_button_t feed_refresh_button;
+    rewrite_button_t feed_next_button;
 };
 
 void handle_signal(int) {
@@ -67,6 +88,39 @@ void handle_signal(int) {
 
 std::string bool_label(bool value) {
     return value ? "yes" : "no";
+}
+
+std::string sanitize_bitmap_text(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        if (c < 0x80) {
+            out.push_back(static_cast<char>(c));
+            continue;
+        }
+
+        if (i + 2 < text.size()) {
+            const unsigned char c1 = static_cast<unsigned char>(text[i + 1]);
+            const unsigned char c2 = static_cast<unsigned char>(text[i + 2]);
+            if (c == 0xE2 && c1 == 0x80 && c2 == 0x94) {
+                out.push_back('-');
+                i += 2;
+                continue;
+            }
+            if (c == 0xE2 && c1 == 0x80 && (c2 == 0x98 || c2 == 0x99)) {
+                out.push_back('\'');
+                i += 2;
+                continue;
+            }
+        }
+
+        out.push_back('?');
+        while (i + 1 < text.size() && (static_cast<unsigned char>(text[i + 1]) & 0xC0) == 0x80) {
+            ++i;
+        }
+    }
+    return out;
 }
 
 std::string rewrite_dir() {
@@ -199,6 +253,21 @@ void refresh_bootstrap_state(rewrite_app_t& app) {
     app.input_line = app.bootstrap.detail;
 }
 
+void load_feed(rewrite_app_t& app) {
+    if (!app.bootstrap.authenticated) return;
+    app.status_line = "Loading timeline...";
+    app.feed_result = rewrite_fetch_feed(app.bootstrap.session);
+    app.feed_page_start = 0;
+    app.feed_page_count = 0;
+    if (app.feed_result.state == rewrite_feed_state_t::loaded) {
+        app.status_line = std::to_string(app.feed_result.post_count) + " posts loaded";
+        app.input_line = "Tap a post area for details, or use the buttons below";
+    } else {
+        app.status_line = "Feed load failed";
+        app.input_line = app.feed_result.error_message;
+    }
+}
+
 std::vector<std::string> auth_lines(const rewrite_app_t& app) {
     return rewrite_bootstrap_lines(app.bootstrap);
 }
@@ -313,6 +382,182 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
     }
 }
 
+void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
+    const int width = app.framebuffer.info.screen_width;
+    const int height = app.framebuffer.info.screen_height;
+    const int header_height = std::max(72, height / 14);
+    const int button_height = std::max(90, height / 12);
+    const int content_top = header_height;
+    const int content_bottom = height - button_height - kOuterMargin;
+    const int content_width = width - (kOuterMargin * 2);
+    const int line_spacing = 4;
+
+    // Layout bottom buttons: [< Back] [Refresh] [Next >]
+    const int btn_count = 3;
+    const int btn_gap = kCardGap;
+    const int btn_width = (width - (kOuterMargin * 2) - (btn_gap * (btn_count - 1))) / btn_count;
+    const int btn_y = height - button_height - kOuterMargin;
+    app.feed_back_button = {
+        {kOuterMargin, btn_y, btn_width, button_height},
+        "< Back"
+    };
+    app.feed_refresh_button = {
+        {kOuterMargin + btn_width + btn_gap, btn_y, btn_width, button_height},
+        "Refresh"
+    };
+    app.feed_next_button = {
+        {kOuterMargin + (btn_width + btn_gap) * 2, btn_y, btn_width, button_height},
+        "Next >"
+    };
+
+    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+
+    // Header
+    const rewrite_rect_t header_rect{0, 0, width, header_height};
+    rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    draw_centered_text(app, width / 2, (header_height - app.text_fb.font_h) / 2,
+                       "sKeets - Home Timeline", COLOR_WHITE, kColorHeader);
+
+    // Posts
+    const auto& items = app.feed_result.feed.items;
+    const int total = static_cast<int>(items.size());
+    int cursor_y = content_top + kOuterMargin;
+    int rendered = 0;
+
+    if (app.feed_result.state != rewrite_feed_state_t::loaded || total == 0) {
+        const char* msg = total == 0 && app.feed_result.state == rewrite_feed_state_t::loaded
+            ? "No posts in timeline"
+            : app.feed_result.error_message.c_str();
+        font_draw_wrapped(&app.text_fb,
+                          kOuterMargin, cursor_y, content_width,
+                          msg, COLOR_BLACK, COLOR_WHITE, line_spacing);
+    } else {
+        for (int i = app.feed_page_start; i < total && cursor_y < content_bottom; ++i) {
+            const Bsky::Post& post = items[i];
+            // Pre-measure to see if this post will fit
+            int needed = 0;
+            if (!post.reposted_by.empty()) {
+                needed += app.text_fb.font_h + 2;
+            }
+            needed += app.text_fb.font_h + 4; // author line
+            needed += font_measure_wrapped(content_width - 8, post.text.c_str(), line_spacing);
+            needed += app.text_fb.font_h + kPostSeparator + 8; // stats + separator
+
+            // Skip this post if it would overflow (except the first one — always show at least 1)
+            if (rendered > 0 && cursor_y + needed > content_bottom) break;
+
+            // Repost attribution
+            if (!post.reposted_by.empty()) {
+                std::string repost_line = sanitize_bitmap_text(">> Reposted by @" + post.reposted_by);
+                font_draw_string(&app.text_fb, kOuterMargin, cursor_y,
+                                 repost_line.c_str(), kColorRepost, COLOR_WHITE);
+                cursor_y += app.text_fb.font_h + 2;
+            }
+
+            // Author line
+            std::string author = post.author.display_name.empty()
+                ? "@" + post.author.handle
+                : post.author.display_name + "  @" + post.author.handle;
+            author = sanitize_bitmap_text(author);
+
+            char time_buf[64];
+            str_format_time(time_buf, sizeof(time_buf), static_cast<long>(post.indexed_at));
+
+            font_draw_string(&app.text_fb, kOuterMargin, cursor_y,
+                             author.c_str(), kColorAuthor, COLOR_WHITE);
+            // Draw timestamp right-aligned
+            {
+                int time_w = font_measure_string(time_buf);
+                int time_x = width - kOuterMargin - time_w;
+                if (time_x > kOuterMargin + font_measure_string(author.c_str()) + 8) {
+                    font_draw_string(&app.text_fb, time_x, cursor_y,
+                                     time_buf, kColorMeta, COLOR_WHITE);
+                }
+            }
+            cursor_y += app.text_fb.font_h + 4;
+
+            // Post text
+            if (!post.text.empty()) {
+                const std::string post_text = sanitize_bitmap_text(post.text);
+                cursor_y = font_draw_wrapped(&app.text_fb,
+                                             kOuterMargin + 4, cursor_y,
+                                             content_width - 8,
+                                             post_text.c_str(),
+                                             COLOR_BLACK, COLOR_WHITE,
+                                             line_spacing);
+                cursor_y += 4;
+            }
+
+            // Embed indicator (text-only for now)
+            if (post.embed_type == Bsky::EmbedType::Image) {
+                font_draw_string(&app.text_fb, kOuterMargin + 4, cursor_y,
+                                 "[Image]", kColorMeta, COLOR_WHITE);
+                cursor_y += app.text_fb.font_h + 2;
+            } else if (post.embed_type == Bsky::EmbedType::External) {
+                std::string link = sanitize_bitmap_text("[Link: " + post.ext_title + "]");
+                font_draw_string(&app.text_fb, kOuterMargin + 4, cursor_y,
+                                 link.c_str(), kColorMeta, COLOR_WHITE);
+                cursor_y += app.text_fb.font_h + 2;
+            } else if (post.embed_type == Bsky::EmbedType::Quote && post.quoted_post) {
+                std::string quote = sanitize_bitmap_text("[Quote: @" + post.quoted_post->author.handle + "]");
+                font_draw_string(&app.text_fb, kOuterMargin + 4, cursor_y,
+                                 quote.c_str(), kColorMeta, COLOR_WHITE);
+                cursor_y += app.text_fb.font_h + 2;
+            }
+
+            // Stats line
+            std::string stats;
+            if (post.viewer_like.empty()) {
+                stats += "  L:" + std::to_string(post.like_count);
+            } else {
+                stats += " *L:" + std::to_string(post.like_count);
+            }
+            stats += "  R:" + std::to_string(post.reply_count);
+            stats += "  S:" + std::to_string(post.repost_count);
+            font_draw_string(&app.text_fb, kOuterMargin + 4, cursor_y,
+                             stats.c_str(), kColorMeta, COLOR_WHITE);
+            cursor_y += app.text_fb.font_h;
+
+            // Separator line
+            cursor_y += kPostSeparator / 2;
+            rewrite_framebuffer_fill_rect(app.framebuffer,
+                rewrite_rect_t{kOuterMargin, cursor_y, content_width, 1},
+                kColorPostBorder);
+            cursor_y += kPostSeparator / 2;
+
+            rendered++;
+        }
+    }
+    app.feed_page_count = rendered;
+
+    // Page indicator in a small status area above buttons
+    {
+        int end_idx = app.feed_page_start + rendered;
+        const int first_idx = total == 0 ? 0 : app.feed_page_start + 1;
+        std::string page_info = "Posts " + std::to_string(first_idx) +
+                                "-" + std::to_string(end_idx) +
+                                " of " + std::to_string(total);
+        if (!app.feed_result.feed.cursor.empty()) page_info += "+";
+        int info_y = btn_y - app.text_fb.font_h - 8;
+        draw_centered_text(app, width / 2, info_y, page_info, kColorMeta, COLOR_WHITE);
+    }
+
+    // Buttons
+    draw_button(app, app.feed_back_button, kColorButtonSecondary);
+    draw_button(app, app.feed_refresh_button, kColorButtonSecondary);
+    draw_button(app, app.feed_next_button, kColorButtonPrimary);
+
+    std::string error_message;
+    const rewrite_rect_t screen_rect = full_screen_rect(app);
+    if (!rewrite_framebuffer_refresh(app.framebuffer,
+                                     ui_refresh_mode(app, full_refresh),
+                                     screen_rect,
+                                     true,
+                                     &error_message)) {
+        std::fprintf(stderr, "rewrite app: feed refresh failed: %s\n", error_message.c_str());
+    }
+}
+
 void render_fatal_screen(rewrite_framebuffer_t& framebuffer, fb_t& text_fb, const std::string& message) {
     rewrite_framebuffer_clear(framebuffer, COLOR_WHITE);
     const rewrite_rect_t box{48, 120, framebuffer.info.screen_width - 96, framebuffer.info.screen_height - 240};
@@ -345,6 +590,14 @@ void render_fatal_screen(rewrite_framebuffer_t& framebuffer, fb_t& text_fb, cons
                                      &error_message)) {
         std::fprintf(stderr, "rewrite app: fatal-screen refresh failed: %s\n", error_message.c_str());
     }
+}
+
+void render_active_view(rewrite_app_t& app, bool full_refresh) {
+    if (app.view_mode == rewrite_view_mode_t::feed) {
+        render_feed_screen(app, full_refresh);
+        return;
+    }
+    render_screen(app, full_refresh);
 }
 
 } // namespace
@@ -474,7 +727,20 @@ int main(int argc, char* argv[]) {
 
     refresh_bootstrap_state(rewrite_app);
     refresh_runtime_state(rewrite_app);
-    render_screen(rewrite_app, true);
+
+    // If auth succeeded, auto-load the feed and switch to feed view
+    if (rewrite_app.bootstrap.authenticated) {
+        render_screen(rewrite_app, true);  // Show dashboard briefly with auth status
+        load_feed(rewrite_app);
+        if (rewrite_app.feed_result.state == rewrite_feed_state_t::loaded) {
+            rewrite_app.view_mode = rewrite_view_mode_t::feed;
+            render_feed_screen(rewrite_app, true);
+        } else {
+            render_screen(rewrite_app, true);
+        }
+    } else {
+        render_screen(rewrite_app, true);
+    }
 
     auto last_probe = std::chrono::steady_clock::now();
     while (!g_stop_requested) {
@@ -485,15 +751,17 @@ int main(int argc, char* argv[]) {
             if (!error_message.empty()) {
                 rewrite_app.status_line = "Input polling error";
                 rewrite_app.input_line = error_message;
-                render_screen(rewrite_app, false);
+                render_active_view(rewrite_app, false);
             }
 
             const auto now = std::chrono::steady_clock::now();
             if (now - last_probe >= std::chrono::seconds(20)) {
                 refresh_runtime_state(rewrite_app);
-                rewrite_app.status_line = rewrite_app.bootstrap.headline;
-                rewrite_app.input_line = rewrite_app.bootstrap.detail;
-                render_screen(rewrite_app, false);
+                if (rewrite_app.view_mode != rewrite_view_mode_t::feed) {
+                    rewrite_app.status_line = rewrite_app.bootstrap.headline;
+                    rewrite_app.input_line = rewrite_app.bootstrap.detail;
+                }
+                render_active_view(rewrite_app, false);
                 last_probe = now;
             }
             continue;
@@ -520,6 +788,53 @@ int main(int argc, char* argv[]) {
         std::ostringstream touch_message;
         touch_message << "Touch released at " << event.x << "," << event.y;
 
+        // --- Feed view touch handling ---
+        if (rewrite_app.view_mode == rewrite_view_mode_t::feed) {
+            if (contains_point(rewrite_app.feed_back_button.rect, event.x, event.y)) {
+                rewrite_app.view_mode = rewrite_view_mode_t::dashboard;
+                rewrite_app.status_line = rewrite_app.bootstrap.headline;
+                rewrite_app.input_line = rewrite_app.bootstrap.detail;
+                render_screen(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.feed_refresh_button.rect, event.x, event.y)) {
+                render_feed_screen(rewrite_app, false);  // Show current state
+                load_feed(rewrite_app);
+                render_feed_screen(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.feed_next_button.rect, event.x, event.y)) {
+                const int total = static_cast<int>(rewrite_app.feed_result.feed.items.size());
+                int next_start = rewrite_app.feed_page_start + rewrite_app.feed_page_count;
+                if (next_start < total) {
+                    rewrite_app.feed_page_start = next_start;
+                    render_feed_screen(rewrite_app, true);
+                } else if (!rewrite_app.feed_result.feed.cursor.empty()) {
+                    // Load more posts from the server
+                    auto more = rewrite_fetch_feed(rewrite_app.bootstrap.session, 30,
+                                                   rewrite_app.feed_result.feed.cursor);
+                    if (more.state == rewrite_feed_state_t::loaded) {
+                        rewrite_app.feed_page_start = total;  // Jump to newly loaded posts
+                        for (auto& p : more.feed.items) {
+                            rewrite_app.feed_result.feed.items.push_back(std::move(p));
+                        }
+                        rewrite_app.feed_result.feed.cursor = more.feed.cursor;
+                        rewrite_app.feed_result.post_count = static_cast<int>(
+                            rewrite_app.feed_result.feed.items.size());
+                    }
+                    render_feed_screen(rewrite_app, true);
+                }
+                continue;
+            }
+
+            // Tap anywhere else in feed — no action for now
+            continue;
+        }
+
+        // --- Dashboard view touch handling ---
+
         if (contains_point(rewrite_app.exit_button.rect, event.x, event.y)) {
             rewrite_app.status_line = "Exit requested";
             rewrite_app.input_line = touch_message.str();
@@ -530,9 +845,20 @@ int main(int argc, char* argv[]) {
         if (contains_point(rewrite_app.refresh_button.rect, event.x, event.y)) {
             refresh_bootstrap_state(rewrite_app);
             refresh_runtime_state(rewrite_app);
-            rewrite_app.status_line = rewrite_app.bootstrap.headline;
-            rewrite_app.input_line = touch_message.str();
-            render_screen(rewrite_app, false);
+            if (rewrite_app.bootstrap.authenticated) {
+                render_screen(rewrite_app, false);
+                load_feed(rewrite_app);
+                if (rewrite_app.feed_result.state == rewrite_feed_state_t::loaded) {
+                    rewrite_app.view_mode = rewrite_view_mode_t::feed;
+                    render_feed_screen(rewrite_app, true);
+                } else {
+                    render_screen(rewrite_app, false);
+                }
+            } else {
+                rewrite_app.status_line = rewrite_app.bootstrap.headline;
+                rewrite_app.input_line = touch_message.str();
+                render_screen(rewrite_app, false);
+            }
             last_probe = std::chrono::steady_clock::now();
             continue;
         }

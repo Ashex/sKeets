@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <climits>
 #include <cstring>
+#include <cstdlib>
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/input.h>
@@ -17,6 +18,11 @@
 namespace {
 
 constexpr int kMaxContacts = 16;
+
+bool env_flag_enabled(const char* key) {
+    const char* value = std::getenv(key);
+    return value && std::strcmp(value, "1") == 0;
+}
 
 bool is_touch_tool_key(int code) {
     return code == BTN_TOUCH ||
@@ -110,6 +116,8 @@ void map_touch_point(const rewrite_input_t& input,
     int y = normalize_axis(raw_y, device.y_min, device.y_max,
                            device.swap_axes ? input.framebuffer_width - 1 : input.framebuffer_height - 1);
     if (device.swap_axes) std::swap(x, y);
+    if (device.mirror_x) x = (input.framebuffer_width - 1) - x;
+    if (device.mirror_y) y = (input.framebuffer_height - 1) - y;
     mapped_x = x;
     mapped_y = y;
 }
@@ -215,6 +223,8 @@ bool scan_input_device(const std::string& path,
         info.has_tracking_id = ioctl(fd, EVIOCGABS(ABS_MT_TRACKING_ID), &absinfo) == 0;
         if (info.is_touch_device) {
             info.swap_axes = should_swap_axes(info, fb_w, fb_h);
+            info.mirror_x = env_flag_enabled("SKEETS_REWRITE_TOUCH_MIRROR_X");
+            info.mirror_y = env_flag_enabled("SKEETS_REWRITE_TOUCH_MIRROR_Y");
         }
     }
 

@@ -25,6 +25,8 @@ struct rewrite_input_device_info_t {
     int y_min = 0;
     int y_max = 0;
     bool swap_axes = false;
+    bool mirror_x = false;
+    bool mirror_y = false;
 };
 
 enum class rewrite_input_event_type_t {

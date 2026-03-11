@@ -13,6 +13,38 @@ namespace {
 
 constexpr const char* kDefaultAppView = "https://api.bsky.app";
 
+bool looks_like_transient_network_error(const std::string& error_message) {
+    return error_message.find("Host ") != std::string::npos ||
+           error_message.find("Network") != std::string::npos ||
+           error_message.find("timed out") != std::string::npos ||
+           error_message.find("Temporary failure") != std::string::npos;
+}
+
+bool resume_saved_session_with_retry(const Bsky::Session& session, std::string& error_message) {
+    const std::string host = session.pds_url.empty() ? Bsky::DEFAULT_SERVICE_HOST : session.pds_url;
+    for (int attempt = 1; attempt <= 3; ++attempt) {
+        bool resumed = false;
+        error_message.clear();
+        Bsky::AtprotoClient client(host);
+        client.resumeSession(session,
+                             [&resumed]() { resumed = true; },
+                             [&error_message](const std::string& error) { error_message = error; });
+        if (resumed) {
+            return true;
+        }
+
+        std::fprintf(stderr,
+                     "rewrite bootstrap: session resume attempt %d failed: %s\n",
+                     attempt,
+                     error_message.c_str());
+        if (attempt == 3 || !looks_like_transient_network_error(error_message)) {
+            return false;
+        }
+        usleep(500000);
+    }
+    return false;
+}
+
 std::string normalize_url(std::string value) {
     if (value.empty()) return value;
     if (value.find("://") == std::string::npos) {
@@ -115,35 +147,33 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     }
 
     const Bsky::Session saved_session = load_saved_session();
+    std::string saved_session_error;
     if (has_saved_session(saved_session)) {
         std::fprintf(stderr,
                  "rewrite bootstrap: attempting session resume for handle=%s pds=%s\n",
                  saved_session.handle.c_str(),
                  saved_session.pds_url.c_str());
 
-        bool resumed = false;
-        std::string error_message;
-        Bsky::AtprotoClient client(saved_session.pds_url.empty() ? Bsky::DEFAULT_SERVICE_HOST : saved_session.pds_url);
-        client.resumeSession(saved_session,
-                             [&resumed]() { resumed = true; },
-                             [&error_message](const std::string& error) { error_message = error; });
-        if (resumed) {
+        if (resume_saved_session_with_retry(saved_session, saved_session_error)) {
             rewrite_bootstrap_result_t result;
             result.state = rewrite_bootstrap_state_t::session_restored;
             result.session = saved_session;
             result.headline = "Saved session restored";
-            result.detail = "Authentication is valid. Feed bootstrap is the next rewrite milestone.";
+            result.detail = "Authentication is valid. Loading the home timeline.";
             result.authenticated = true;
             result.used_saved_session = true;
             return result;
         }
 
-        std::fprintf(stderr, "rewrite bootstrap: session resume failed: %s\n", error_message.c_str());
+        std::fprintf(stderr, "rewrite bootstrap: session resume failed after retries: %s\n", saved_session_error.c_str());
     }
 
     bool found_login_file = false;
     const rewrite_login_txt_t login = read_login_txt(found_login_file);
     if (!found_login_file) {
+        if (has_saved_session(saved_session)) {
+            return make_error_result(saved_session_error.empty() ? "Saved session resume failed" : saved_session_error, false);
+        }
         return make_waiting_result();
     }
 

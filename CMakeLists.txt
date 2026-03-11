@@ -190,6 +190,7 @@ target_include_directories(sKeets_rewrite_tool PRIVATE
 add_executable(sKeets_rewrite
     src/rewrite/app_main.cpp
     src/rewrite/bootstrap.cpp
+    src/rewrite/feed.cpp
     src/atproto/atproto_client.cpp
     src/rewrite/platform/device.cpp
     src/rewrite/platform/framebuffer.cpp
