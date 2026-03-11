@@ -14,8 +14,13 @@ struct app_state {
     Bsky::Session   session;
     Bsky::Feed      feed;
     std::shared_ptr<Bsky::Post> selected_post;
+    std::string     pending_handle;
+    std::string     pending_password;
+    std::string     pending_pds_url;
+    std::string     pending_appview_url;
     bool            profile_images_enabled = true;
     bool            embed_images_enabled   = false;
+    bool            pending_login  = false;
     bool            running        = false;
     fb_t            fb{};
     input_ctx_t    *input          = nullptr;

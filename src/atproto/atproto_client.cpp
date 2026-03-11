@@ -10,6 +10,8 @@
 
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QString>
 
 namespace Bsky {
@@ -127,6 +129,56 @@ void AtprotoClient::changeHost(const std::string& newHost) {
 
 void AtprotoClient::createSession(const std::string& identifier, const std::string& password,
                                    const SessionCb& successCb, const ErrorCb& errorCb) {
+    if (!mHost.empty() && mHost != DEFAULT_SERVICE_HOST) {
+        auto xrpc = std::make_unique<Xrpc::Client>(QString::fromStdString(mHost));
+        QEventLoop loop;
+        QJsonObject root;
+        root.insert("identifier", QString::fromStdString(identifier));
+        root.insert("password", QString::fromStdString(password));
+
+        xrpc->post("com.atproto.server.createSession", QJsonDocument(root), {},
+            [this, &loop, successCb](ATProto::ComATProtoServer::Session::SharedPtr session) {
+                if (!session) {
+                    if (successCb) successCb(Session{});
+                    loop.quit();
+                    return;
+                }
+
+                Session sess;
+                sess.access_jwt  = session->mAccessJwt.toStdString();
+                sess.refresh_jwt = session->mRefreshJwt.toStdString();
+                sess.did         = session->mDid.toStdString();
+                sess.handle      = session->mHandle.toStdString();
+
+                auto pds = session->getPDS();
+                if (pds) {
+                    sess.pds_url = pds->toStdString();
+                }
+                if (sess.pds_url.empty())
+                    sess.pds_url = mHost;
+
+                if (sess.pds_url != mHost)
+                    changeHost(sess.pds_url);
+
+                mClient->setSession(std::move(session));
+                successCb(sess);
+                loop.quit();
+            },
+            [&loop, errorCb](const QString& err, const QJsonDocument& json) {
+                QString msg = err;
+                if (json.isObject()) {
+                    const QJsonObject obj = json.object();
+                    const QString serverMsg = obj.value("message").toString();
+                    if (!serverMsg.isEmpty())
+                        msg = serverMsg;
+                }
+                errorCb(msg.toStdString());
+                loop.quit();
+            });
+        loop.exec();
+        return;
+    }
+
     QEventLoop loop;
     mClient->createSession(
         QString::fromStdString(identifier),

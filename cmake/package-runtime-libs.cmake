@@ -31,6 +31,11 @@ endforeach()
 file(REMOVE_RECURSE "${DEST_LIB_DIR}")
 file(MAKE_DIRECTORY "${DEST_LIB_DIR}")
 file(MAKE_DIRECTORY "${DEST_APP_DIR}/plugins")
+
+if(EXISTS "${DEST_APP_DIR}/lib" OR IS_SYMLINK "${DEST_APP_DIR}/lib")
+    file(REMOVE_RECURSE "${DEST_APP_DIR}/lib")
+endif()
+file(MAKE_DIRECTORY "${DEST_APP_DIR}/lib")
 file(MAKE_DIRECTORY "${DEST_APP_DIR}/locale")
 file(MAKE_DIRECTORY "${DEST_APP_DIR}/ssl/certs")
 
@@ -67,6 +72,29 @@ foreach(lib IN LISTS runtime_libs)
     get_filename_component(dest_name "${lib}" NAME)
     file(COPY_FILE "${resolved_lib}" "${DEST_LIB_DIR}/${dest_name}" ONLY_IF_DIFFERENT)
 endforeach()
+
+if(EXISTS "${DEST_LIB_DIR}/libssl.so")
+    file(REMOVE "${DEST_LIB_DIR}/libssl.so")
+endif()
+if(EXISTS "${DEST_LIB_DIR}/libcrypto.so")
+    file(REMOVE "${DEST_LIB_DIR}/libcrypto.so")
+endif()
+# Use real copies instead of symlinks — the Kobo's /mnt/onboard is VFAT
+# which cannot represent symlinks, so tar extraction silently drops them.
+file(COPY_FILE "${DEST_LIB_DIR}/libssl.so.3" "${DEST_LIB_DIR}/libssl.so" ONLY_IF_DIFFERENT)
+file(COPY_FILE "${DEST_LIB_DIR}/libcrypto.so.3" "${DEST_LIB_DIR}/libcrypto.so" ONLY_IF_DIFFERENT)
+
+file(COPY_FILE "${DEST_LIB_DIR}/libssl.so.3" "${DEST_APP_DIR}/lib/libssl.so.3" ONLY_IF_DIFFERENT)
+file(COPY_FILE "${DEST_LIB_DIR}/libcrypto.so.3" "${DEST_APP_DIR}/lib/libcrypto.so.3" ONLY_IF_DIFFERENT)
+
+if(EXISTS "${DEST_APP_DIR}/lib/libssl.so")
+    file(REMOVE "${DEST_APP_DIR}/lib/libssl.so")
+endif()
+if(EXISTS "${DEST_APP_DIR}/lib/libcrypto.so")
+    file(REMOVE "${DEST_APP_DIR}/lib/libcrypto.so")
+endif()
+file(COPY_FILE "${DEST_APP_DIR}/lib/libssl.so.3" "${DEST_APP_DIR}/lib/libssl.so" ONLY_IF_DIFFERENT)
+file(COPY_FILE "${DEST_APP_DIR}/lib/libcrypto.so.3" "${DEST_APP_DIR}/lib/libcrypto.so" ONLY_IF_DIFFERENT)
 
 if(NOT EXISTS "${QT_TLS_PLUGIN_DIR}")
     message(FATAL_ERROR "Qt TLS plugin directory not found: ${QT_TLS_PLUGIN_DIR}")

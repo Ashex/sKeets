@@ -7,13 +7,15 @@ SKEETS_DIR="/mnt/onboard/.adds/sKeets"
 LOG="${SKEETS_DIR}/sKeets.log"
 LIB_DIR="/mnt/onboard/.adds/lib"
 LOADER="${LIB_DIR}/ld-linux-armhf.so.3"
-APP_LIBRARY_PATH="${LIB_DIR}:/usr/local/Kobo${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+INHERITED_LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"
+APP_LIBRARY_PATH="${LIB_DIR}"
 APP_PLUGIN_PATH="${SKEETS_DIR}/plugins"
 APP_LOCALE_PATH="${SKEETS_DIR}/locale"
 APP_CA_CERT_FILE="${SKEETS_DIR}/ssl/certs/ca-certificates.crt"
 
 exec >>"$LOG" 2>&1
 
+echo "Inherited LD_LIBRARY_PATH: ${INHERITED_LD_LIBRARY_PATH}"
 echo "App library path: ${APP_LIBRARY_PATH}"
 
 echo "=== start $(date) ==="
@@ -72,6 +74,7 @@ start_watchdog
 echo "Launching ${SKEETS_DIR}/sKeets"
 LOCPATH="${APP_LOCALE_PATH}" \
 LANG=C.UTF-8 LC_ALL=C.UTF-8 LC_CTYPE=C.UTF-8 \
+LD_LIBRARY_PATH="${APP_LIBRARY_PATH}" \
 QT_PLUGIN_PATH="${APP_PLUGIN_PATH}" \
 SSL_CERT_FILE="${APP_CA_CERT_FILE}" \
 SKEETS_FONT_DIR="${SKEETS_DIR}/fonts" \

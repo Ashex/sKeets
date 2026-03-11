@@ -17,6 +17,81 @@
 #include <stdio.h>
 #include <time.h>
 
+static void save_session_config(const app_state_t *state) {
+    if (!state) return;
+    config_t *cfg = config_open(skeets_config_path());
+    if (!cfg) return;
+    config_set_str(cfg, "handle",      state->session.handle.c_str());
+    config_set_str(cfg, "access_jwt",  state->session.access_jwt.c_str());
+    config_set_str(cfg, "refresh_jwt", state->session.refresh_jwt.c_str());
+    config_set_str(cfg, "did",         state->session.did.c_str());
+    config_set_str(cfg, "pds_url",     state->session.pds_url.c_str());
+    if (!state->session.appview_url.empty())
+        config_set_str(cfg, "appview_url", state->session.appview_url.c_str());
+    config_save(cfg);
+    config_free(cfg);
+}
+
+static void clear_pending_login(app_state_t *state) {
+    if (!state) return;
+    state->pending_login = false;
+    state->pending_handle.clear();
+    state->pending_password.clear();
+    state->pending_pds_url.clear();
+    state->pending_appview_url.clear();
+}
+
+static void try_pending_login(app_state_t *state) {
+    if (!state || !state->pending_login) return;
+
+    fprintf(stderr, "app_run: attempting login.txt sign-in for %s\n",
+            state->pending_handle.c_str());
+    auth_view_set_error(nullptr);
+    auth_view_set_info("Signing in...");
+    auth_view_draw(state);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+
+    if (!state->pending_pds_url.empty())
+        state->atproto_client->changeHost(state->pending_pds_url);
+
+    bool ok = false;
+    std::string err_msg;
+    state->atproto_client->createSession(state->pending_handle, state->pending_password,
+        [state, &ok](const Bsky::Session& sess) {
+            state->session = sess;
+            ok = true;
+        },
+        [&err_msg](const std::string& e) {
+            err_msg = e;
+        });
+
+    if (!ok) {
+        fprintf(stderr, "app_run: login.txt sign-in failed: %s\n", err_msg.c_str());
+        auth_view_set_info(nullptr);
+        auth_view_set_error(err_msg.empty() ? "Login failed from login.txt" : err_msg.c_str());
+        auth_view_draw(state);
+        clear_pending_login(state);
+        return;
+    }
+
+    state->session_last_refresh = time(nullptr);
+    if (!state->pending_appview_url.empty())
+        state->session.appview_url = state->pending_appview_url;
+    save_session_config(state);
+    remove(skeets_login_txt_path());
+
+    auth_view_set_error(nullptr);
+    auth_view_set_info("Login successful");
+    auth_view_draw(state);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+
+    fprintf(stderr, "app_run: login.txt sign-in succeeded; loading initial feed\n");
+    clear_pending_login(state);
+    app_set_info(state, "Loading feed...");
+    auth_view_set_info(nullptr);
+    app_switch_view(state, VIEW_FEED);
+}
+
 int app_init(app_state_t *state) {
     if (!state) return -1;
     *state = app_state_t{};
@@ -121,41 +196,13 @@ int app_init(app_state_t *state) {
                 fclose(f);
 
                 if (lt_handle[0] && lt_password[0]) {
-                    if (lt_pds_url[0])
-                        state->atproto_client->changeHost(lt_pds_url);
-
-                    bool ok = false;
-                    std::string err_msg;
-                    std::string appview_str = lt_appview[0] ? lt_appview : "";
-                    state->atproto_client->createSession(lt_handle, lt_password,
-                        [state, &ok, appview_str](const Bsky::Session& sess) {
-                            state->session = sess;
-                            if (!appview_str.empty())
-                                state->session.appview_url = appview_str;
-                            ok = true;
-                        },
-                        [&err_msg](const std::string& e) { err_msg = e; });
-
-                    remove(login_txt);
-
-                    if (ok) {
-                        state->session_last_refresh = time(nullptr);
-                        config_t *cfg2 = config_open(skeets_config_path());
-                        if (cfg2) {
-                            config_set_str(cfg2, "handle",      state->session.handle.c_str());
-                            config_set_str(cfg2, "access_jwt",  state->session.access_jwt.c_str());
-                            config_set_str(cfg2, "refresh_jwt", state->session.refresh_jwt.c_str());
-                            config_set_str(cfg2, "did",         state->session.did.c_str());
-                            config_set_str(cfg2, "pds_url",     state->session.pds_url.c_str());
-                            if (!state->session.appview_url.empty())
-                                config_set_str(cfg2, "appview_url", state->session.appview_url.c_str());
-                            config_save(cfg2);
-                            config_free(cfg2);
-                        }
-                        state->current_view = VIEW_FEED;
-                    } else {
-                        auth_view_set_error(err_msg.empty() ? "Login failed from login.txt" : err_msg.c_str());
-                    }
+                    state->pending_login = true;
+                    state->pending_handle = lt_handle;
+                    state->pending_password = lt_password;
+                    state->pending_pds_url = lt_pds_url;
+                    state->pending_appview_url = lt_appview;
+                    auth_view_set_info("login.txt found; ready to sign in");
+                    fprintf(stderr, "app_init: login.txt queued for sign-in\n");
                 } else {
                     remove(login_txt);
                     auth_view_set_error("login.txt missing handle or password fields");
@@ -265,6 +312,10 @@ void app_run(app_state_t *state) {
     fprintf(stderr, "app_run: drawing initial view=%d\n", (int)state->current_view);
     app_switch_view(state, state->current_view);
     fprintf(stderr, "app_run: initial view draw complete\n");
+
+    if (state->pending_login) {
+        try_pending_login(state);
+    }
 
     input_event_t ev{};
     while (state->running) {

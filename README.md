@@ -97,7 +97,26 @@ Docker bind mounts, use `sudo rm -rf build-kobo`.
 ```sh
 ./docker-build.sh
 # Produces: build-kobo/KoboRoot.tgz
+
+NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh
+# Produces: build-kobo/KoboRoot.tgz
 ```
+
+The rewrite package currently boots a diagnostics entrypoint by default via
+`/mnt/onboard/.adds/sKeets-rewrite/run-rewrite.sh`. It also ships rewrite-owned
+Wi-Fi lifecycle scripts under `/mnt/onboard/.adds/sKeets-rewrite/scripts/wifi/`.
+Use `/mnt/onboard/.adds/sKeets-rewrite/run-rewrite.sh app` to launch the first
+rewrite app shell after Nickel is stopped.
+Use `/mnt/onboard/.adds/sKeets-rewrite/run-rewrite.sh fb-diag` to validate the
+rewrite framebuffer and refresh path with Nickel stopped.
+For NickelMenu, the rewrite package also installs:
+- `/mnt/onboard/.adds/sKeets-rewrite/launch-app.sh`
+- `/mnt/onboard/.adds/sKeets-rewrite/launch-diag.sh`
+- `/mnt/onboard/.adds/sKeets-rewrite/launch-fb-diag.sh`
+- `/mnt/onboard/.adds/sKeets-rewrite/launch-input-diag.sh`
+- `/mnt/onboard/.adds/sKeets-rewrite/launch-power-diag.sh`
+- `/mnt/onboard/.adds/sKeets-rewrite/launch-network-diag.sh`
+- `/mnt/onboard/.adds/sKeets-rewrite/launch-phase2-diag.sh`
 
 ### Native (for development / testing on ARM Linux)
 
@@ -123,6 +142,9 @@ ninja -j$(nproc)
 ```sh
 ninja kobo-package
 # Produces: build-arm/KoboRoot.tgz
+
+ninja kobo-package-rewrite
+# Produces: build-arm/KoboRoot.tgz
 ```
 
 ## Installation
@@ -142,6 +164,35 @@ The `run.sh` wrapper kills Nickel and its companion processes so sKeets can
 take over the framebuffer, feeds the hardware watchdog, and reboots the device
 on exit to bring Nickel back. The `:quiet` flag suppresses the PID notification
 popup. Logs are written to `/mnt/onboard/.adds/sKeets/sKeets.log`.
+
+### Rewrite NickelMenu entries (`/mnt/onboard/.adds/nm/sKeets-rewrite`)
+
+```
+menu_item :main  :sKeets Rewrite App      :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-app.sh
+menu_item :main  :sKeets Rewrite Diag     :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-diag.sh
+menu_item :main  :sKeets Rewrite FB Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-fb-diag.sh
+menu_item :main  :sKeets Rewrite Input Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-input-diag.sh
+menu_item :main  :sKeets Rewrite Power Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-power-diag.sh
+menu_item :main  :sKeets Rewrite Network Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-network-diag.sh
+menu_item :main  :sKeets Rewrite Phase2 Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-phase2-diag.sh
+```
+
+`sKeets Rewrite App` stops Nickel, opens the rewrite framebuffer and input
+paths, reads rewrite-local credentials from `/mnt/onboard/.adds/sKeets-rewrite/login.txt`,
+persists rewrite-local session state in `/mnt/onboard/.adds/sKeets-rewrite/config.ini`,
+renders the bootstrap/auth shell, and lets you exit cleanly via the on-screen
+Exit button or the hardware power key.
+`sKeets Rewrite Diag` only runs the environment and package diagnostics.
+`sKeets Rewrite FB Diag` stops Nickel first, opens the rewrite framebuffer path,
+draws a simple grayscale test pattern, and logs refresh capability details.
+`sKeets Rewrite Input Diag` stops Nickel first, grabs rewrite-selected input devices,
+logs the touch device selection, and listens briefly for raw touch transitions.
+`sKeets Rewrite Power Diag` keeps Nickel running and reports battery state,
+charging state, standby support, and whether suspend is currently safe.
+`sKeets Rewrite Network Diag` keeps Nickel running and reports radio presence,
+link state, assigned addresses, default-route availability, DNS resolution, and overall online state.
+`sKeets Rewrite Phase2 Diag` stops Nickel once and runs the full Phase 2 diagnostic pass
+across framebuffer, input, power, and network in a single launch.
 
 ### KFMon entry (with app icon)
 
@@ -179,7 +230,8 @@ images_enabled=false
 All fields except `images_enabled` are written automatically by the login flow
 (see below). Tokens are stored in plain text. Use a dedicated
 [app password](https://bsky.app/settings/app-passwords) rather than your main
-account password.
+account password. Initial sign-in currently uses `login.txt`; `config.ini` is
+generated and updated by the app after a successful login.
 
 For development and future plugin migration work, the storage root can be
 overridden with the `SKEETS_DATA_DIR` environment variable. If unset, the app
@@ -188,23 +240,24 @@ defaults to `/mnt/onboard/.adds/sKeets`.
 ### Quick Setup (pre-fill from computer)
 
 Typing on the Kobo's touch keyboard is slow. You can skip it entirely by
-pre-filling your credentials from a computer:
+pre-filling your credentials from a computer with `login.txt`:
 
 1. Connect the Kobo via USB and open the mounted drive.
-2. Create or edit `.adds/sKeets/config.ini` with a text editor:
+2. Create or edit `.adds/sKeets/login.txt` with a text editor:
 
    ```ini
    handle=you.bsky.social
-   app_password=xxxx-xxxx-xxxx-xxxx
+   password=xxxx-xxxx-xxxx-xxxx
    pds_url=
+   appview=https://api.bsky.app
    ```
 
    Leave `pds_url` blank for Bluesky accounts. Set it only for a self-hosted or
-   third-party PDS.
+   third-party PDS. `appview` is optional and can usually be left at the
+   default.
 3. Safely eject the Kobo and launch sKeets.
 4. The app reads the pre-filled credentials, logs in automatically, and
-   **removes `app_password` from the file** — it is never kept on disk after
-   the first launch.
+   **removes `login.txt` after a successful read**.
 
 If the auto-login fails (wrong password, network error, etc.) the login screen
 is shown with the handle already filled in so you only need to re-enter the
