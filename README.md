@@ -88,24 +88,23 @@ A pre-built sysroot can be obtained from the
 
 ## Building
 
-### Convenience targets
+### Docker build (recommended)
 
-Use the top-level `Makefile` when you want a repeatable Docker build and a
-clean step that can remove root-owned build artifacts left behind by bind
-mounts inside Docker:
+Use `docker-build.sh` for a repeatable cross-compilation inside Docker. Build
+artifacts land in `build-kobo/`. To remove root-owned files left behind by
+Docker bind mounts, use `sudo rm -rf build-kobo`.
 
 ```sh
-make build    # run ./docker-build.sh
-make clean    # sudo rm -rf build-kobo build-local build build-arm
-make rebuild  # clean first, then build again
+./docker-build.sh
+# Produces: build-kobo/KoboRoot.tgz
 ```
 
 ### Native (for development / testing on ARM Linux)
 
 ```sh
 mkdir build && cd build
-cmake ..
-make -j$(nproc)
+cmake .. -GNinja
+ninja -j$(nproc)
 ```
 
 ### Cross-compile for Kobo Clara Colour
@@ -114,14 +113,15 @@ make -j$(nproc)
 mkdir build-arm && cd build-arm
 cmake .. \
   -DCMAKE_TOOLCHAIN_FILE=../toolchain/arm-kobo-linux-gnueabihf.cmake \
-  -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
+  -DCMAKE_BUILD_TYPE=Release \
+  -GNinja
+ninja -j$(nproc)
 ```
 
 ### Create a KoboRoot package
 
 ```sh
-make kobo-package
+ninja kobo-package
 # Produces: build-arm/KoboRoot.tgz
 ```
 
