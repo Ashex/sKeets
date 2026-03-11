@@ -103,7 +103,7 @@ endif()
 ExternalProject_Add(fbink_ext
     GIT_REPOSITORY    https://github.com/NiLuJe/FBInk.git
     GIT_TAG           ede0a8d0a107768609fde9a68aab5f5c583be398
-    GIT_SUBMODULES    font8x8 stb libunibreak i2c-tools
+    GIT_SUBMODULES    font8x8 stb libunibreak
     CONFIGURE_COMMAND ""
     BUILD_COMMAND     ${_FBINK_BUILD_CMD}
     INSTALL_COMMAND   ""
