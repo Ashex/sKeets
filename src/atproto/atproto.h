@@ -31,6 +31,9 @@ struct Post {
     std::string reply_parent_uri, reply_parent_cid;
     std::string reply_root_uri,   reply_root_cid;
     std::vector<std::shared_ptr<Post>> replies;
+    std::string viewer_like;    /* AT-URI of this user's like record, or empty */
+    std::string viewer_repost;  /* AT-URI of this user's repost record, or empty */
+    std::string reposted_by;    /* handle of reposter, or empty if not a repost */
 };
 
 struct Feed {
@@ -45,7 +48,8 @@ struct Session {
     std::string handle;
     std::string display_name;
     std::string avatar_url;
-    std::string pds_url;     /* Actual PDS endpoint (from DID doc or user override). */
+    std::string pds_url;        /* Actual PDS endpoint (from DID doc or user override). */
+    std::string appview_url;    /* AppView endpoint for feed/thread queries (from login.txt or default). */
 };
 
 } // namespace Bsky

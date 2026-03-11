@@ -71,7 +71,6 @@ int app_init(app_state_t *state) {
         const char *saved_access   = config_get_str(cfg, "access_jwt",   "");
         const char *saved_refresh  = config_get_str(cfg, "refresh_jwt",  "");
         const char *saved_did      = config_get_str(cfg, "did",          "");
-        const char *prefill_pass   = config_get_str(cfg, "app_password", "");
 
         const bool has_saved_session = saved_handle[0] && saved_access[0] && saved_did[0];
         if (has_saved_session) {
@@ -80,6 +79,7 @@ int app_init(app_state_t *state) {
             state->session.refresh_jwt = saved_refresh;
             state->session.did         = saved_did;
             state->session.pds_url     = saved_pds_url;
+            state->session.appview_url = config_get_str(cfg, "appview_url", "");
 
             bool session_resumed = false;
             state->atproto_client->resumeSession(state->session,
@@ -88,35 +88,72 @@ int app_init(app_state_t *state) {
             if (session_resumed)
                 state->current_view = VIEW_FEED;
 
-        } else if (saved_handle[0] && prefill_pass[0]) {
-            /* Pre-filled credentials from login.txt – attempt auto-login. */
-            if (!saved_pds_url.empty())
-                state->atproto_client->changeHost(saved_pds_url);
+        } else {
+            // No saved session — check for login.txt
+            const char *login_txt = skeets_login_txt_path();
+            FILE *f = fopen(login_txt, "r");
+            if (f) {
+                char lt_handle[128]   = {};
+                char lt_password[128] = {};
+                char lt_pds_url[256]  = {};
+                char lt_appview[256]  = {};
 
-            bool ok = false;
-            std::string err_msg;
-            state->atproto_client->createSession(saved_handle, prefill_pass,
-                [state, &ok](const Bsky::Session& sess) {
-                    state->session = sess;
-                    ok = true;
-                },
-                [&err_msg](const std::string& e) {
-                    err_msg = e;
-                });
+                char line[512];
+                while (fgets(line, sizeof(line), f)) {
+                    int len = (int)strlen(line);
+                    while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' '))
+                        line[--len] = '\0';
+                    char *eq = strchr(line, '=');
+                    if (!eq) continue;
+                    *eq = '\0';
+                    const char *k = line;
+                    const char *v = eq + 1;
+                    if (strcmp(k, "handle")   == 0)      strncpy(lt_handle,   v, sizeof(lt_handle)-1);
+                    else if (strcmp(k, "password") == 0) strncpy(lt_password, v, sizeof(lt_password)-1);
+                    else if (strcmp(k, "pds_url")  == 0) strncpy(lt_pds_url,  v, sizeof(lt_pds_url)-1);
+                    else if (strcmp(k, "appview")  == 0) strncpy(lt_appview,  v, sizeof(lt_appview)-1);
+                }
+                fclose(f);
 
-            /* Always remove the plain-text password from the config. */
-            config_set_str(cfg, "app_password", "");
-            if (ok) {
-                config_set_str(cfg, "handle",      state->session.handle.c_str());
-                config_set_str(cfg, "access_jwt",  state->session.access_jwt.c_str());
-                config_set_str(cfg, "refresh_jwt", state->session.refresh_jwt.c_str());
-                config_set_str(cfg, "did",         state->session.did.c_str());
-                config_set_str(cfg, "pds_url",     state->session.pds_url.c_str());
-                config_save(cfg);
-                state->current_view = VIEW_FEED;
-            } else {
-                config_save(cfg);
-                auth_view_set_error(err_msg.empty() ? "Auto sign-in failed" : err_msg.c_str());
+                if (lt_handle[0] && lt_password[0]) {
+                    if (lt_pds_url[0])
+                        state->atproto_client->changeHost(lt_pds_url);
+
+                    bool ok = false;
+                    std::string err_msg;
+                    std::string appview_str = lt_appview[0] ? lt_appview : "";
+                    state->atproto_client->createSession(lt_handle, lt_password,
+                        [state, &ok, appview_str](const Bsky::Session& sess) {
+                            state->session = sess;
+                            if (!appview_str.empty())
+                                state->session.appview_url = appview_str;
+                            ok = true;
+                        },
+                        [&err_msg](const std::string& e) { err_msg = e; });
+
+                    remove(login_txt);
+
+                    if (ok) {
+                        config_t *cfg2 = config_open(skeets_config_path());
+                        if (cfg2) {
+                            config_set_str(cfg2, "handle",      state->session.handle.c_str());
+                            config_set_str(cfg2, "access_jwt",  state->session.access_jwt.c_str());
+                            config_set_str(cfg2, "refresh_jwt", state->session.refresh_jwt.c_str());
+                            config_set_str(cfg2, "did",         state->session.did.c_str());
+                            config_set_str(cfg2, "pds_url",     state->session.pds_url.c_str());
+                            if (!state->session.appview_url.empty())
+                                config_set_str(cfg2, "appview_url", state->session.appview_url.c_str());
+                            config_save(cfg2);
+                            config_free(cfg2);
+                        }
+                        state->current_view = VIEW_FEED;
+                    } else {
+                        auth_view_set_error(err_msg.empty() ? "Login failed from login.txt" : err_msg.c_str());
+                    }
+                } else {
+                    remove(login_txt);
+                    auth_view_set_error("login.txt missing handle or password fields");
+                }
             }
         }
 

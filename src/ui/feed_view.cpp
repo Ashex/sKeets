@@ -26,6 +26,8 @@ static bool s_layout_dirty = true;
 static int measure_post_height(const Bsky::Post& post, bool embed_images,
                                 int content_w, int font_h) {
     int h = POST_PAD;
+    if (!post.reposted_by.empty())
+        h += font_h + 2;
     h += font_h + 4;
     h += font_measure_wrapped(content_w, post.text.c_str(), 2) + 4;
     if (post.embed_type == Bsky::EmbedType::Image && embed_images && !post.image_urls.empty())
@@ -59,9 +61,20 @@ static void compute_layout(const Bsky::Feed& feed, bool embed_images, int fb_w, 
 }
 
 static void draw_stats_line(fb_t *fb, int x, int y, const Bsky::Post& post) {
-    char buf[128];
-    snprintf(buf, sizeof(buf), "\xe2\x99\xa1 %d  \xe2\x86\xa9 %d  \xe2\x9f\xb3 %d",
-             post.like_count, post.reply_count, post.repost_count);
+    char buf[256];
+    const char *heart       = post.viewer_like.empty()   ? "\xe2\x99\xa1" : "\xe2\x99\xa5";
+    const char *repost_icon = post.viewer_repost.empty() ? "\xe2\x9f\xb3" : "\xe2\x9f\xb2";
+    snprintf(buf, sizeof(buf), "%s %d  \xe2\x86\xa9 %d  %s %d",
+             heart, post.like_count,
+             post.reply_count,
+             repost_icon, post.repost_count);
+    font_draw_string(fb, x, y, buf, COLOR_GRAY, COLOR_WHITE);
+}
+
+static void draw_repost_line(fb_t *fb, int x, int y, const Bsky::Post& post) {
+    if (post.reposted_by.empty()) return;
+    char buf[256];
+    snprintf(buf, sizeof(buf), "\xe2\x9f\xb3 Reposted by @%s", post.reposted_by.c_str());
     font_draw_string(fb, x, y, buf, COLOR_GRAY, COLOR_WHITE);
 }
 
@@ -114,6 +127,11 @@ static void draw_post(fb_t *fb, int draw_y, const Bsky::Post& post,
     int font_h = font_cell_h();
     int screen_y = draw_y - scroll;
     int y = screen_y + POST_PAD;
+
+    if (!post.reposted_by.empty()) {
+        draw_repost_line(fb, CONTENT_X, y, post);
+        y += font_h + 2;
+    }
 
     int av_x = POST_MARGIN;
     if (!post.author.avatar_url.empty() && profile_images) {
@@ -274,6 +292,84 @@ void feed_view_handle(app_state_t *state, const input_event_t *ev) {
                 for (int i = 0; i < count && i < MAX_CACHED_POSTS; i++) {
                     if (content_y >= s_post_y[i] &&
                         content_y < s_post_y[i] + s_post_heights[i]) {
+                        // Check if tap is in stats zone (near bottom of post)
+                        int stats_y_in_post = s_post_heights[i] - font_cell_h() - POST_PAD;
+                        int stats_content_y = content_y - s_post_y[i];
+                        if (stats_content_y >= stats_y_in_post - 8 &&
+                            stats_content_y <  stats_y_in_post + font_cell_h() + 8) {
+                            int screen_tx = ev->touch.x;
+                            int like_x_approx   = CONTENT_X;
+                            int repost_x_approx = CONTENT_X + 120;
+
+                            if (screen_tx < like_x_approx + 60) {
+                                // Like / unlike
+                                Bsky::Post& p = state->feed.items[i];
+                                if (p.viewer_like.empty()) {
+                                    p.like_count++;
+                                    feed_view_draw(state);
+                                    state->atproto_client->likePost(p.uri, p.cid,
+                                        [state, i](const std::string& like_uri) {
+                                            if (i < (int)state->feed.items.size())
+                                                state->feed.items[i].viewer_like = like_uri;
+                                        },
+                                        [state, i](const std::string&) {
+                                            if (i < (int)state->feed.items.size()) {
+                                                state->feed.items[i].like_count--;
+                                                feed_view_draw(state);
+                                            }
+                                        });
+                                } else {
+                                    p.like_count--;
+                                    std::string old_like_uri = p.viewer_like;
+                                    p.viewer_like.clear();
+                                    feed_view_draw(state);
+                                    state->atproto_client->unlikePost(old_like_uri,
+                                        [](){},
+                                        [state, i, old_like_uri](const std::string&) {
+                                            if (i < (int)state->feed.items.size()) {
+                                                state->feed.items[i].like_count++;
+                                                state->feed.items[i].viewer_like = old_like_uri;
+                                                feed_view_draw(state);
+                                            }
+                                        });
+                                }
+                                return;
+                            } else if (screen_tx < repost_x_approx + 60) {
+                                // Repost / unrepost
+                                Bsky::Post& p = state->feed.items[i];
+                                if (p.viewer_repost.empty()) {
+                                    p.repost_count++;
+                                    feed_view_draw(state);
+                                    state->atproto_client->repostPost(p.uri, p.cid,
+                                        [state, i](const std::string& repost_uri) {
+                                            if (i < (int)state->feed.items.size())
+                                                state->feed.items[i].viewer_repost = repost_uri;
+                                        },
+                                        [state, i](const std::string&) {
+                                            if (i < (int)state->feed.items.size()) {
+                                                state->feed.items[i].repost_count--;
+                                                feed_view_draw(state);
+                                            }
+                                        });
+                                } else {
+                                    p.repost_count--;
+                                    std::string old_repost_uri = p.viewer_repost;
+                                    p.viewer_repost.clear();
+                                    feed_view_draw(state);
+                                    state->atproto_client->unrepostPost(old_repost_uri,
+                                        [](){},
+                                        [state, i, old_repost_uri](const std::string&) {
+                                            if (i < (int)state->feed.items.size()) {
+                                                state->feed.items[i].repost_count++;
+                                                state->feed.items[i].viewer_repost = old_repost_uri;
+                                                feed_view_draw(state);
+                                            }
+                                        });
+                                }
+                                return;
+                            }
+                        }
+                        // Normal tap → navigate to thread
                         state->selected_post = std::make_shared<Bsky::Post>(state->feed.items[i]);
                         app_switch_view(state, VIEW_THREAD);
                         return;

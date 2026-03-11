@@ -14,6 +14,8 @@
 #define THREAD_PAD         10
 #define CONTENT_X_0        (UI_MARGIN + AVATAR_SZ + 8)
 #define MIN_CONTENT_WIDTH  80
+#define STATS_HIT_W        80   /* horizontal hit zone width for the stats line like button */
+#define STATS_HIT_VPAD     8    /* vertical padding around the stats line tap zone */
 
 static std::shared_ptr<Bsky::Post> s_thread_root;
 
@@ -34,7 +36,7 @@ static int measure_thread_post_height(const Bsky::Post* post, int indent, int fb
 }
 
 static void draw_thread_post(fb_t *fb, int y, const Bsky::Post* post,
-                              int indent, int scroll, int fb_w) {
+                              int indent, int scroll, int fb_w, bool profile_images) {
     int font_h = font_cell_h();
     int cw = content_width_for_indent(fb_w, indent);
     int cx = CONTENT_X_0 + indent;
@@ -44,7 +46,7 @@ static void draw_thread_post(fb_t *fb, int y, const Bsky::Post* post,
     if (indent > 0)
         fb_vline(fb, UI_MARGIN + indent - 8, sy, h, COLOR_LGRAY);
 
-    if (!post->author.avatar_url.empty()) {
+    if (!post->author.avatar_url.empty() && profile_images) {
         const image_t *av = image_cache_lookup(post->author.avatar_url.c_str(),
                                                AVATAR_SZ, AVATAR_SZ);
         if (av)
@@ -74,8 +76,9 @@ static void draw_thread_post(fb_t *fb, int y, const Bsky::Post* post,
     iy += text_h + 4;
 
     char stats[128];
-    snprintf(stats, sizeof(stats), "\xe2\x99\xa1 %d  \xe2\x86\xa9 %d  \xe2\x9f\xb3 %d",
-             post->like_count, post->reply_count, post->repost_count);
+    const char *heart = post->viewer_like.empty() ? "\xe2\x99\xa1" : "\xe2\x99\xa5";
+    snprintf(stats, sizeof(stats), "%s %d  \xe2\x86\xa9 %d  \xe2\x9f\xb3 %d",
+             heart, post->like_count, post->reply_count, post->repost_count);
     font_draw_string(fb, cx, iy, stats, COLOR_GRAY, COLOR_WHITE);
 
     const bool is_root_post = (indent == 0);
@@ -184,7 +187,7 @@ void thread_view_draw(app_state_t *state) {
         if (sy + s_node_h[i] < content_top) continue;
         if (sy > content_bot) break;
         draw_thread_post(fb, s_node_y[i], s_nodes[i].post, s_nodes[i].indent,
-                         state->thread_scroll, fb_w);
+                         state->thread_scroll, fb_w, state->profile_images_enabled);
     }
 
     fb_fill_rect(fb, 0, fb_h - UI_BAR_H, fb_w, UI_BAR_H, COLOR_WHITE);
@@ -220,6 +223,51 @@ void thread_view_handle(app_state_t *state, const input_event_t *ev) {
                 s_node_count = 0;
                 app_switch_view(state, VIEW_FEED);
                 return;
+            }
+
+            // Check if tap is on the stats line of any visible post
+            int content_top = UI_BAR_H;
+            int content_bot = state->fb.height - UI_BAR_H;
+            int font_h = font_cell_h();
+            for (int i = 0; i < s_node_count; i++) {
+                int sy = s_node_y[i] - state->thread_scroll;
+                if (sy + s_node_h[i] < content_top || sy > content_bot) continue;
+                int cx_start = CONTENT_X_0 + s_nodes[i].indent;
+                int stats_y_screen = sy + s_node_h[i] - font_h - THREAD_PAD;
+                if (tx >= cx_start && tx < cx_start + STATS_HIT_W &&
+                    ty >= stats_y_screen - STATS_HIT_VPAD && ty < stats_y_screen + font_h + STATS_HIT_VPAD) {
+                    // Like / unlike on this post
+                    if (s_thread_root && s_nodes[i].post == s_thread_root.get()) {
+                        if (s_thread_root->viewer_like.empty()) {
+                            s_thread_root->like_count++;
+                            thread_view_draw(state);
+                            state->atproto_client->likePost(s_thread_root->uri, s_thread_root->cid,
+                                [](const std::string& like_uri) {
+                                    if (s_thread_root) s_thread_root->viewer_like = like_uri;
+                                },
+                                [state](const std::string&) {
+                                    if (s_thread_root) {
+                                        s_thread_root->like_count--;
+                                        thread_view_draw(state);
+                                    }
+                                });
+                        } else {
+                            s_thread_root->like_count--;
+                            std::string old_uri = s_thread_root->viewer_like;
+                            s_thread_root->viewer_like.clear();
+                            thread_view_draw(state);
+                            state->atproto_client->unlikePost(old_uri, [](){},
+                                [state, old_uri](const std::string&) {
+                                    if (s_thread_root) {
+                                        s_thread_root->like_count++;
+                                        s_thread_root->viewer_like = old_uri;
+                                        thread_view_draw(state);
+                                    }
+                                });
+                        }
+                        return;
+                    }
+                }
             }
         }
     }
