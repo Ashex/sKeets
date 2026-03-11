@@ -5,17 +5,21 @@
 
 ---
 
-## Current State: Authentication COMPLETE, Feed Bootstrap NEXT
+## Current State: Authentication COMPLETE, Feed Bootstrap WORKING
 
-The rewrite has successfully completed its first on-device createSession. TLS,
-DNS, and auth all work. The app is a "bootstrap shell" — a diagnostic dashboard
-with 4 cards (Auth, Device, Power, Connectivity) and Recheck/Exit buttons. The
-next milestone is **feed bootstrap**: calling `getTimeline()` and displaying
-posts on the e-ink screen.
+The rewrite now authenticates, restores saved sessions, loads the home
+timeline, refreshes against AppView, and paginates on-device. Touch input on
+the Clara Colour is working after enabling X-axis mirroring for the `snow`
+protocol path. The rewrite is no longer just an auth bootstrap shell: it now
+renders a usable text-first feed view with author, timestamp, body text, image
+placeholders, and stats.
 
-### Latest working build
+The next milestone is **thread interaction polish and cleanup**. Phase 3
+interaction support is now working in the rewrite.
 
-- **build_timestamp**: `2026-03-11T21:30:33Z`
+### Latest verified build
+
+- **build_timestamp**: `2026-03-11T22:40:41Z`
 - **Package**: `build-kobo/KoboRoot.tgz`
 - **Build command**: `NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh`
 
@@ -42,21 +46,27 @@ posts on the e-ink screen.
 | **Phase 0** | Fix coordinate misalignment (hardcoded dims) | **DEFERRED** — rewrite uses runtime FBInk dims already |
 | **Phase 1** | Scaffolding (remove compose/login views, add auth_view) | **PARTIALLY DONE** — rewrite has its own file structure |
 | **Phase 2** | Credential file login (login.txt flow) | **DONE** ✅ |
-| **Phase 3** | Like and repost support | Not started |
+| **Phase 3** | Like and repost support | Basic implementation working |
 | **Phase 3.5** | Settings view: dual image toggles | Not started |
 | **Phase 4** | Input improvements (swipe, long-press) | Not started |
 | **Phase 5** | Framebuffer & reliability improvements | Not started |
 | **Phase 5.5** | Bug fixes (JWT refresh, thread recursion, etc.) | Not started |
 | **Phase 6** | Cleanup (README, docs, stale comments) | Not started |
 
-### What "Phase 2 DONE" means concretely
+### What is now verified on-device
 
 1. `login.txt` is read from `/mnt/onboard/.adds/sKeets-rewrite/login.txt`
 2. `createSession()` succeeds against a self-hosted PDS (nihilist.cloud)
 3. Session tokens saved to `config.ini` (handle, access_jwt, refresh_jwt, did, pds_url, appview_url)
 4. `login.txt` securely deleted after reading (whether login succeeds or fails)
-5. On relaunch, `resumeSession()` reads from `config.ini` — **not yet tested on-device** but code is in place
-6. The auth bootstrap shell displays confirmation on successful login
+5. On relaunch, `resumeSession()` reads from `config.ini` and restores the session on-device
+6. Timeline fetches use `appview_url` (`https://api.bsky.app`) instead of the PDS, which fixed stale refresh results
+7. Feed refresh now pulls new data correctly on-device
+8. Feed pagination works on-device
+9. Clara Colour touch hit-testing works after enabling `SKEETS_REWRITE_TOUCH_MIRROR_X=1`
+10. Feed like/repost actions work on-device
+11. Thread like action works on-device
+12. Stats labels now render as readable word labels (`<Like>`, `Reply`, `<Repost>`) instead of single-letter abbreviations
 
 ---
 
@@ -96,7 +106,26 @@ The main entry point for the rewrite app. Changes this session:
 ### `src/rewrite/bootstrap.cpp`
 The auth bootstrap logic. Changes this session:
 - **resolv.conf diagnostic logging** (lines ~170-180): Before createSession, reads and logs `/etc/resolv.conf` to stderr for debugging DNS issues
+- **saved-session retry path**: Retries transient DNS failures before declaring resume failure and preserves the saved-session error state instead of falling back to "waiting for login.txt"
 - **Include added**: `<fstream>`
+
+### `src/rewrite/feed.cpp`
+The rewrite feed loader. Changes this session:
+- Fetches the timeline through `session.appview_url` instead of the PDS
+- Resumes saved sessions with retry handling for transient DNS failures
+- Filters plain reply posts out of the home feed (unless the item is a repost)
+- Uses a fresh AppView client directly to avoid heap corruption in `AtprotoClient::changeHost()`
+
+### `src/rewrite/actions.cpp`
+The rewrite action helper. Changes this session:
+- Performs like/unlike and repost/unrepost mutations against the PDS host
+- Reuses the saved-session retry pattern before mutating records
+- Keeps AppView reads and PDS writes separate to avoid host-switch instability
+
+### `run-rewrite.sh`
+The rewrite launcher. Changes this session:
+- Auto-enables `SKEETS_REWRITE_TOUCH_MIRROR_X=1` for Kobo Clara Colour (`spaColour`) using the `snow` touch protocol
+- Logs `Touch mirror X/Y` to make touch transform verification visible on-device
 
 ### `cmake/package-runtime-libs.cmake`
 Library packaging for KoboRoot archive. Changes this session:
@@ -156,36 +185,37 @@ src/rewrite/
 
 ## Immediate Next Steps
 
-### 1. Session Resume Test (quick validation)
-- Relaunch the app **without** `login.txt` on the device
-- The app should detect `config.ini`, call `resumeSession()`, and show "Saved session restored"
-- This validates the `load_saved_session()` → `resumeSession()` → `session_restored` path in `bootstrap.cpp`
+### 1. Phase 3: Like / Repost support
+Status: basic implementation verified on-device.
 
-### 2. Feed Bootstrap (new milestone)
-This is the next major feature. Required work:
+Implemented result:
+- Feed stats line has tappable like and repost targets
+- Feed like/unlike and repost/unrepost use optimistic updates with rollback on failure
+- Thread view has tappable like targets
+- Stats labels are word-based and more readable: `<Like>`, `Reply`, `<Repost>`
 
-1. **Add `getTimeline()` call after auth succeeds**
-   - In `bootstrap.cpp` or a new `feed.cpp`, call `client.getTimeline()` after successful auth
-   - The ATProto SDK's `ATProto::Client::getTimeline()` returns feed items
-   - Parse into a list of `Bsky::Post` structs (from existing `atproto/atproto.h`)
+Remaining polish:
+- Use partial refreshes for post stat updates instead of full-screen redraws
+- Improve active-state styling beyond count changes alone
 
-2. **Display posts on the bootstrap shell screen**
-   - Replace or augment the 4-card dashboard with a scrollable post list
-   - Each post: author handle, timestamp, content text (truncated)
-   - Use `font_draw_wrapped()` for text rendering
-   - No images yet — text-only feed display
+### 2. Thread view bootstrap
 
-3. **Wire up ATProto client with appview URL**
-   - Feed queries go to `appview_url` (default `https://api.bsky.app`), not the PDS
-   - The ATProto SDK's client needs to be configured with the appview endpoint for feed/thread queries
+Status: basic thread navigation and rendering are now working on-device.
 
-4. **Pagination cursor**
-   - Store the cursor from `getTimeline()` response
-   - Refresh button loads next page or refreshes feed
+1. Add tap-to-open thread navigation from a feed post
+2. Load the thread via `getPostThread()` and render replies text-first
+3. Reuse the existing reply-flattening logic from `AtprotoClient`
+4. Add a true thread back action distinct from feed pagination
 
-### 3. Cleanup (low priority, do after feed works)
+Verified result:
+- Tapping a feed post opens a basic thread view
+- Thread fetches go through AppView and render successfully on-device
+- Thread back navigation returns to feed as expected
+
+### 3. Cleanup (low priority, do after thread/interaction work)
 - Remove verbose dlopen diagnostic probes from `app_main.cpp` (keep the core dlopen preload + CA loading)
 - Remove resolv.conf logging from `bootstrap.cpp`
+- Consider replacing the current feed-side reply filter with a richer policy once thread view is in place
 
 ---
 
@@ -243,6 +273,7 @@ Set in `run-rewrite.sh` (launched via NickelMenu):
 
 | File | Description |
 |------|-------------|
+| [docs/atproto-patches.md](docs/atproto-patches.md) | Local libatproto patches, wrapper adaptations, and runtime workarounds |
 | [docs/rewrite-plan.md](docs/rewrite-plan.md) | Full rewrite plan with Phases 0-6, architecture, API changes |
 | [docs/bug-gap-report.md](docs/bug-gap-report.md) | 18 bugs + 10 feature gaps found in v1 analysis |
 | [docs/session-analysis.md](docs/session-analysis.md) | Full session notes from initial code analysis |

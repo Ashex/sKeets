@@ -14,6 +14,13 @@ bool looks_like_transient_network_error(const std::string& error_message) {
            error_message.find("Temporary failure") != std::string::npos;
 }
 
+bool should_include_feed_post(const Bsky::Post& post) {
+    if (!post.reply_parent_uri.empty() && post.reposted_by.empty()) {
+        return false;
+    }
+    return true;
+}
+
 }
 
 rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
@@ -25,13 +32,20 @@ rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
     const std::string& pds = session.pds_url.empty()
         ? std::string(Bsky::DEFAULT_SERVICE_HOST)
         : session.pds_url;
+    const std::string appview = session.appview_url.empty()
+        ? std::string("https://api.bsky.app")
+        : session.appview_url;
 
-    std::fprintf(stderr, "rewrite feed: fetching timeline from pds=%s limit=%d cursor=%s\n",
-                 pds.c_str(), limit, cursor.empty() ? "(none)" : cursor.c_str());
+    std::fprintf(stderr,
+                 "rewrite feed: fetching timeline from pds=%s appview=%s limit=%d cursor=%s\n",
+                 pds.c_str(),
+                 appview.c_str(),
+                 limit,
+                 cursor.empty() ? "(none)" : cursor.c_str());
 
     bool resumed = false;
     std::string resume_error;
-    Bsky::AtprotoClient client(pds);
+    Bsky::AtprotoClient client(appview);
     for (int attempt = 1; attempt <= 3; ++attempt) {
         resumed = false;
         resume_error.clear();
@@ -59,8 +73,15 @@ rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
         result.error_message.clear();
         client.getTimeline(limit, cursor_opt,
                            [&result, &fetched](const Bsky::Feed& feed) {
-                               result.feed = feed;
-                               result.post_count = static_cast<int>(feed.items.size());
+                               result.feed.cursor = feed.cursor;
+                               result.feed.items.clear();
+                               result.feed.items.reserve(feed.items.size());
+                               for (const auto& post : feed.items) {
+                                   if (should_include_feed_post(post)) {
+                                       result.feed.items.push_back(post);
+                                   }
+                               }
+                               result.post_count = static_cast<int>(result.feed.items.size());
                                fetched = true;
                            },
                            [&result](const std::string& error) {

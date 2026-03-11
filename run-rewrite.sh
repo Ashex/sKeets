@@ -70,19 +70,21 @@ hydrate_probe_env() {
     APP_IS_SMP="${SKEETS_REWRITE_IS_SMP:-${APP_IS_SMP}}"
 }
 
-if [ -z "${APP_TOUCH_MIRROR_X}" ] && [ "${APP_CODENAME}" = "spaColour" ] && [ "${APP_TOUCH_PROTOCOL}" = "snow" ]; then
+mkdir -p "${REWRITE_DIR}"
+cd "${REWRITE_DIR}" || exit 1
+exec >>"${LOG}" 2>&1
+
+hydrate_probe_env
+
+if [ -z "${APP_TOUCH_MIRROR_X}" ] && \
+   { [ "${APP_CODENAME}" = "spaColour" ] || [ "${APP_PRODUCT_ID}" = "393" ]; } && \
+   [ "${APP_TOUCH_PROTOCOL}" = "snow" ]; then
     APP_TOUCH_MIRROR_X=1
 fi
 
 if [ -z "${APP_TOUCH_MIRROR_Y}" ]; then
     APP_TOUCH_MIRROR_Y=0
 fi
-
-mkdir -p "${REWRITE_DIR}"
-cd "${REWRITE_DIR}" || exit 1
-exec >>"${LOG}" 2>&1
-
-hydrate_probe_env
 
 echo "=== rewrite start $(date) ==="
 echo "Mode: ${MODE}"
