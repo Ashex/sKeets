@@ -14,7 +14,6 @@
 #define AVATAR_SIZE      40
 #define POST_DIVIDER_H   1
 #define CONTENT_X        (POST_MARGIN + AVATAR_SIZE + POST_PAD)
-#define CONTENT_W        (FB_WIDTH - CONTENT_X - POST_MARGIN)
 #define QUOTE_INDENT     24
 #define QUOTE_BORDER     3
 
@@ -24,33 +23,35 @@ static int s_post_y[MAX_CACHED_POSTS];
 static int s_virtual_height;
 static bool s_layout_dirty = true;
 
-static int measure_post_height(const Bsky::Post& post, bool images_enabled) {
+static int measure_post_height(const Bsky::Post& post, bool embed_images,
+                                int content_w, int font_h) {
     int h = POST_PAD;
-    h += FONT_CHAR_H + 4;
-    h += font_measure_wrapped(CONTENT_W, post.text.c_str(), 2) + 4;
-    if (post.embed_type == Bsky::EmbedType::Image && images_enabled && !post.image_urls.empty())
+    h += font_h + 4;
+    h += font_measure_wrapped(content_w, post.text.c_str(), 2) + 4;
+    if (post.embed_type == Bsky::EmbedType::Image && embed_images && !post.image_urls.empty())
         h += 120 + 4;
     else if (post.embed_type == Bsky::EmbedType::Quote || post.embed_type == Bsky::EmbedType::RecordWithMedia) {
         if (post.quoted_post) {
             h += POST_PAD;
-            h += FONT_CHAR_H + 2;
-            h += font_measure_wrapped(CONTENT_W - QUOTE_INDENT - 8,
+            h += font_h + 2;
+            h += font_measure_wrapped(content_w - QUOTE_INDENT - 8,
                                       post.quoted_post->text.c_str(), 2) + 8;
         }
     } else if (post.embed_type == Bsky::EmbedType::External) {
-        h += FONT_CHAR_H * 2 + 12;
+        h += font_h * 2 + 12;
     }
-    h += FONT_CHAR_H + POST_PAD;
+    h += font_h + POST_PAD;
     h += POST_DIVIDER_H;
     return h;
 }
 
-static void compute_layout(const Bsky::Feed& feed, bool images_enabled) {
+static void compute_layout(const Bsky::Feed& feed, bool embed_images, int fb_w, int font_h) {
+    int content_w = fb_w - CONTENT_X - POST_MARGIN;
     int y = UI_BAR_H;
     int count = (int)feed.items.size();
     for (int i = 0; i < count && i < MAX_CACHED_POSTS; i++) {
         s_post_y[i] = y;
-        s_post_heights[i] = measure_post_height(feed.items[i], images_enabled);
+        s_post_heights[i] = measure_post_height(feed.items[i], embed_images, content_w, font_h);
         y += s_post_heights[i];
     }
     s_virtual_height = y + UI_BAR_H;
@@ -78,7 +79,8 @@ static void draw_author_line(fb_t *fb, int x, int y, const Bsky::Post& post) {
 
 static void draw_quote_embed(fb_t *fb, int x, int y, int w, const Bsky::Post* quoted) {
     if (!quoted) return;
-    int qh = FONT_CHAR_H + 4 +
+    int font_h = font_cell_h();
+    int qh = font_h + 4 +
              font_measure_wrapped(w - QUOTE_INDENT - 8, quoted->text.c_str(), 2) + 8;
     fb_fill_rect(fb, x, y, QUOTE_BORDER, qh, COLOR_GRAY);
     fb_draw_rect(fb, x, y, w, qh, COLOR_LGRAY, 1);
@@ -94,23 +96,27 @@ static void draw_quote_embed(fb_t *fb, int x, int y, int w, const Bsky::Post* qu
     else
         snprintf(author_line, sizeof(author_line), "@%s", quoted->author.handle.c_str());
     font_draw_string(fb, qx, qy, author_line, COLOR_DGRAY, COLOR_WHITE);
-    qy += FONT_CHAR_H + 2;
+    qy += font_h + 2;
     font_draw_wrapped(fb, qx, qy, qw, quoted->text.c_str(), COLOR_BLACK, COLOR_WHITE, 2);
 }
 
 static void draw_external_embed(fb_t *fb, int x, int y, int w, const Bsky::Post& post) {
-    fb_draw_rect(fb, x, y, w, FONT_CHAR_H * 2 + 12, COLOR_LGRAY, 1);
+    int font_h = font_cell_h();
+    fb_draw_rect(fb, x, y, w, font_h * 2 + 12, COLOR_LGRAY, 1);
     font_draw_string(fb, x + 6, y + 4, post.ext_title.c_str(), COLOR_BLACK, COLOR_WHITE);
-    font_draw_string(fb, x + 6, y + 4 + FONT_CHAR_H + 4, post.ext_uri.c_str(), COLOR_GRAY, COLOR_WHITE);
+    font_draw_string(fb, x + 6, y + 4 + font_h + 4, post.ext_uri.c_str(), COLOR_GRAY, COLOR_WHITE);
 }
 
 static void draw_post(fb_t *fb, int draw_y, const Bsky::Post& post,
-                      bool images_enabled, int scroll, int post_height) {
+                      bool profile_images, bool embed_images,
+                      int scroll, int post_height, int fb_w) {
+    int content_w = fb_w - CONTENT_X - POST_MARGIN;
+    int font_h = font_cell_h();
     int screen_y = draw_y - scroll;
     int y = screen_y + POST_PAD;
 
     int av_x = POST_MARGIN;
-    if (!post.author.avatar_url.empty()) {
+    if (!post.author.avatar_url.empty() && profile_images) {
         const image_t *av = image_cache_lookup(post.author.avatar_url.c_str(),
                                                AVATAR_SIZE, AVATAR_SIZE);
         if (av)
@@ -122,23 +128,23 @@ static void draw_post(fb_t *fb, int draw_y, const Bsky::Post& post,
     }
 
     draw_author_line(fb, CONTENT_X, y, post);
-    y += FONT_CHAR_H + 4;
+    y += font_h + 4;
 
-    int text_h = font_measure_wrapped(CONTENT_W, post.text.c_str(), 2);
-    font_draw_wrapped(fb, CONTENT_X, y, CONTENT_W, post.text.c_str(), COLOR_BLACK, COLOR_WHITE, 2);
+    int text_h = font_measure_wrapped(content_w, post.text.c_str(), 2);
+    font_draw_wrapped(fb, CONTENT_X, y, content_w, post.text.c_str(), COLOR_BLACK, COLOR_WHITE, 2);
     y += text_h + 4;
 
     switch (post.embed_type) {
         case Bsky::EmbedType::Image:
-            if (images_enabled && !post.image_urls.empty()) {
+            if (embed_images && !post.image_urls.empty()) {
                 const image_t *embed = image_cache_lookup(
-                        post.image_urls[0].c_str(), CONTENT_W, 112);
+                        post.image_urls[0].c_str(), content_w, 112);
                 if (embed) {
                     fb_blit_rgba(fb, CONTENT_X, y, embed->width, embed->height,
                                  embed->pixels);
                     y += embed->height + 8;
                 } else {
-                    fb_fill_rect(fb, CONTENT_X, y, CONTENT_W, 112, COLOR_LGRAY);
+                    fb_fill_rect(fb, CONTENT_X, y, content_w, 112, COLOR_LGRAY);
                     font_draw_string(fb, CONTENT_X + 4, y + 48, "[image]",
                                      COLOR_GRAY, COLOR_LGRAY);
                     y += 120;
@@ -148,16 +154,16 @@ static void draw_post(fb_t *fb, int draw_y, const Bsky::Post& post,
         case Bsky::EmbedType::Quote:
         case Bsky::EmbedType::RecordWithMedia:
             if (post.quoted_post) {
-                int qw = CONTENT_W - QUOTE_INDENT;
-                int qh = FONT_CHAR_H + 4 +
+                int qw = content_w - QUOTE_INDENT;
+                int qh = font_h + 4 +
                          font_measure_wrapped(qw - 8, post.quoted_post->text.c_str(), 2) + 8;
                 draw_quote_embed(fb, CONTENT_X, y, qw, post.quoted_post.get());
                 y += qh + POST_PAD;
             }
             break;
         case Bsky::EmbedType::External:
-            draw_external_embed(fb, CONTENT_X, y, CONTENT_W, post);
-            y += FONT_CHAR_H * 2 + 16;
+            draw_external_embed(fb, CONTENT_X, y, content_w, post);
+            y += font_cell_h() * 2 + 16;
             break;
         default:
             break;
@@ -165,49 +171,51 @@ static void draw_post(fb_t *fb, int draw_y, const Bsky::Post& post,
 
     draw_stats_line(fb, CONTENT_X, y, post);
 
-    fb_hline(fb, 0, screen_y + post_height - POST_DIVIDER_H, FB_WIDTH, COLOR_LGRAY);
+    fb_hline(fb, 0, screen_y + post_height - POST_DIVIDER_H, fb_w, COLOR_LGRAY);
 }
 
-static void draw_topbar(fb_t *fb, const app_state_t *state) {
-    (void)state;
-    fb_fill_rect(fb, 0, 0, FB_WIDTH, UI_BAR_H, COLOR_WHITE);
-    fb_hline(fb, 0, UI_BAR_H - 1, FB_WIDTH, COLOR_BLACK);
+static void draw_topbar(fb_t *fb, int fb_w) {
+    int font_h = font_cell_h();
+    fb_fill_rect(fb, 0, 0, fb_w, UI_BAR_H, COLOR_WHITE);
+    fb_hline(fb, 0, UI_BAR_H - 1, fb_w, COLOR_BLACK);
 
     const char *title = "Home";
     int tw = font_measure_string(title);
-    font_draw_string(fb, (FB_WIDTH - tw) / 2, (UI_BAR_H - FONT_CHAR_H) / 2,
+    font_draw_string(fb, (fb_w - tw) / 2, (UI_BAR_H - font_h) / 2,
                      title, COLOR_BLACK, COLOR_WHITE);
-    font_draw_string(fb, FB_WIDTH - 80, (UI_BAR_H - FONT_CHAR_H) / 2,
+    font_draw_string(fb, fb_w - 80, (UI_BAR_H - font_h) / 2,
                      "Settings", COLOR_BLACK, COLOR_WHITE);
-    font_draw_string(fb, UI_MARGIN, (UI_BAR_H - FONT_CHAR_H) / 2,
+    font_draw_string(fb, UI_MARGIN, (UI_BAR_H - font_h) / 2,
                      "Refresh", COLOR_BLACK, COLOR_WHITE);
-    font_draw_string(fb, FB_WIDTH / 2 + 60, (UI_BAR_H - FONT_CHAR_H) / 2,
-                     "+ Post", COLOR_BLACK, COLOR_WHITE);
 }
 
-static void draw_bottombar(fb_t *fb, const app_state_t *state) {
-    int y = FB_HEIGHT - UI_BAR_H;
-    fb_fill_rect(fb, 0, y, FB_WIDTH, UI_BAR_H, COLOR_WHITE);
-    fb_hline(fb, 0, y, FB_WIDTH, COLOR_BLACK);
+static void draw_bottombar(fb_t *fb, const app_state_t *state, int fb_w, int fb_h) {
+    int font_h = font_cell_h();
+    int y = fb_h - UI_BAR_H;
+    fb_fill_rect(fb, 0, y, fb_w, UI_BAR_H, COLOR_WHITE);
+    fb_hline(fb, 0, y, fb_w, COLOR_BLACK);
     if (!state->status_msg.empty()) {
-        uint16_t col = state->status_is_error ? COLOR_BLACK : COLOR_GRAY;
-        font_draw_string(fb, UI_MARGIN, y + (UI_BAR_H - FONT_CHAR_H) / 2,
+        uint8_t col = state->status_is_error ? COLOR_BLACK : COLOR_GRAY;
+        font_draw_string(fb, UI_MARGIN, y + (UI_BAR_H - font_h) / 2,
                          state->status_msg.c_str(), col, COLOR_WHITE);
     }
 }
 
 void feed_view_draw(app_state_t *state) {
     fb_t *fb = &state->fb;
+    int fb_w = fb->width;
+    int fb_h = fb->height;
+    int font_h = font_cell_h();
     fb_clear(fb, COLOR_WHITE);
 
     if (s_layout_dirty)
-        compute_layout(state->feed, state->images_enabled);
+        compute_layout(state->feed, state->embed_images_enabled, fb_w, font_h);
 
-    draw_topbar(fb, state);
-    draw_bottombar(fb, state);
+    draw_topbar(fb, fb_w);
+    draw_bottombar(fb, state, fb_w, fb_h);
 
     int content_top = UI_BAR_H;
-    int content_bot = FB_HEIGHT - UI_BAR_H;
+    int content_bot = fb_h - UI_BAR_H;
     int content_h   = content_bot - content_top;
 
     int max_scroll = s_virtual_height - content_h;
@@ -219,14 +227,15 @@ void feed_view_draw(app_state_t *state) {
         if (post_screen_y + s_post_heights[i] < content_top) continue;
         if (post_screen_y > content_bot) break;
         draw_post(fb, s_post_y[i], state->feed.items[i],
-                  state->images_enabled, state->feed_scroll, s_post_heights[i]);
+                  state->profile_images_enabled, state->embed_images_enabled,
+                  state->feed_scroll, s_post_heights[i], fb_w);
     }
 
     if (state->feed.items.empty()) {
         const char *empty = "Pull to refresh or tap Refresh to load your timeline";
         int ew = font_measure_string(empty);
-        font_draw_string(fb, (FB_WIDTH - ew) / 2,
-                         content_top + content_h / 2 - FONT_CHAR_H / 2,
+        font_draw_string(fb, (fb_w - ew) / 2,
+                         content_top + content_h / 2 - font_h / 2,
                          empty, COLOR_GRAY, COLOR_WHITE);
     }
 
@@ -254,11 +263,8 @@ void feed_view_handle(app_state_t *state, const input_event_t *ev) {
                 if (ty < UI_BAR_H) {
                     if (tx < 120) {
                         feed_view_refresh(state);
-                    } else if (tx > FB_WIDTH - 120) {
+                    } else if (tx > state->fb.width - 120) {
                         app_switch_view(state, VIEW_SETTINGS);
-                    } else if (tx > FB_WIDTH / 2 + 40) {
-                        state->compose_reply_uri.clear();
-                        app_switch_view(state, VIEW_COMPOSE);
                     }
                     return;
                 }
@@ -280,8 +286,8 @@ void feed_view_handle(app_state_t *state, const input_event_t *ev) {
 
 void feed_view_refresh(app_state_t *state) {
     if (app_ensure_auth(state) != 0) {
-        app_set_error(state, "Auth error - please log in again");
-        app_switch_view(state, VIEW_LOGIN);
+        app_set_error(state, "Auth error - please create login.txt and restart");
+        app_switch_view(state, VIEW_AUTH_WAIT);
         return;
     }
 

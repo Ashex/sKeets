@@ -5,8 +5,6 @@
 #include <stddef.h>
 
 /* ── Glyph metrics (approximate, for layout calculations) ────────── */
-#define FONT_CHAR_W   8   /* approximate average character width */
-#define FONT_CHAR_H  16   /* approximate line height */
 #define FONT_FIRST   0x20
 #define FONT_LAST    0x7E
 
@@ -19,21 +17,27 @@ void font_init(fb_t *fb);
  * built-in bitmap font support. */
 void font_set_ot_enabled(bool enabled);
 
+/* Returns current font cell width in pixels. */
+int font_cell_w(void);
+
+/* Returns current font cell height in pixels. */
+int font_cell_h(void);
+
 /* ── Text drawing ────────────────────────────────────────────────── */
 
 /*
  * Draw a single ASCII character at (x, y).
- * Returns the x-advance (FONT_CHAR_W).
+ * Returns the x-advance (font_cell_w()).
  */
 int font_draw_char(fb_t *fb, int x, int y, char c,
-                   uint16_t fg, uint16_t bg);
+                   uint8_t fg, uint8_t bg);
 
 /*
  * Draw a null-terminated string at (x, y).
  * Returns the x position after the last character.
  */
 int font_draw_string(fb_t *fb, int x, int y, const char *s,
-                     uint16_t fg, uint16_t bg);
+                     uint8_t fg, uint8_t bg);
 
 /*
  * Draw a string with word-wrap within a bounding box [x, x+max_w).
@@ -41,7 +45,7 @@ int font_draw_string(fb_t *fb, int x, int y, const char *s,
  * line_spacing: extra pixels between lines (0 = tight).
  */
 int font_draw_wrapped(fb_t *fb, int x, int y, int max_w,
-                      const char *s, uint16_t fg, uint16_t bg,
+                      const char *s, uint8_t fg, uint8_t bg,
                       int line_spacing);
 
 /*

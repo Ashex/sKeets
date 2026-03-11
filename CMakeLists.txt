@@ -129,10 +129,9 @@ set(SOURCES
     src/ui/fb.cpp
     src/ui/font.cpp
     src/ui/input.cpp
-    src/ui/login_view.cpp
+    src/ui/auth_view.cpp
     src/ui/feed_view.cpp
     src/ui/thread_view.cpp
-    src/ui/compose_view.cpp
     src/ui/settings_view.cpp
     src/util/str.cpp
     src/util/config.cpp

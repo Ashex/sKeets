@@ -1,8 +1,7 @@
 #include "app.h"
-#include "ui/login_view.h"
+#include "ui/auth_view.h"
 #include "ui/feed_view.h"
 #include "ui/thread_view.h"
-#include "ui/compose_view.h"
 #include "ui/settings_view.h"
 #include "ui/font.h"
 #include "util/config.h"
@@ -22,7 +21,7 @@ int app_init(app_state_t *state) {
     if (!state) return -1;
     *state = app_state_t{};
     state->running = true;
-    state->current_view = VIEW_LOGIN;
+    state->current_view = VIEW_AUTH_WAIT;
 
     const std::string kobo_version = device_kobo_version_string();
     const std::string kobo_model = device_kobo_model_string();
@@ -48,7 +47,7 @@ int app_init(app_state_t *state) {
     font_set_ot_enabled(false);
     fprintf(stderr, "app_init: font subsystem initialised (FBInk fallback text)\n");
 
-    state->input = input_open();
+    state->input = input_open(state->fb.width, state->fb.height);
     if (!state->input)
         fprintf(stderr, "app_init: warning: failed to open input devices\n");
     else
@@ -57,8 +56,9 @@ int app_init(app_state_t *state) {
     config_t *cfg = config_open(skeets_config_path());
     std::string saved_pds_url;
     if (cfg) {
-        state->images_enabled = config_get_bool(cfg, "images_enabled", false);
-        saved_pds_url         = config_get_str(cfg, "pds_url", "");
+        state->profile_images_enabled = config_get_bool(cfg, "profile_images_enabled", true);
+        state->embed_images_enabled   = config_get_bool(cfg, "embed_images_enabled", false);
+        saved_pds_url                 = config_get_str(cfg, "pds_url", "");
     }
 
     /* Create the client pointed at the saved PDS (or default bsky.social). */
@@ -89,8 +89,7 @@ int app_init(app_state_t *state) {
                 state->current_view = VIEW_FEED;
 
         } else if (saved_handle[0] && prefill_pass[0]) {
-            /* Pre-filled credentials from config.ini – attempt auto-login.
-               If it works the password is scrubbed from the config file. */
+            /* Pre-filled credentials from login.txt – attempt auto-login. */
             if (!saved_pds_url.empty())
                 state->atproto_client->changeHost(saved_pds_url);
 
@@ -117,14 +116,8 @@ int app_init(app_state_t *state) {
                 state->current_view = VIEW_FEED;
             } else {
                 config_save(cfg);
-                /* Pre-populate login fields so user can correct & retry. */
-                login_view_prefill(saved_handle, nullptr, saved_pds_url.c_str());
-                app_set_error(state, err_msg.empty()
-                    ? "Auto sign-in failed" : err_msg.c_str());
+                auth_view_set_error(err_msg.empty() ? "Auto sign-in failed" : err_msg.c_str());
             }
-        } else if (saved_handle[0]) {
-            /* Handle is known but no session – pre-populate login field. */
-            login_view_prefill(saved_handle, nullptr, saved_pds_url.c_str());
         }
 
         config_free(cfg);
@@ -174,6 +167,8 @@ int app_ensure_auth(app_state_t *state) {
             }
         },
         [](const std::string&) {});
+    if (!ok)
+        app_switch_view(state, VIEW_AUTH_WAIT);
     return ok ? 0 : -1;
 }
 
@@ -182,8 +177,8 @@ void app_switch_view(app_state_t *state, app_view_t view) {
     state->current_view = view;
 
     switch (view) {
-        case VIEW_LOGIN:
-            login_view_draw(state);
+        case VIEW_AUTH_WAIT:
+            auth_view_draw(state);
             break;
         case VIEW_FEED:
             if (state->feed.items.empty())
@@ -195,9 +190,6 @@ void app_switch_view(app_state_t *state, app_view_t view) {
             state->thread_scroll = 0;
             thread_view_load(state);
             thread_view_draw(state);
-            break;
-        case VIEW_COMPOSE:
-            compose_view_draw(state);
             break;
         case VIEW_SETTINGS:
             settings_view_draw(state);
@@ -217,8 +209,13 @@ void app_run(app_state_t *state) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
 
         /* If async images arrived, repaint the current view. */
-        if (image_cache_redraw_needed())
-            app_switch_view(state, state->current_view);
+        if (image_cache_redraw_needed()) {
+            switch (state->current_view) {
+                case VIEW_FEED:     feed_view_draw(state);     break;
+                case VIEW_THREAD:   thread_view_draw(state);   break;
+                default: break;
+            }
+        }
 
         if (!state->input) {
             struct timespec ts = { 0, 50000000 };
@@ -236,11 +233,10 @@ void app_run(app_state_t *state) {
         }
 
         switch (state->current_view) {
-            case VIEW_LOGIN:    login_view_handle(state, &ev);    break;
-            case VIEW_FEED:     feed_view_handle(state, &ev);     break;
-            case VIEW_THREAD:   thread_view_handle(state, &ev);   break;
-            case VIEW_COMPOSE:  compose_view_handle(state, &ev);  break;
-            case VIEW_SETTINGS: settings_view_handle(state, &ev); break;
+            case VIEW_AUTH_WAIT: auth_view_handle(state, &ev);    break;
+            case VIEW_FEED:      feed_view_handle(state, &ev);    break;
+            case VIEW_THREAD:    thread_view_handle(state, &ev);  break;
+            case VIEW_SETTINGS:  settings_view_handle(state, &ev); break;
         }
     }
 }

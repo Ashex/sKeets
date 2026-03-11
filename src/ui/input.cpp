@@ -23,6 +23,7 @@ static constexpr int LINUX_KEY_POWER = KEY_POWER;
 #define MAX_INPUT_DEVICES 8
 #define TAP_MAX_DIST      30   /* pixels */
 #define TAP_MAX_MS        300  /* milliseconds */
+#define LONG_PRESS_MS     500  /* milliseconds */
 
 struct input_device {
     int fd;
@@ -39,6 +40,8 @@ struct input_device {
 struct input_ctx {
     input_device devices[MAX_INPUT_DEVICES];
     int       nfds;
+    int       fb_w;
+    int       fb_h;
     /* MT tracking */
     int       cur_x;
     int       cur_y;
@@ -46,6 +49,7 @@ struct input_ctx {
     long long touch_down_ms;
     int       touch_down_x;
     int       touch_down_y;
+    touch_type_t last_emit_type;
 };
 
 /* Millisecond timestamp */
@@ -75,11 +79,11 @@ static bool query_abs_axis(int fd, int primary_code, int fallback_code,
     return false;
 }
 
-static bool should_swap_axes(int x_min, int x_max, int y_min, int y_max) {
+static bool should_swap_axes(int x_min, int x_max, int y_min, int y_max, int fb_w, int fb_h) {
     const int x_span = x_max - x_min;
     const int y_span = y_max - y_min;
-    const int normal_score = abs(x_span - (FB_WIDTH - 1)) + abs(y_span - (FB_HEIGHT - 1));
-    const int swapped_score = abs(x_span - (FB_HEIGHT - 1)) + abs(y_span - (FB_WIDTH - 1));
+    const int normal_score = abs(x_span - (fb_w - 1)) + abs(y_span - (fb_h - 1));
+    const int swapped_score = abs(x_span - (fb_h - 1)) + abs(y_span - (fb_w - 1));
     return swapped_score < normal_score;
 }
 
@@ -99,11 +103,12 @@ static int normalize_axis(int value, int min_value, int max_value, int output_ma
     return (int)(numerator / denominator);
 }
 
-static void map_touch_point(const input_device &device, int raw_x, int raw_y, int *mapped_x, int *mapped_y) {
+static void map_touch_point(const input_ctx_t *ctx, const input_device &device,
+                            int raw_x, int raw_y, int *mapped_x, int *mapped_y) {
     int x = normalize_axis(raw_x, device.x_min, device.x_max,
-                           device.swap_axes ? FB_HEIGHT - 1 : FB_WIDTH - 1);
+                           device.swap_axes ? ctx->fb_h - 1 : ctx->fb_w - 1);
     int y = normalize_axis(raw_y, device.y_min, device.y_max,
-                           device.swap_axes ? FB_WIDTH - 1 : FB_HEIGHT - 1);
+                           device.swap_axes ? ctx->fb_w - 1 : ctx->fb_h - 1);
 
     if (device.swap_axes) {
         int tmp = x;
@@ -116,9 +121,12 @@ static void map_touch_point(const input_device &device, int raw_x, int raw_y, in
 }
 
 /* Find and open all /dev/input/event* files that look like touch/key devices */
-input_ctx_t *input_open(void) {
+input_ctx_t *input_open(int fb_w, int fb_h) {
     input_ctx_t *ctx = (input_ctx_t *)calloc(1, sizeof(input_ctx_t));
     if (!ctx) return NULL;
+    ctx->fb_w = fb_w;
+    ctx->fb_h = fb_h;
+    ctx->last_emit_type = TOUCH_NONE;
     for (int i = 0; i < MAX_INPUT_DEVICES; i++)
         ctx->devices[i].fd = -1;
 
@@ -144,7 +152,9 @@ input_ctx_t *input_open(void) {
                                 query_abs_axis(fd, ABS_MT_POSITION_Y, ABS_Y,
                                                &device.y_code, &device.y_min, &device.y_max);
         if (device.has_touch_axes) {
-            device.swap_axes = should_swap_axes(device.x_min, device.x_max, device.y_min, device.y_max);
+            device.swap_axes = should_swap_axes(device.x_min, device.x_max,
+                                                device.y_min, device.y_max,
+                                                ctx->fb_w, ctx->fb_h);
             fprintf(stderr,
                     "input_open: %s touch axes x=%d[%d..%d] y=%d[%d..%d] swap=%d\n",
                     path,
@@ -212,11 +222,12 @@ bool input_poll(input_ctx_t *ctx, input_event_t *ev, int timeout_ms) {
                                 int mapped_x = ctx->cur_x;
                                 int mapped_y = ctx->cur_y;
                                 if (device.has_touch_axes)
-                                    map_touch_point(device, ctx->cur_x, ctx->cur_y, &mapped_x, &mapped_y);
+                                    map_touch_point(ctx, device, ctx->cur_x, ctx->cur_y, &mapped_x, &mapped_y);
                                 ctx->touching      = true;
                                 ctx->touch_down_ms = now_ms();
                                 ctx->touch_down_x  = mapped_x;
                                 ctx->touch_down_y  = mapped_y;
+                                ctx->last_emit_type = TOUCH_DOWN;
                                 ev->type       = INPUT_TOUCH;
                                 ev->touch.type = TOUCH_DOWN;
                                 ev->touch.x    = mapped_x;
@@ -227,8 +238,9 @@ bool input_poll(input_ctx_t *ctx, input_event_t *ev, int timeout_ms) {
                                 int mapped_x = ctx->cur_x;
                                 int mapped_y = ctx->cur_y;
                                 if (device.has_touch_axes)
-                                    map_touch_point(device, ctx->cur_x, ctx->cur_y, &mapped_x, &mapped_y);
+                                    map_touch_point(ctx, device, ctx->cur_x, ctx->cur_y, &mapped_x, &mapped_y);
                                 ctx->touching = false;
+                                ctx->last_emit_type = TOUCH_NONE;
                                 ev->type       = INPUT_TOUCH;
                                 ev->touch.type = TOUCH_UP;
                                 ev->touch.x    = mapped_x;
@@ -266,7 +278,24 @@ bool input_poll(input_ctx_t *ctx, input_event_t *ev, int timeout_ms) {
                         int mapped_x = ctx->cur_x;
                         int mapped_y = ctx->cur_y;
                         if (device.has_touch_axes)
-                            map_touch_point(device, ctx->cur_x, ctx->cur_y, &mapped_x, &mapped_y);
+                            map_touch_point(ctx, device, ctx->cur_x, ctx->cur_y, &mapped_x, &mapped_y);
+
+                        /* Long-press detection */
+                        long long elapsed = now_ms() - ctx->touch_down_ms;
+                        int dx = mapped_x - ctx->touch_down_x;
+                        int dy = mapped_y - ctx->touch_down_y;
+                        int dist = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+                        if (elapsed > LONG_PRESS_MS && dist <= TAP_MAX_DIST &&
+                            ctx->last_emit_type != TOUCH_LONG_PRESS) {
+                            ctx->last_emit_type = TOUCH_LONG_PRESS;
+                            ev->type       = INPUT_TOUCH;
+                            ev->touch.type = TOUCH_LONG_PRESS;
+                            ev->touch.x    = mapped_x;
+                            ev->touch.y    = mapped_y;
+                            return true;
+                        }
+
+                        ctx->last_emit_type = TOUCH_MOVE;
                         ev->type       = INPUT_TOUCH;
                         ev->touch.type = TOUCH_MOVE;
                         ev->touch.x    = mapped_x;

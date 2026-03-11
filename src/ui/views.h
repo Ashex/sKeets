@@ -4,10 +4,9 @@
 /* Shared view enum referenced by both app.h and individual view headers */
 
 typedef enum {
-    VIEW_LOGIN,
+    VIEW_AUTH_WAIT,
     VIEW_FEED,
     VIEW_THREAD,
-    VIEW_COMPOSE,
     VIEW_SETTINGS,
 } app_view_t;
 

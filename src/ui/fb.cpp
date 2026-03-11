@@ -64,6 +64,8 @@ int fb_open(fb_t *fb) {
     fbink_get_state(&cfg, &state);
     fb->width  = (int)state.screen_width;
     fb->height = (int)state.screen_height;
+    fb->font_w = (state.font_w > 0) ? (int)state.font_w : 8;
+    fb->font_h = (state.font_h > 0) ? (int)state.font_h : 16;
     fprintf(stderr, "fb_open: screen_width=%d screen_height=%d view_width=%u view_height=%u\n",
             fb->width, fb->height, state.view_width, state.view_height);
 
@@ -147,25 +149,17 @@ int fb_load_fonts(fb_t *fb, const char *font_dir) {
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
 
-/* Map an RGB565 color to 8-bit grayscale luminance. */
-static uint8_t rgb565_to_gray(uint16_t c) {
-    uint8_t r = (uint8_t)(((c >> 11) & 0x1F) << 3);
-    uint8_t g = (uint8_t)(((c >> 5) & 0x3F) << 2);
-    uint8_t b = (uint8_t)((c & 0x1F) << 3);
-    return (uint8_t)((r * 77 + g * 150 + b * 29) >> 8);
-}
-
 /* ── Drawing primitives ───────────────────────────────────────────── */
 
-void fb_clear(fb_t *fb, uint16_t color) {
+void fb_clear(fb_t *fb, uint8_t color) {
     if (!fb || fb->fd < 0) return;
     FBInkConfig cfg = {};
     cfg.no_refresh = true;
-    cfg.bg_color = rgb565_to_gray(color);
+    cfg.bg_color = color;
     fbink_cls(fb->fd, &cfg, NULL, false);
 }
 
-void fb_fill_rect(fb_t *fb, int x, int y, int w, int h, uint16_t color) {
+void fb_fill_rect(fb_t *fb, int x, int y, int w, int h, uint8_t color) {
     if (!fb || fb->fd < 0 || w <= 0 || h <= 0) return;
     /* Clip */
     if (x < 0) { w += x; x = 0; }
@@ -183,10 +177,10 @@ void fb_fill_rect(fb_t *fb, int x, int y, int w, int h, uint16_t color) {
     rect.width  = (unsigned short int)w;
     rect.height = (unsigned short int)h;
 
-    fbink_fill_rect_gray(fb->fd, &cfg, &rect, false, rgb565_to_gray(color));
+    fbink_fill_rect_gray(fb->fd, &cfg, &rect, false, color);
 }
 
-void fb_draw_rect(fb_t *fb, int x, int y, int w, int h, uint16_t color, int thickness) {
+void fb_draw_rect(fb_t *fb, int x, int y, int w, int h, uint8_t color, int thickness) {
     if (thickness <= 0) thickness = 1;
     fb_fill_rect(fb, x,             y,             w,         thickness, color); /* top */
     fb_fill_rect(fb, x,             y + h - thickness, w,     thickness, color); /* bottom */
@@ -194,11 +188,11 @@ void fb_draw_rect(fb_t *fb, int x, int y, int w, int h, uint16_t color, int thic
     fb_fill_rect(fb, x + w - thickness, y,         thickness, h,         color); /* right */
 }
 
-void fb_hline(fb_t *fb, int x, int y, int len, uint16_t color) {
+void fb_hline(fb_t *fb, int x, int y, int len, uint8_t color) {
     fb_fill_rect(fb, x, y, len, 1, color);
 }
 
-void fb_vline(fb_t *fb, int x, int y, int len, uint16_t color) {
+void fb_vline(fb_t *fb, int x, int y, int len, uint8_t color) {
     fb_fill_rect(fb, x, y, 1, len, color);
 }
 
@@ -258,5 +252,48 @@ void fb_refresh_fast(fb_t *fb, int x, int y, int w, int h) {
         fprintf(stderr, "fb_refresh_fast: first fast refresh region=%d,%d %dx%d\n", x, y, w, h);
         logged = true;
     }
+    fbink_refresh(fb->fd, (uint32_t)y, (uint32_t)x, (uint32_t)w, (uint32_t)h, &cfg);
+}
+
+/* ── Dirty region tracking and deferred flush ─────────────────────── */
+
+static int s_dirty_x1 = 0, s_dirty_y1 = 0, s_dirty_x2 = 0, s_dirty_y2 = 0;
+static bool s_dirty = false;
+
+void fb_mark_dirty(fb_t *fb, int x, int y, int w, int h) {
+    if (!fb || w <= 0 || h <= 0) return;
+    if (!s_dirty) {
+        s_dirty_x1 = x; s_dirty_y1 = y;
+        s_dirty_x2 = x + w; s_dirty_y2 = y + h;
+        s_dirty = true;
+    } else {
+        if (x < s_dirty_x1) s_dirty_x1 = x;
+        if (y < s_dirty_y1) s_dirty_y1 = y;
+        if (x + w > s_dirty_x2) s_dirty_x2 = x + w;
+        if (y + h > s_dirty_y2) s_dirty_y2 = y + h;
+    }
+}
+
+void fb_flush(fb_t *fb) {
+    if (!fb || fb->fd < 0 || !s_dirty) return;
+    int w = s_dirty_x2 - s_dirty_x1;
+    int h = s_dirty_y2 - s_dirty_y1;
+    int x = s_dirty_x1, y = s_dirty_y1;
+    s_dirty = false;
+    fb_refresh_partial(fb, x, y, w, h);
+}
+
+void fb_wait_for_complete(fb_t *fb) {
+    if (!fb || fb->fd < 0) return;
+    fbink_wait_for_complete(fb->fd, LAST_MARKER);
+}
+
+void fb_refresh_gc16_partial(fb_t *fb, int x, int y, int w, int h) {
+    if (!fb || fb->fd < 0) return;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (w <= 0 || h <= 0) return;
+    FBInkConfig cfg = {};
+    cfg.wfm_mode = WFM_GC16;
     fbink_refresh(fb->fd, (uint32_t)y, (uint32_t)x, (uint32_t)w, (uint32_t)h, &cfg);
 }

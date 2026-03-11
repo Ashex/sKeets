@@ -10,15 +10,12 @@
 #include <string>
 
 struct app_state {
-    app_view_t      current_view  = VIEW_LOGIN;
+    app_view_t      current_view  = VIEW_AUTH_WAIT;
     Bsky::Session   session;
     Bsky::Feed      feed;
     std::shared_ptr<Bsky::Post> selected_post;
-    std::string     compose_reply_uri;
-    std::string     compose_reply_cid;
-    std::string     compose_root_uri;
-    std::string     compose_root_cid;
-    bool            images_enabled = false;
+    bool            profile_images_enabled = true;
+    bool            embed_images_enabled   = false;
     bool            running        = false;
     fb_t            fb{};
     input_ctx_t    *input          = nullptr;

@@ -12,6 +12,9 @@ const char *skeets_config_path();
 /* Resolved image cache directory beneath the active data directory. */
 const char *skeets_cache_dir();
 
+/* Path to the login.txt credential file. */
+const char *skeets_login_txt_path();
+
 /* Ensure the app data directory tree exists.
  * Returns 0 on success, -1 on failure. */
 int skeets_ensure_data_dirs();

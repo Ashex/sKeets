@@ -14,6 +14,7 @@ struct path_state_t {
     std::string data_dir;
     std::string config_path;
     std::string cache_dir;
+    std::string login_txt_path;
 };
 
 path_state_t g_paths;
@@ -28,6 +29,7 @@ void init_paths() {
 
     g_paths.config_path = g_paths.data_dir + "/config.ini";
     g_paths.cache_dir = g_paths.data_dir + "/cache";
+    g_paths.login_txt_path = g_paths.data_dir + "/login.txt";
 }
 
 const path_state_t &paths() {
@@ -85,4 +87,8 @@ int skeets_ensure_data_dirs() {
     if (!mkdirs(state.data_dir)) return -1;
     if (!mkdirs(state.cache_dir)) return -1;
     return 0;
+}
+
+const char *skeets_login_txt_path() {
+    return paths().login_txt_path.c_str();
 }

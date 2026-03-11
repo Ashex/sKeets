@@ -10,6 +10,11 @@ typedef enum {
     TOUCH_UP,
     TOUCH_MOVE,
     TOUCH_NONE,
+    TOUCH_SWIPE_LEFT,
+    TOUCH_SWIPE_RIGHT,
+    TOUCH_SWIPE_UP,
+    TOUCH_SWIPE_DOWN,
+    TOUCH_LONG_PRESS,
 } touch_type_t;
 
 typedef struct {
@@ -48,9 +53,10 @@ typedef struct input_ctx input_ctx_t;
 
 /*
  * Open /dev/input/event* devices.
+ * fb_w and fb_h are the framebuffer dimensions used for axis mapping.
  * Returns a heap-allocated context, or NULL on failure.
  */
-input_ctx_t *input_open(void);
+input_ctx_t *input_open(int fb_w, int fb_h);
 
 /* Close all input fds and free context. */
 void input_close(input_ctx_t *ctx);
