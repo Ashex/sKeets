@@ -64,10 +64,25 @@ constexpr int kHeaderLogoMaxWidth = 280;
 constexpr int kHeaderLogoMaxHeight = 64;
 constexpr int kSplashLogoMaxWidth = 760;
 constexpr int kSplashLogoMaxHeight = 280;
+constexpr int kButtonIconMaxSize = 42;
+constexpr int kStatIconMaxSize = 34;
 constexpr std::uint8_t kColorPostBorder = 0xC0;
 constexpr std::uint8_t kColorAuthor = 0x10;
 constexpr std::uint8_t kColorMeta = 0x60;
 constexpr std::uint8_t kColorRepost = 0x50;
+constexpr int kStatsGap = 24;
+
+constexpr const char* kEmojiBack = "⬅️";
+constexpr const char* kEmojiNext = "➡️";
+constexpr const char* kEmojiRefresh = "🔄";
+constexpr const char* kEmojiSettings = "⚙️";
+constexpr const char* kEmojiExit = "🚪";
+constexpr const char* kEmojiOpen = "🔎";
+constexpr const char* kEmojiEnabled = "✅";
+constexpr const char* kEmojiDisabled = "❌";
+constexpr const char* kEmojiLike = "💜";
+constexpr const char* kEmojiReply = "💬";
+constexpr const char* kEmojiRepost = "🌀";
 
 enum class rewrite_view_mode_t {
     dashboard,
@@ -107,12 +122,15 @@ enum class rewrite_text_role_t {
     author,
     meta,
     button,
+    button_emoji,
+    stat_emoji,
     card_title,
     status_title,
     status_detail,
     settings_label,
     settings_detail,
     action_label,
+    action_emoji,
     splash_title,
     splash_detail,
     fallback_brand,
@@ -134,6 +152,15 @@ struct rewrite_app_t {
     rewrite_network_info_t network;
     image_t header_logo{};
     image_t splash_logo{};
+    image_t like_icon{};
+    image_t reply_icon{};
+    image_t repost_icon{};
+    image_t back_icon{};
+    image_t exit_icon{};
+    image_t settings_icon{};
+    image_t diagnostics_icon{};
+    image_t enabled_icon{};
+    image_t disabled_icon{};
     std::string revision_summary;
     std::string status_line = "Checking rewrite auth bootstrap";
     std::string input_line = "Exit via the on-screen button or the hardware power key";
@@ -183,6 +210,13 @@ struct rewrite_app_t {
 };
 
 void draw_border(rewrite_app_t& app, const rewrite_rect_t& rect, std::uint8_t color, int thickness = 2);
+void draw_centered_text(rewrite_app_t& app,
+                        int center_x,
+                        int y,
+                        const std::string& text,
+                        std::uint8_t fg,
+                        std::uint8_t bg,
+                        rewrite_text_role_t role);
 void flatten_thread_posts(const Bsky::Post& post,
                           int depth,
                           std::vector<std::pair<const Bsky::Post*, int>>& out);
@@ -203,6 +237,10 @@ rewrite_text_style_t text_style(rewrite_text_role_t role) {
         return {28, FONT_STYLE_LIGHT, 8};
     case rewrite_text_role_t::button:
         return {32, FONT_STYLE_MEDIUM, 0};
+    case rewrite_text_role_t::button_emoji:
+        return {42, FONT_STYLE_EMOJI, 0};
+    case rewrite_text_role_t::stat_emoji:
+        return {36, FONT_STYLE_EMOJI, 0};
     case rewrite_text_role_t::card_title:
         return {32, FONT_STYLE_MEDIUM, 8};
     case rewrite_text_role_t::status_title:
@@ -215,6 +253,8 @@ rewrite_text_style_t text_style(rewrite_text_role_t role) {
         return {28, FONT_STYLE_LIGHT, 8};
     case rewrite_text_role_t::action_label:
         return {28, FONT_STYLE_MEDIUM, 0};
+    case rewrite_text_role_t::action_emoji:
+        return {36, FONT_STYLE_EMOJI, 0};
     case rewrite_text_role_t::splash_title:
         return {42, FONT_STYLE_MEDIUM, 10};
     case rewrite_text_role_t::splash_detail:
@@ -917,12 +957,91 @@ void load_brand_assets(rewrite_app_t& app) {
                            rewrite_asset_path("skeets_splash_asset"),
                            kSplashLogoMaxWidth,
                            kSplashLogoMaxHeight);
+        load_local_image_asset(app.like_icon,
+                               rewrite_asset_path("purple-heart.png"),
+                               kStatIconMaxSize,
+                               kStatIconMaxSize);
+        load_local_image_asset(app.reply_icon,
+                               rewrite_asset_path("speech.png"),
+                               kStatIconMaxSize,
+                               kStatIconMaxSize);
+        load_local_image_asset(app.repost_icon,
+                               rewrite_asset_path("cyclone.png"),
+                               kStatIconMaxSize,
+                               kStatIconMaxSize);
+        load_local_image_asset(app.back_icon,
+                               rewrite_asset_path("back.png"),
+                               kButtonIconMaxSize,
+                               kButtonIconMaxSize);
+        load_local_image_asset(app.exit_icon,
+                               rewrite_asset_path("exit.png"),
+                               kButtonIconMaxSize,
+                               kButtonIconMaxSize);
+        load_local_image_asset(app.settings_icon,
+                               rewrite_asset_path("gear.png"),
+                               kButtonIconMaxSize,
+                               kButtonIconMaxSize);
+        load_local_image_asset(app.diagnostics_icon,
+                               rewrite_asset_path("diagnostic.png"),
+                               kButtonIconMaxSize,
+                               kButtonIconMaxSize);
+        load_local_image_asset(app.enabled_icon,
+                               rewrite_asset_path("purple-check.png"),
+                               kButtonIconMaxSize,
+                               kButtonIconMaxSize);
+        load_local_image_asset(app.disabled_icon,
+                               rewrite_asset_path("empty-check.png"),
+                               kButtonIconMaxSize,
+                               kButtonIconMaxSize);
 }
 
 void free_brand_assets(rewrite_app_t& app) {
     image_free(&app.header_logo);
     image_free(&app.splash_logo);
+        image_free(&app.like_icon);
+        image_free(&app.reply_icon);
+        image_free(&app.repost_icon);
+        image_free(&app.back_icon);
+        image_free(&app.exit_icon);
+        image_free(&app.settings_icon);
+        image_free(&app.diagnostics_icon);
+        image_free(&app.enabled_icon);
+        image_free(&app.disabled_icon);
 }
+
+    const image_t* icon_for_label(const rewrite_app_t& app, const std::string& label) {
+        if (label == kEmojiBack && app.back_icon.pixels) return &app.back_icon;
+        if (label == kEmojiExit && app.exit_icon.pixels) return &app.exit_icon;
+        if (label == kEmojiSettings && app.settings_icon.pixels) return &app.settings_icon;
+        if (label == kEmojiOpen && app.diagnostics_icon.pixels) return &app.diagnostics_icon;
+        if (label == kEmojiEnabled && app.enabled_icon.pixels) return &app.enabled_icon;
+        if (label == kEmojiDisabled && app.disabled_icon.pixels) return &app.disabled_icon;
+        return nullptr;
+    }
+
+    void draw_centered_button_content(rewrite_app_t& app,
+                                      const rewrite_rect_t& rect,
+                                      const std::string& label,
+                                      rewrite_text_role_t role,
+                                      std::uint8_t fg,
+                                      std::uint8_t bg) {
+        const image_t* icon = icon_for_label(app, label);
+        if (icon && icon->width > 0 && icon->height > 0) {
+            const int icon_x = rect.x + std::max(0, (rect.width - icon->width) / 2);
+            const int icon_y = rect.y + std::max(0, (rect.height - icon->height) / 2);
+            fb_blit_rgba(&app.text_fb, icon_x, icon_y, icon->width, icon->height, icon->pixels);
+            return;
+        }
+
+        const int center_y = rect.y + (rect.height - line_height(role)) / 2;
+        draw_centered_text(app,
+                           rect.x + rect.width / 2,
+                           center_y,
+                           label,
+                           fg,
+                           bg,
+                           role);
+    }
 
 void draw_centered_image(rewrite_app_t& app, const image_t& image, int center_x, int y) {
     if (!image.pixels || image.width <= 0 || image.height <= 0) {
@@ -1061,15 +1180,12 @@ void draw_card(rewrite_app_t& app,
 void draw_button(rewrite_app_t& app, const rewrite_button_t& button, std::uint8_t fill) {
     rewrite_framebuffer_fill_rect(app.framebuffer, button.rect, fill);
     draw_border(app, button.rect, COLOR_BLACK, 3);
-
-    const int center_y = button.rect.y + (button.rect.height - line_height(rewrite_text_role_t::button)) / 2;
-    draw_centered_text(app,
-                       button.rect.x + button.rect.width / 2,
-                       center_y,
-                       button.label,
-                       fill <= 0x40 ? COLOR_WHITE : COLOR_BLACK,
-                       fill,
-                       rewrite_text_role_t::button);
+    draw_centered_button_content(app,
+                                 button.rect,
+                                 button.label,
+                                 rewrite_text_role_t::button_emoji,
+                                 fill <= 0x40 ? COLOR_WHITE : COLOR_BLACK,
+                                 fill);
 }
 
 void refresh_runtime_state(rewrite_app_t& app) {
@@ -1277,28 +1393,108 @@ void flatten_thread_posts(const Bsky::Post& post,
     }
 }
 
-std::string feed_like_label(const Bsky::Post& post) {
-    return std::string(post.viewer_like.empty() ? "<Like> " : ">Like< ") + std::to_string(post.like_count);
+struct rewrite_stats_layout_t {
+    int total_width = 0;
+    int like_width = 0;
+    int repost_x = 0;
+    int repost_width = 0;
+    int line_height = 0;
+};
+
+int stats_line_height(const rewrite_app_t& app) {
+    int icon_height = 0;
+    if (app.like_icon.height > 0) icon_height = std::max(icon_height, app.like_icon.height);
+    if (app.reply_icon.height > 0) icon_height = std::max(icon_height, app.reply_icon.height);
+    if (app.repost_icon.height > 0) icon_height = std::max(icon_height, app.repost_icon.height);
+    return std::max(icon_height, line_height(rewrite_text_role_t::meta));
 }
 
-std::string feed_reply_label(const Bsky::Post& post) {
-    return "<Reply> " + std::to_string(post.reply_count);
+rewrite_stats_layout_t draw_stat_item(rewrite_app_t& app,
+                                      int x,
+                                      int y,
+                                      const image_t& icon,
+                                      const char* emoji,
+                                      int count,
+                                      std::uint8_t fg,
+                                      std::uint8_t bg) {
+    const std::string count_text = std::to_string(count);
+    const int icon_width = icon.width > 0 ? icon.width : measure_text(emoji, rewrite_text_role_t::stat_emoji);
+    const int count_width = measure_text(count_text, rewrite_text_role_t::meta);
+    const int icon_height = icon.height > 0 ? icon.height : line_height(rewrite_text_role_t::stat_emoji);
+    const int count_height = line_height(rewrite_text_role_t::meta);
+    const int item_height = std::max(icon_height, count_height);
+    const int count_x = x + icon_width + 8;
+    const int icon_y = y + std::max(0, (item_height - icon_height) / 2);
+    const int count_y = y + std::max(0, (item_height - count_height) / 2);
+
+    if (icon.pixels && icon.width > 0 && icon.height > 0) {
+        fb_blit_rgba(&app.text_fb, x, icon_y, icon.width, icon.height, icon.pixels);
+    } else {
+        draw_text(app,
+                  x,
+                  icon_y,
+                  emoji,
+                  rewrite_text_role_t::stat_emoji,
+                  fg,
+                  bg);
+    }
+    draw_text(app,
+              count_x,
+              count_y,
+              count_text,
+              rewrite_text_role_t::meta,
+              fg,
+              bg);
+
+    return {
+    icon_width + 8 + count_width,
+    icon_width + 8 + count_width,
+        0,
+        0,
+        item_height,
+    };
 }
 
-std::string feed_repost_label(const Bsky::Post& post) {
-    return std::string(post.viewer_repost.empty() ? "<Repost> " : ">Repost< ") + std::to_string(post.repost_count);
-}
+rewrite_stats_layout_t draw_post_stats(rewrite_app_t& app,
+                                       int x,
+                                       int y,
+                                       const Bsky::Post& post,
+                                       std::uint8_t bg) {
+    const rewrite_stats_layout_t like_layout = draw_stat_item(app,
+                                                              x,
+                                                              y,
+                                                              app.like_icon,
+                                                              kEmojiLike,
+                                                              post.like_count,
+                                                              post.viewer_like.empty() ? kColorMeta : COLOR_BLACK,
+                                                              bg);
+    const int reply_x = x + like_layout.total_width + kStatsGap;
+    const rewrite_stats_layout_t reply_layout = draw_stat_item(app,
+                                                               reply_x,
+                                                               y,
+                                                               app.reply_icon,
+                                                               kEmojiReply,
+                                                               post.reply_count,
+                                                               kColorMeta,
+                                                               bg);
+    const int repost_x = reply_x + reply_layout.total_width + kStatsGap;
+    const rewrite_stats_layout_t repost_layout = draw_stat_item(app,
+                                                                repost_x,
+                                                                y,
+                                                                app.repost_icon,
+                                                                kEmojiRepost,
+                                                                post.repost_count,
+                                                                post.viewer_repost.empty() ? kColorMeta : COLOR_BLACK,
+                                                                bg);
+    const int item_height = std::max({like_layout.line_height, reply_layout.line_height, repost_layout.line_height});
 
-std::string thread_like_label(const Bsky::Post& post) {
-    return std::string(post.viewer_like.empty() ? "<Like> " : ">Like< ") + std::to_string(post.like_count);
-}
-
-std::string thread_reply_label(const Bsky::Post& post) {
-    return "<Reply> " + std::to_string(post.reply_count);
-}
-
-std::string thread_repost_label(const Bsky::Post& post) {
-    return std::string(post.viewer_repost.empty() ? "<Repost> " : ">Repost< ") + std::to_string(post.repost_count);
+    return {
+        (repost_x + repost_layout.total_width) - x,
+        like_layout.total_width,
+        repost_x,
+        repost_layout.total_width,
+        item_height,
+    };
 }
 
 int measure_thread_post_height(const rewrite_app_t& app,
@@ -1325,7 +1521,7 @@ int measure_thread_post_height(const rewrite_app_t& app,
         needed += 4;
         needed += measure_embed_block_height(app, post, text_width_for_post);
     }
-    needed += app.text_fb.font_h + 8;
+    needed += stats_line_height(app) + 8;
     needed += 1;
     needed += 12;
     return needed;
@@ -1373,15 +1569,8 @@ void render_feed_stats_only(rewrite_app_t& app, const rewrite_post_hit_t& hit) {
         return;
     }
     const Bsky::Post& post = app.feed_result.feed.items[hit.post_index];
-    const std::string stats = feed_like_label(post) + "  " + feed_reply_label(post) + "  " + feed_repost_label(post);
     rewrite_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
-    draw_text(app,
-              hit.stats_x,
-              hit.stats_y,
-              stats,
-              rewrite_text_role_t::meta,
-              kColorMeta,
-              COLOR_WHITE);
+    draw_post_stats(app, hit.stats_x, hit.stats_y, post, COLOR_WHITE);
     refresh_region(app,
                    expand_rect(hit.stats_rect,
                                6,
@@ -1393,17 +1582,8 @@ void render_thread_stats_only(rewrite_app_t& app, const rewrite_thread_post_hit_
     if (!hit.post) {
         return;
     }
-    const std::string stats = thread_like_label(*hit.post) + "  " +
-                              thread_reply_label(*hit.post) + "  " +
-                              thread_repost_label(*hit.post);
     rewrite_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
-    draw_text(app,
-              hit.stats_x,
-              hit.stats_y,
-              stats,
-              rewrite_text_role_t::meta,
-              kColorMeta,
-              COLOR_WHITE);
+    draw_post_stats(app, hit.stats_x, hit.stats_y, *hit.post, COLOR_WHITE);
     refresh_region(app,
                    expand_rect(hit.stats_rect,
                                6,
@@ -1475,12 +1655,12 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
                                      width - (kOuterMargin * 2),
                                      status_height};
     const int button_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
-    app.refresh_button = rewrite_button_t{{kOuterMargin, height - button_height - kOuterMargin, button_width, button_height}, "Recheck"};
+    app.refresh_button = rewrite_button_t{{kOuterMargin, height - button_height - kOuterMargin, button_width, button_height}, kEmojiRefresh};
     app.exit_button = rewrite_button_t{{app.refresh_button.rect.x + button_width + kCardGap,
                                         app.refresh_button.rect.y,
                                         button_width,
                                         button_height},
-                                       "Exit"};
+                                       kEmojiExit};
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
@@ -1594,12 +1774,12 @@ void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
                                      network_rect.y + network_rect.height + kOuterMargin,
                                      width - (kOuterMargin * 2),
                                      status_height};
-    app.diagnostics_back_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, "< Back"};
+    app.diagnostics_back_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, kEmojiBack};
     app.diagnostics_refresh_button = {{kOuterMargin,
                                        height - button_height - kOuterMargin,
                                        width - (kOuterMargin * 2),
                                        button_height},
-                                      "Refresh"};
+                                      kEmojiRefresh};
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
     const rewrite_rect_t header_rect{0, 0, width, header_height};
@@ -1663,19 +1843,19 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
     const int btn_y = height - button_height - kOuterMargin;
     app.feed_back_button = {
         {kOuterMargin, btn_y, btn_width, button_height},
-        "< Prev"
+        kEmojiBack
     };
     app.feed_refresh_button = {
         {kOuterMargin + btn_width + btn_gap, btn_y, btn_width, button_height},
-        "Refresh"
+        kEmojiRefresh
     };
     app.feed_next_button = {
         {kOuterMargin + (btn_width + btn_gap) * 2, btn_y, btn_width, button_height},
-        "Next >"
+        kEmojiNext
     };
     app.feed_settings_button = {
         {width - kOuterMargin - 176, 10, 176, header_height - 20},
-        "Settings"
+        kEmojiSettings
     };
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
@@ -1719,7 +1899,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                 needed += font_measure_wrapped(post_text_width - 8, measured_post_text.c_str(), line_spacing);
                 needed += measure_embed_block_height(app, post, post_text_width - 8);
             }
-            needed += app.text_fb.font_h + kPostSeparator + 8; // stats + separator
+            needed += stats_line_height(app) + kPostSeparator + 8; // stats + separator
 
             // Skip this post if it would overflow (except the first one — always show at least 1)
             if (rendered > 0 && cursor_y + needed > content_bottom) break;
@@ -1839,23 +2019,8 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             // Stats line
             const int stats_x = text_left + 4;
             const int stats_y = cursor_y;
-            const std::string like_label = feed_like_label(post);
-            const std::string reply_label = feed_reply_label(post);
-            const std::string repost_label = feed_repost_label(post);
-            const std::string stats = like_label + "  " + reply_label + "  " + repost_label;
-            draw_text(app,
-                      stats_x,
-                      cursor_y,
-                      stats,
-                      rewrite_text_role_t::meta,
-                      kColorMeta,
-                      COLOR_WHITE);
-            cursor_y += app.text_fb.font_h;
-
-            const std::string middle_label = like_label + "  " + reply_label + "  ";
-            const int like_width = std::max(72, font_measure_string(like_label.c_str()) + 12);
-            const int repost_x = stats_x + font_measure_string(middle_label.c_str());
-            const int repost_width = std::max(72, font_measure_string(repost_label.c_str()) + 16);
+            const rewrite_stats_layout_t stats_layout = draw_post_stats(app, stats_x, cursor_y, post, COLOR_WHITE);
+            cursor_y += stats_layout.line_height;
 
             // Separator line
             cursor_y += kPostSeparator / 2;
@@ -1866,9 +2031,9 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
 
             app.visible_post_hits.push_back({
                 rewrite_rect_t{kOuterMargin, post_top, content_width, cursor_y - post_top},
-                make_stat_hit_rect(stats_x, stats_y, like_width, app.text_fb.font_h),
-                make_stat_hit_rect(repost_x, stats_y, repost_width, app.text_fb.font_h),
-                make_stat_hit_rect(stats_x, stats_y, font_measure_string(stats.c_str()) + 12, app.text_fb.font_h),
+                make_stat_hit_rect(stats_x, stats_y, std::max(72, stats_layout.like_width + 12), stats_layout.line_height),
+                make_stat_hit_rect(stats_layout.repost_x, stats_y, std::max(72, stats_layout.repost_width + 16), stats_layout.line_height),
+                make_stat_hit_rect(stats_x, stats_y, stats_layout.total_width + 12, stats_layout.line_height),
                 stats_x,
                 stats_y,
                 i,
@@ -1920,8 +2085,8 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     const int scrollbar_top = header_height + kOuterMargin;
     const int scrollbar_height = std::max(80, content_bottom - scrollbar_top);
 
-    app.thread_back_button = {{kOuterMargin, 10, 160, header_height - 20}, "< Back"};
-    app.thread_settings_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, "Settings"};
+    app.thread_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
+    app.thread_settings_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, kEmojiSettings};
     app.thread_scrollbar_rect = {width - kOuterMargin - kThreadScrollbarWidth,
                                  scrollbar_top,
                                  kThreadScrollbarWidth,
@@ -2059,26 +2224,18 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
                 draw_embed_block(app, *post, text_x, cursor_y, text_width_for_post);
             }
 
-            const std::string like_label = thread_like_label(*post);
-            const std::string reply_label = thread_reply_label(*post);
-            const std::string repost_label = thread_repost_label(*post);
-            const std::string stats = like_label + "  " + reply_label + "  " + repost_label;
-            draw_text(app, text_x, cursor_y, stats, rewrite_text_role_t::meta, kColorMeta, COLOR_WHITE);
             const int stats_y = cursor_y;
-            const int like_width = std::max(72, font_measure_string(like_label.c_str()) + 16);
-            const std::string middle_label = like_label + "  " + reply_label + "  ";
-            const int repost_x = text_x + font_measure_string(middle_label.c_str());
-            const int repost_width = std::max(72, font_measure_string(repost_label.c_str()) + 16);
-            cursor_y += app.text_fb.font_h + 8;
+            const rewrite_stats_layout_t stats_layout = draw_post_stats(app, text_x, cursor_y, *post, COLOR_WHITE);
+            cursor_y += stats_layout.line_height + 8;
 
             rewrite_framebuffer_fill_rect(app.framebuffer,
                                           rewrite_rect_t{x, cursor_y, width_for_post, 1},
                                           kColorPostBorder);
             app.thread_post_hits.push_back({
                 rewrite_rect_t{x, post_top, width_for_post, cursor_y - post_top + 1},
-                make_stat_hit_rect(text_x, stats_y, like_width, app.text_fb.font_h),
-                make_stat_hit_rect(repost_x, stats_y, repost_width, app.text_fb.font_h),
-                make_stat_hit_rect(text_x, stats_y, font_measure_string(stats.c_str()) + 12, app.text_fb.font_h),
+                make_stat_hit_rect(text_x, stats_y, std::max(72, stats_layout.like_width + 16), stats_layout.line_height),
+                make_stat_hit_rect(stats_layout.repost_x, stats_y, std::max(72, stats_layout.repost_width + 16), stats_layout.line_height),
+                make_stat_hit_rect(text_x, stats_y, stats_layout.total_width + 12, stats_layout.line_height),
                 text_x,
                 stats_y,
                 post,
@@ -2135,13 +2292,12 @@ void draw_toggle_chip(rewrite_app_t& app, const rewrite_rect_t& rect, bool enabl
     const std::uint8_t fill = enabled ? kColorButtonPrimary : 0xC8;
     rewrite_framebuffer_fill_rect(app.framebuffer, rect, fill);
     draw_border(app, rect, COLOR_BLACK, 2);
-    draw_centered_text(app,
-                       rect.x + rect.width / 2,
-                       rect.y + (rect.height - line_height(rewrite_text_role_t::button)) / 2,
-                       enabled ? "ON" : "OFF",
-                       enabled ? COLOR_WHITE : COLOR_BLACK,
-                       fill,
-                       rewrite_text_role_t::button);
+    draw_centered_button_content(app,
+                                 rect,
+                                 enabled ? kEmojiEnabled : kEmojiDisabled,
+                                 rewrite_text_role_t::action_emoji,
+                                 enabled ? COLOR_WHITE : COLOR_BLACK,
+                                 fill);
 }
 
 void draw_settings_row(rewrite_app_t& app,
@@ -2197,13 +2353,12 @@ void draw_settings_action_row(rewrite_app_t& app,
                                      46};
     rewrite_framebuffer_fill_rect(app.framebuffer, action_rect, kColorButtonSecondary);
     draw_border(app, action_rect, COLOR_BLACK, 2);
-    draw_centered_text(app,
-                       action_rect.x + action_rect.width / 2,
-                       action_rect.y + (action_rect.height - line_height(rewrite_text_role_t::action_label)) / 2,
-                       action_label,
-                       COLOR_BLACK,
-                       kColorButtonSecondary,
-                       rewrite_text_role_t::action_label);
+    draw_centered_button_content(app,
+                                 action_rect,
+                                 action_label,
+                                 rewrite_text_role_t::action_emoji,
+                                 COLOR_BLACK,
+                                 kColorButtonSecondary);
 }
 
 void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
@@ -2215,7 +2370,7 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
     const int content_width = width - (kOuterMargin * 2);
     const int first_row_y = header_height + kOuterMargin;
 
-    app.settings_back_button = {{kOuterMargin, 10, 160, header_height - 20}, "< Back"};
+    app.settings_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
     app.settings_profile_button = {{kOuterMargin, first_row_y, content_width, row_height}, "Profile Images"};
     app.settings_embed_button = {{kOuterMargin, first_row_y + row_height + row_gap, content_width, row_height}, "Embed Images"};
     app.settings_nudity_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 2, content_width, row_height}, "Nudity"};
@@ -2226,7 +2381,7 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
                                      height - kOuterMargin - std::max(90, height / 12),
                                      content_width,
                                      std::max(90, height / 12)},
-                                    "Sign Out"};
+                                    "Log Out"};
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
@@ -2264,7 +2419,7 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
                              app.settings_diagnostics_button,
                              "Diagnostics",
                              "Open the device and authentication diagnostics screen that used to appear at startup.",
-                             "Open");
+                             kEmojiOpen);
 
     draw_wrapped_text(app,
                       kOuterMargin,

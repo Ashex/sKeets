@@ -84,10 +84,11 @@ int fb_load_fonts(fb_t *fb, const char *font_dir) {
 
     fprintf(stderr, "fb_load_fonts: loading fonts from %s\n", font_dir);
     static const font_candidate_t candidates[] = {
+        {"EmojiOneColor.otf", FNT_BOLD_ITALIC, "emoji", false},
+        {"Noto Emoji Light 300.ttf", FNT_BOLD_ITALIC, "emoji", false},
         {"NotoSans-Regular.ttf", FNT_REGULAR, "regular", true},
         {"NotoSans-Medium.ttf", FNT_BOLD, "medium", false},
         {"NotoSans-Light.ttf", FNT_ITALIC, "light", false},
-        {"NotoSans-ExtraLight.ttf", FNT_BOLD_ITALIC, "extra-light", false},
         {"NotoSans-Bold.ttf", FNT_BOLD, "bold", false},
         {"NotoSans-Italic.ttf", FNT_ITALIC, "italic", false},
         {"Caecilia_LT_65_Medium.ttf", FNT_REGULAR, "regular", true},
@@ -99,11 +100,13 @@ int fb_load_fonts(fb_t *fb, const char *font_dir) {
     bool regular_loaded = false;
     bool bold_loaded = false;
     bool italic_loaded = false;
+    bool emoji_loaded = false;
 
     for (const font_candidate_t &candidate : candidates) {
         if ((candidate.style == FNT_REGULAR && regular_loaded) ||
             (candidate.style == FNT_BOLD && bold_loaded) ||
-            (candidate.style == FNT_ITALIC && italic_loaded)) {
+            (candidate.style == FNT_ITALIC && italic_loaded) ||
+            (candidate.style == FNT_BOLD_ITALIC && emoji_loaded)) {
             continue;
         }
 
@@ -118,6 +121,7 @@ int fb_load_fonts(fb_t *fb, const char *font_dir) {
         if (candidate.style == FNT_REGULAR) regular_loaded = true;
         if (candidate.style == FNT_BOLD) bold_loaded = true;
         if (candidate.style == FNT_ITALIC) italic_loaded = true;
+        if (candidate.style == FNT_BOLD_ITALIC) emoji_loaded = true;
     }
 
     if (!regular_loaded) {

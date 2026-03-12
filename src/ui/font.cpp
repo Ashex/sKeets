@@ -22,6 +22,8 @@ static std::vector<std::string> wrap_text_lines(int max_w, const char *s, int si
 
 static FONT_STYLE_T map_font_style(font_style_t style) {
     switch (style) {
+    case FONT_STYLE_EMOJI:
+        return FNT_BOLD_ITALIC;
     case FONT_STYLE_MEDIUM:
         return FNT_BOLD;
     case FONT_STYLE_LIGHT:

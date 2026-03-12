@@ -12,6 +12,7 @@ typedef enum {
     FONT_STYLE_REGULAR = 0,
     FONT_STYLE_MEDIUM,
     FONT_STYLE_LIGHT,
+    FONT_STYLE_EMOJI,
 } font_style_t;
 
 /* ── Init / shutdown ─────────────────────────────────────────────── */
