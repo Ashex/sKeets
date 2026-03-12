@@ -82,7 +82,7 @@ static void image_write_cache(const char *path, const image_t *img) {
 
 void image_cache_path(const char *url, char *out_path, int out_size) {
     unsigned long h = str_hash(url);
-    snprintf(out_path, out_size, "%s/%lx.img", skeets_cache_dir(), h);
+    snprintf(out_path, out_size, "%s/v2-%lx.img", skeets_cache_dir(), h);
 }
 
 int image_load_file(const char *path, image_t *out) {

@@ -48,8 +48,8 @@ constexpr int kOuterMargin = 28;
 constexpr int kCardGap = 20;
 constexpr int kCardPadding = 18;
 constexpr int kPostSeparator = 12;
-constexpr int kFeedAvatarSize = 80;
-constexpr int kThreadAvatarSize = 72;
+constexpr int kFeedAvatarSize = 100;
+constexpr int kThreadAvatarSize = 90;
 constexpr int kAvatarGap = 12;
 constexpr int kFeedEmbedMaxHeight = 168;
 constexpr int kQuoteIndent = 24;
@@ -244,24 +244,37 @@ int measure_external_embed_height(const rewrite_app_t& app, int width, const Bsk
     return std::max(app.text_fb.font_h * 2 + 12, body_height + 8);
 }
 
-int image_embed_tile_height(int width, int image_count) {
-    if (image_count <= 1) {
-        return kFeedEmbedMaxHeight;
-    }
-    const int tile_width = std::max(40, (width - kEmbedImageGap) / 2);
-    return std::min(kFeedEmbedMaxHeight, std::max(84, (tile_width * 9) / 10));
+int target_image_embed_width(const rewrite_app_t& app, int available_width) {
+    const int screen_target = (app.framebuffer.info.screen_width * 7) / 10;
+    return std::max(160, std::min(available_width, screen_target));
 }
 
-int measure_image_embed_height(int width, int image_count) {
+int single_image_embed_height(const rewrite_app_t& app, int embed_width) {
+    const int screen_cap = std::max(kFeedEmbedMaxHeight, app.framebuffer.info.screen_height / 2);
+    const int proportional_height = std::max(kFeedEmbedMaxHeight, (embed_width * 4) / 5);
+    return std::min(screen_cap, proportional_height);
+}
+
+int image_embed_tile_height(const rewrite_app_t& app, int embed_width, int image_count) {
+    if (image_count <= 1) {
+        return single_image_embed_height(app, embed_width);
+    }
+    const int tile_width = std::max(40, (embed_width - kEmbedImageGap) / 2);
+    const int max_tile_height = std::max(120, single_image_embed_height(app, embed_width) / 2);
+    return std::min(max_tile_height, std::max(110, (tile_width * 4) / 5));
+}
+
+int measure_image_embed_height(const rewrite_app_t& app, int available_width, int image_count) {
     if (image_count <= 0) {
         return 0;
     }
+    const int embed_width = target_image_embed_width(app, available_width);
     if (image_count == 1) {
-        return kFeedEmbedMaxHeight + 8;
+        return single_image_embed_height(app, embed_width) + 8;
     }
     const int visible = std::min(image_count, 4);
     const int rows = (visible + 1) / 2;
-    const int tile_height = image_embed_tile_height(width, image_count);
+    const int tile_height = image_embed_tile_height(app, embed_width, image_count);
     return (rows * tile_height) + ((rows - 1) * kEmbedImageGap) + 8;
 }
 
@@ -271,12 +284,16 @@ void draw_image_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, i
         return;
     }
 
+    const int embed_width = target_image_embed_width(app, width);
+    const int embed_x = x + std::max(0, (width - embed_width) / 2);
+
     if (image_count == 1) {
+        const int embed_height = single_image_embed_height(app, embed_width);
         const image_t* embed = image_cache_lookup(post.image_urls[0].c_str(),
-                                                  width,
-                                                  kFeedEmbedMaxHeight);
+                                                  embed_width,
+                                                  embed_height);
         if (embed) {
-            const int draw_x = x + std::max(0, (width - embed->width) / 2);
+            const int draw_x = embed_x + std::max(0, (embed_width - embed->width) / 2);
             fb_blit_rgba(&app.text_fb,
                          draw_x,
                          y,
@@ -285,39 +302,39 @@ void draw_image_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, i
                          embed->pixels);
             y += embed->height + 8;
         } else {
-            const int placeholder_width = std::min(width, std::max(width * 4 / 5, 160));
-            const int placeholder_x = x + std::max(0, (width - placeholder_width) / 2);
+            const int placeholder_width = embed_width;
+            const int placeholder_x = embed_x;
             fb_fill_rect(&app.text_fb,
                          placeholder_x,
                          y,
                          placeholder_width,
-                         kFeedEmbedMaxHeight,
+                         embed_height,
                          COLOR_LGRAY);
             const char* label = "[image loading]";
             const int label_x = placeholder_x + std::max(0, (placeholder_width - font_measure_string(label)) / 2);
             font_draw_string(&app.text_fb,
                              label_x,
-                             y + (kFeedEmbedMaxHeight - app.text_fb.font_h) / 2,
+                             y + (embed_height - app.text_fb.font_h) / 2,
                              label,
                              kColorMeta,
                              COLOR_LGRAY);
-            y += kFeedEmbedMaxHeight + 8;
+            y += embed_height + 8;
         }
         return;
     }
 
-    const int tile_width = std::max(40, (width - kEmbedImageGap) / 2);
-    const int tile_height = image_embed_tile_height(width, image_count);
+    const int tile_width = std::max(40, (embed_width - kEmbedImageGap) / 2);
+    const int tile_height = image_embed_tile_height(app, embed_width, image_count);
     const int grid_cols = std::min(2, image_count);
     const int grid_width = (grid_cols * tile_width) + ((grid_cols - 1) * kEmbedImageGap);
-    const int grid_x = x + std::max(0, (width - grid_width) / 2);
+    const int grid_x = embed_x + std::max(0, (embed_width - grid_width) / 2);
     for (int index = 0; index < image_count; ++index) {
         const int col = index % 2;
         const int row = index / 2;
         int tile_x = grid_x + (col * (tile_width + kEmbedImageGap));
         const int tile_y = y + (row * (tile_height + kEmbedImageGap));
         if ((image_count % 2) == 1 && index == image_count - 1) {
-            tile_x = x + std::max(0, (width - tile_width) / 2);
+            tile_x = embed_x + std::max(0, (embed_width - tile_width) / 2);
         }
         const image_t* embed = image_cache_lookup(post.image_urls[index].c_str(),
                                                   tile_width,
@@ -368,7 +385,7 @@ void draw_image_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, i
                                  0x80);
     }
 
-    y += measure_image_embed_height(width, image_count);
+                    y += measure_image_embed_height(app, width, image_count);
 }
 
 void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::Post& post, bool embed_images) {
@@ -426,14 +443,14 @@ void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky
 int measure_embed_block_height(const rewrite_app_t& app, const Bsky::Post& post, int width) {
     switch (post.embed_type) {
         case Bsky::EmbedType::Image:
-            return measure_image_embed_height(width, static_cast<int>(post.image_urls.size()));
+            return measure_image_embed_height(app, width, static_cast<int>(post.image_urls.size()));
         case Bsky::EmbedType::Quote:
             return post.quoted_post ? measure_quote_embed_height(app, width, post.quoted_post.get()) + 8 : 0;
         case Bsky::EmbedType::External:
             return measure_external_embed_height(app, width, post, app.embed_images_enabled) + 8;
         case Bsky::EmbedType::RecordWithMedia: {
             int total = 0;
-            if (!post.image_urls.empty()) total += measure_image_embed_height(width, static_cast<int>(post.image_urls.size()));
+            if (!post.image_urls.empty()) total += measure_image_embed_height(app, width, static_cast<int>(post.image_urls.size()));
             if (post.quoted_post) total += measure_quote_embed_height(app, width, post.quoted_post.get()) + 8;
             else if (!post.ext_uri.empty()) total += measure_external_embed_height(app, width, post, app.embed_images_enabled) + 8;
             return total;
@@ -722,15 +739,6 @@ bool advance_feed_page(rewrite_app_t& app) {
     }
 
     return false;
-}
-
-bool retreat_feed_page(rewrite_app_t& app) {
-    if (app.feed_page_history.empty()) {
-        return false;
-    }
-    app.feed_page_start = app.feed_page_history.back();
-    app.feed_page_history.pop_back();
-    return true;
 }
 
 void flatten_thread_posts(const Bsky::Post& post,

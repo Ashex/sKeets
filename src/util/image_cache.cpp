@@ -9,6 +9,7 @@
 #include <climits>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -31,7 +32,7 @@ struct cache_entry_t {
 
 /* ── Globals ──────────────────────────────────────────────────────── */
 
-static std::unordered_map<unsigned long, cache_entry_t> s_cache;
+static std::unordered_map<std::string, cache_entry_t> s_cache;
 static QNetworkAccessManager *s_nam = nullptr;
 static bool s_redraw_needed = false;
 
@@ -72,6 +73,10 @@ static std::string summarize_url(const char *url) {
     return text.substr(0, 93) + "...";
 }
 
+static std::string build_memory_cache_key(const std::string &url, int scale_w, int scale_h) {
+    return url + "|" + std::to_string(scale_w) + "x" + std::to_string(scale_h);
+}
+
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
 static long long cache_now_ms() {
@@ -110,32 +115,25 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
     if (!url || !*url) return nullptr;
 
     const std::string request_url = normalize_image_request_url(url);
-    unsigned long key = str_hash(request_url.c_str());
+    const std::string key = build_memory_cache_key(request_url, scale_w, scale_h);
 
     auto it = s_cache.find(key);
     if (it != s_cache.end()) {
-        /* Guard against hash collision: verify the stored URL matches. */
-        if (!it->second.url.empty() && it->second.url != request_url) {
-            /* Collision — evict the conflicting entry and re-fetch. */
-            if (it->second.img.pixels) free(it->second.img.pixels);
+        if (it->second.state == CacheState::Ready) {
+            it->second.last_accessed = cache_now_ms();
+            return &it->second.img;
+        }
+
+        if (it->second.state == CacheState::Failed) {
+            const long long now = cache_now_ms();
+            if (now - it->second.last_accessed < kFailedRetryDelayMs) {
+                return nullptr;
+            }
+            fprintf(stderr, "image cache: retrying failed url=%s\n",
+                    summarize_url(request_url.c_str()).c_str());
             s_cache.erase(it);
         } else {
-            if (it->second.state == CacheState::Ready) {
-                it->second.last_accessed = cache_now_ms();
-                return &it->second.img;
-            }
-
-            if (it->second.state == CacheState::Failed) {
-                const long long now = cache_now_ms();
-                if (now - it->second.last_accessed < kFailedRetryDelayMs) {
-                    return nullptr;
-                }
-                fprintf(stderr, "image cache: retrying failed url=%s\n",
-                        summarize_url(request_url.c_str()).c_str());
-                s_cache.erase(it);
-            } else {
-                return nullptr; /* Loading */
-            }
+            return nullptr; /* Loading */
         }
     }
 
@@ -183,7 +181,7 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
     QNetworkReply *reply = get_nam()->get(request);
 
     /* Capture key + scale params + url for the callback. */
-        std::string url_str(request_url);
+    std::string url_str(request_url);
     QObject::connect(reply, &QNetworkReply::finished, [reply, key, scale_w, scale_h, url_str]() {
         reply->deleteLater();
 
@@ -223,12 +221,12 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
             return;
         }
 
-        /* Pre-scale to target dimensions. */
+        /* Persist the original decoded image so later requests can scale up. */
+        image_write_disk_cache(url_str.c_str(), &img);
+
+        /* Pre-scale the in-memory variant to the requested dimensions. */
         if (scale_w > 0 && scale_h > 0)
             image_scale_to_fit(&img, scale_w, scale_h);
-
-        /* Write to disk cache. */
-        image_write_disk_cache(url_str.c_str(), &img);
 
         cit->second.img           = img;
         cit->second.state         = CacheState::Ready;

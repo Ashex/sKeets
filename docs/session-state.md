@@ -52,7 +52,7 @@ requests instead of forcing a relogin.
 | **Phase 2** | Credential file login (login.txt flow) | **DONE** ✅ |
 | **Phase 3** | Like and repost support | Working on-device |
 | **Phase 3.5** | Settings view: dual image toggles | Working on-device with feed/thread image rendering |
-| **Phase 4** | Input improvements (swipe, long-press) | Not started |
+| **Phase 4** | Input improvements (swipe, long-press) | In progress — feed/thread swipe navigation landed in rewrite UI |
 | **Phase 5** | Framebuffer & reliability improvements | Not started |
 | **Phase 5.5** | Bug fixes (JWT refresh, thread recursion, etc.) | Not started |
 | **Phase 6** | Cleanup (README, docs, stale comments) | Not started |
@@ -87,6 +87,7 @@ requests instead of forcing a relogin.
 3. Thread layouts remain stable when larger images load after initial render
 4. The cached JPEG coercion path remains robust across a wider mix of Bluesky CDN image URLs
 5. Newly landed thread fixes still need on-device validation: thread-side repost/unrepost taps are now wired, and long threads now use a right-side scrollbar with pre-measured clipping instead of bottom paging controls or drawing past the bottom edge
+6. Newly landed Phase 4 slice still needs on-device validation: swipe up/down now advances feed pages and scrolls longer thread chains without requiring the on-screen controls
 
 ---
 
@@ -130,6 +131,7 @@ The main entry point for the rewrite app. Changes this session:
 - **Async redraw handling**: Pumps Qt events in the main loop and triggers a repaint when `image_cache_redraw_needed()` signals that a download completed.
 - **Thread scrollbar and overflow fix**: Thread rendering now pre-measures each visible post, stops before drawing beyond the bottom edge, and uses a right-side scrollbar as the navigation surface for longer reply chains.
 - **Thread repost handling**: Thread stat hit targets now include repost/unrepost actions, matching the feed interaction surface.
+- **Swipe navigation**: The rewrite now tracks touch-down/up displacement so swipe up/down advances feed pages and moves through longer threads without depending solely on tap targets.
 
 ### `src/util/image_cache.cpp` / `src/util/image.cpp`
 - The shared image cache now logs concise fetch/decode state, retries transient failures, reopens raw disk-cache files correctly, and normalizes Bluesky CDN image URLs to `@jpeg` before hashing, fetch, and cache storage.
@@ -249,7 +251,8 @@ Remaining polish:
 - Expand embed handling beyond the first image and simple placeholder-level quote/media rendering
 - Improve quote, external-card, and record-with-media rendering in both feed and thread views
 - Validate the new right-side thread scrollbar and thread repost behavior on-device
-- Defer a settings option for left-side scrollbar placement to a later phase if the current right-side default works well enough
+- Defer a future settings refinement for the thread scrollbar: make it slightly wider and add pagination buttons at either end, while keeping left-side placement as a later settings option
+- Validate the new swipe-based feed/thread navigation on-device before pushing deeper into Phase 4 input work
 - Consider replacing the current feed-side reply filter with a richer policy once thread view is in place
 
 ---
