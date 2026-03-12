@@ -1,5 +1,7 @@
 # sKeets
 
+![sKeets Logo](src/img/skeets_splash_asset "sKeets for Kobo")
+
 A [Bluesky](https://bsky.app) (ATProto) social client for the **Kobo Clara Colour** e-ink reader, written in C++23.
 
 ## Features
