@@ -248,8 +248,11 @@ void draw_quote_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::P
 
 int target_preview_thumb_width(const rewrite_app_t& app, int available_width);
 
-bool preview_text_needs_stacked_layout(int side_text_height, int thumb_height, bool has_thumb) {
-    return has_thumb && side_text_height > thumb_height;
+bool preview_text_needs_stacked_layout(int side_text_height,
+                                       int thumb_height,
+                                       int side_text_width,
+                                       bool has_thumb) {
+    return has_thumb && (side_text_height > thumb_height || side_text_width < 220);
 }
 
 int measure_external_embed_height(const rewrite_app_t& app, int width, const Bsky::Post& post, bool embed_images) {
@@ -267,7 +270,7 @@ int measure_external_embed_height(const rewrite_app_t& app, int width, const Bsk
     const int side_title_height = font_measure_wrapped(side_text_width, title.c_str(), 4);
     const int side_description_height = description.empty() ? 0 : font_measure_wrapped(side_text_width, description.c_str(), 4);
     const int side_text_height = side_title_height + (description.empty() ? 0 : (side_description_height + 4));
-    if (preview_text_needs_stacked_layout(side_text_height, thumb_height, has_thumb)) {
+    if (preview_text_needs_stacked_layout(side_text_height, thumb_height, side_text_width, has_thumb)) {
         const int full_title_height = font_measure_wrapped(full_text_width, title.c_str(), 4);
         const int full_description_height = description.empty() ? 0 : font_measure_wrapped(full_text_width, description.c_str(), 4);
         const int full_text_height = full_title_height + (description.empty() ? 0 : (full_description_height + 4));
@@ -327,8 +330,10 @@ void draw_image_alt_block(rewrite_app_t& app, const Bsky::Post& post, int x, int
 }
 
 int target_preview_thumb_width(const rewrite_app_t& app, int available_width) {
-    const int screen_target = app.framebuffer.info.screen_width / 2;
-    return std::max(120, std::min(available_width, screen_target));
+    const int inner_width = std::max(120, available_width - 12);
+    const int width_target = (inner_width * 2) / 5;
+    const int screen_target = app.framebuffer.info.screen_width / 3;
+    return std::max(120, std::min(inner_width, std::min(width_target, screen_target)));
 }
 
 int measure_unsupported_media_height(const rewrite_app_t& app, const Bsky::Post& post, int width) {
@@ -342,7 +347,7 @@ int measure_unsupported_media_height(const rewrite_app_t& app, const Bsky::Post&
     const int side_label_height = font_measure_wrapped(side_text_width, label.c_str(), 4);
     const int side_alt_height = font_measure_wrapped(side_text_width, alt.c_str(), 4);
     const int side_text_height = side_label_height + 4 + side_alt_height;
-    if (preview_text_needs_stacked_layout(side_text_height, thumb_height, has_preview)) {
+    if (preview_text_needs_stacked_layout(side_text_height, thumb_height, side_text_width, has_preview)) {
         const int full_label_height = font_measure_wrapped(full_text_width, label.c_str(), 4);
         const int full_alt_height = font_measure_wrapped(full_text_width, alt.c_str(), 4);
         return thumb_height + 8 + full_label_height + 4 + full_alt_height + 12;
@@ -369,6 +374,7 @@ void draw_unsupported_media_block(rewrite_app_t& app, const Bsky::Post& post, in
     const int side_alt_height = font_measure_wrapped(side_text_width, alt.c_str(), 4);
     const bool stacked_layout = preview_text_needs_stacked_layout(side_label_height + 4 + side_alt_height,
                                                                   thumb_height,
+                                                                  side_text_width,
                                                                   has_preview);
     if (has_preview) {
         fb_fill_rect(&app.text_fb,
@@ -593,6 +599,7 @@ void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky
     const int side_description_height = description.empty() ? 0 : font_measure_wrapped(side_text_width, description.c_str(), 4);
     const bool stacked_layout = preview_text_needs_stacked_layout(side_title_height + (description.empty() ? 0 : (side_description_height + 4)),
                                                                   thumb_height,
+                                                                  side_text_width,
                                                                   has_thumb);
     if (has_thumb) {
         fb_fill_rect(&app.text_fb,

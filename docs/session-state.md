@@ -14,16 +14,17 @@ protocol path. The rewrite is no longer just an auth bootstrap shell: it now
 renders a usable text-first feed view with author, timestamp, body text, image
 placeholders, and stats.
 
-The current milestone is **rewrite settings and moderation polish after richer
-embed rendering**. Phase 3 interaction support is working in the rewrite, and
-Phase 3.5 settings now cover both image-gated rendering and default-off
-moderation preferences in feed and thread views. Saved-session restore now uses
-the ATProto refresh-token path, so expired access JWTs are rotated during
-bootstrap and during rewrite runtime requests instead of forcing a relogin.
+The current milestone is **media and preview layout validation after the
+wrapped-text clipping fix**. Phase 3 interaction support is working in the
+rewrite, and Phase 3.5 settings now cover both image-gated rendering and
+default-off moderation preferences in feed and thread views. Saved-session
+restore now uses the ATProto refresh-token path, so expired access JWTs are
+rotated during bootstrap and during rewrite runtime requests instead of forcing
+a relogin.
 
 ### Latest verified build
 
-- **build_timestamp**: `2026-03-12` (latest successful package after moderation settings, hidden-content filtering, and wrapped-text clipping fixes)
+- **build_timestamp**: `2026-03-12` (latest successful package at the confirmed wrapped-text clipping-fix checkpoint)
 - **Package**: `build-kobo/KoboRoot.tgz`
 - **Build command**: `NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh`
 
@@ -53,7 +54,7 @@ bootstrap and during rewrite runtime requests instead of forcing a relogin.
 | **Phase 3** | Like and repost support | Working on-device |
 | **Phase 3.5** | Settings view: image + moderation toggles | Working on-device with feed/thread image rendering and label gating |
 | **Phase 4** | Input improvements (swipe, long-press) | Deferred again — swipe experiment removed after poor device behavior |
-| **Phase 5** | Framebuffer & reliability improvements | In progress — rewrite redraw scoping work has started |
+| **Phase 5** | Framebuffer & reliability improvements | Not started in the active build — later refresh experiments were rolled back |
 | **Phase 5.5** | Bug fixes (JWT refresh, thread recursion, etc.) | Not started |
 | **Phase 6** | Cleanup (README, docs, stale comments) | Not started |
 
@@ -88,12 +89,13 @@ bootstrap and during rewrite runtime requests instead of forcing a relogin.
 ### What is still worth validating further
 
 1. Settings toggles persist cleanly across multiple relaunches and sign-out/sign-in cycles
-2. Async-loaded avatars and embeds repaint cleanly without objectionable artifacts now that non-full redraws are scoped to the content region
+2. Async-loaded avatars and embeds repaint cleanly without objectionable artifacts in the current pre-Phase-5 refresh path
 3. Thread layouts remain stable when larger images load after initial render
 4. The cached JPEG coercion path remains robust across a wider mix of Bluesky CDN image URLs
 5. Newly landed thread fixes still need on-device validation: thread-side repost/unrepost taps are now wired, and long threads now use a right-side scrollbar with pre-measured clipping instead of bottom paging controls or drawing past the bottom edge
 6. Newly landed media fallback behavior still needs on-device validation: image alt-text blocks should appear when embed images are disabled, and unsupported media previews should keep reasonable thumbnail/text sizing now that the clipping bug is fixed
 7. Newly landed moderation settings still need on-device validation: label-matched posts should show the hidden-content message by default and reappear immediately when the corresponding setting is enabled
+8. Re-check the earlier screenshot-driven preview-card cases now that wrapped text is stable: unsupported-media thumb spacing, external preview sizing, and any remaining text/image overlap
 
 ---
 
@@ -235,8 +237,8 @@ src/rewrite/
 
 ## Immediate Next Steps
 
-### 1. Phase 3.5: Settings view and image preferences
-Status: working on-device.
+### 1. Current checkpoint: clipping fixed, media layout next
+Status: wrapped-text clipping fix verified on-device.
 
 Implemented result:
 - Feed and thread headers expose a `Settings` action
@@ -252,10 +254,10 @@ Implemented result:
 - Bluesky CDN image URLs are rewritten to `@jpeg` to avoid WebP decode failures in the current decoder path
 
 Remaining polish:
+- Re-check unsupported-media and external preview-card sizing/spacing on-device now that text flow is stable
+- Confirm async-loaded avatars and embeds repaint cleanly in the current baseline build before attempting more refresh work
 - Confirm toggles persist across relaunches and sign-out/sign-in cycles
-- Confirm async-loaded avatars and embeds repaint cleanly with the new bounded content-region redraws
 - Confirm moderation labels seen in the wild map cleanly onto the Nudity, Porn, and Suggestive buckets without obvious false positives
-- Re-check unsupported-media and external preview-card sizing/spacing on-device; the remaining audit did not find another obvious code-level measurement mismatch after the clipping fix
 - Consider a cleaner image decode path if WebP support is needed later without CDN coercion
 
 ### 2. Phase 3 interaction polish
@@ -270,7 +272,8 @@ Remaining polish:
 ### 3. Next candidate milestone
 - Validate the new right-side thread scrollbar and thread repost behavior on-device
 - Validate image alt-text fallback blocks and unsupported media preview rows on-device
-- Continue Phase 5 rewrite-specific redraw cleanup beyond content-region scoping if more flashing remains visible
+- Re-audit preview-card and media spacing against the original screenshots now that clipping is no longer obscuring the layout bugs
+- Defer Phase 5 refresh work until the current clipping-fix/media-layout baseline is fully characterized on-device
 - Defer a future settings refinement for the thread scrollbar: make it slightly wider and add pagination buttons at either end, while keeping left-side placement as a later settings option
 - Consider replacing the current feed-side reply filter with a richer policy once thread view is in place
 
