@@ -243,6 +243,15 @@ file(GLOB SKEETS_FONT_ASSETS
     "${CMAKE_SOURCE_DIR}/*.ttf"
     "${CMAKE_SOURCE_DIR}/*.otf"
     "${CMAKE_SOURCE_DIR}/*.ttc"
+    "${CMAKE_SOURCE_DIR}/src/font/*.ttf"
+    "${CMAKE_SOURCE_DIR}/src/font/*.otf"
+    "${CMAKE_SOURCE_DIR}/src/font/*.ttc"
+)
+
+file(GLOB SKEETS_REWRITE_IMAGE_ASSETS
+    "${CMAKE_SOURCE_DIR}/src/img/*.png"
+    "${CMAKE_SOURCE_DIR}/src/img/*.jpg"
+    "${CMAKE_SOURCE_DIR}/src/img/*.jpeg"
 )
 
 install(TARGETS sKeets RUNTIME DESTINATION ${KOBO_INSTALL_PREFIX} COMPONENT Legacy)
@@ -269,6 +278,16 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/rewrite-package-revision.txt"
         DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX}
         RENAME package-revision.txt
         COMPONENT Rewrite)
+if(SKEETS_FONT_ASSETS)
+    install(FILES ${SKEETS_FONT_ASSETS}
+        DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX}/fonts
+        COMPONENT Rewrite)
+endif()
+if(SKEETS_REWRITE_IMAGE_ASSETS)
+    install(FILES ${SKEETS_REWRITE_IMAGE_ASSETS}
+        DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX}/assets
+        COMPONENT Rewrite)
+endif()
 
 add_custom_target(kobo-package
     COMMAND ${CMAKE_COMMAND} --install . --prefix kobo-pkg --component Legacy

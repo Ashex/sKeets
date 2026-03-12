@@ -85,6 +85,9 @@ int fb_load_fonts(fb_t *fb, const char *font_dir) {
     fprintf(stderr, "fb_load_fonts: loading fonts from %s\n", font_dir);
     static const font_candidate_t candidates[] = {
         {"NotoSans-Regular.ttf", FNT_REGULAR, "regular", true},
+        {"NotoSans-Medium.ttf", FNT_BOLD, "medium", false},
+        {"NotoSans-Light.ttf", FNT_ITALIC, "light", false},
+        {"NotoSans-ExtraLight.ttf", FNT_BOLD_ITALIC, "extra-light", false},
         {"NotoSans-Bold.ttf", FNT_BOLD, "bold", false},
         {"NotoSans-Italic.ttf", FNT_ITALIC, "italic", false},
         {"Caecilia_LT_65_Medium.ttf", FNT_REGULAR, "regular", true},

@@ -8,6 +8,12 @@
 #define FONT_FIRST   0x20
 #define FONT_LAST    0x7E
 
+typedef enum {
+    FONT_STYLE_REGULAR = 0,
+    FONT_STYLE_MEDIUM,
+    FONT_STYLE_LIGHT,
+} font_style_t;
+
 /* ── Init / shutdown ─────────────────────────────────────────────── */
 
 /* Store FBInk fd for font measurement functions. Call after fb_load_fonts(). */
@@ -22,6 +28,9 @@ int font_cell_w(void);
 
 /* Returns current font cell height in pixels. */
 int font_cell_h(void);
+
+/* Returns the line height for a styled font run. */
+int font_line_height(int size_px, font_style_t style);
 
 /* ── Text drawing ────────────────────────────────────────────────── */
 
@@ -39,6 +48,11 @@ int font_draw_char(fb_t *fb, int x, int y, char c,
 int font_draw_string(fb_t *fb, int x, int y, const char *s,
                      uint8_t fg, uint8_t bg);
 
+int font_draw_string_styled(fb_t *fb, int x, int y, const char *s,
+                            uint8_t fg, uint8_t bg,
+                            int size_px,
+                            font_style_t style);
+
 /*
  * Draw a string with word-wrap within a bounding box [x, x+max_w).
  * Returns the y-position after the last line.
@@ -48,14 +62,26 @@ int font_draw_wrapped(fb_t *fb, int x, int y, int max_w,
                       const char *s, uint8_t fg, uint8_t bg,
                       int line_spacing);
 
+int font_draw_wrapped_styled(fb_t *fb, int x, int y, int max_w,
+                             const char *s, uint8_t fg, uint8_t bg,
+                             int line_spacing,
+                             int size_px,
+                             font_style_t style);
+
 /*
  * Measure wrapped text height (in pixels) without drawing.
  */
 int font_measure_wrapped(int max_w, const char *s, int line_spacing);
 
+int font_measure_wrapped_styled(int max_w, const char *s, int line_spacing,
+                                int size_px,
+                                font_style_t style);
+
 /*
  * Measure the width of a single line of text (no wrap).
  */
 int font_measure_string(const char *s);
+
+int font_measure_string_styled(const char *s, int size_px, font_style_t style);
 
 #endif /* SKEETS_FONT_H */

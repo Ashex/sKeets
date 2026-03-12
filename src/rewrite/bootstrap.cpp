@@ -38,10 +38,6 @@ bool restore_saved_session_with_retry(const Bsky::Session& session,
             return true;
         }
 
-        std::fprintf(stderr,
-                     "rewrite bootstrap: session resume attempt %d failed: %s\n",
-                     attempt,
-                     error_message.c_str());
         if (attempt == 3 || !looks_like_transient_network_error(error_message)) {
             return false;
         }
@@ -155,11 +151,6 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     Bsky::Session restored_session;
     std::string saved_session_error;
     if (has_saved_session(saved_session)) {
-        std::fprintf(stderr,
-                 "rewrite bootstrap: attempting session resume for handle=%s pds=%s\n",
-                 saved_session.handle.c_str(),
-                 saved_session.pds_url.c_str());
-
         if (restore_saved_session_with_retry(saved_session, restored_session, saved_session_error)) {
             save_session(restored_session);
             rewrite_bootstrap_result_t result;
@@ -171,8 +162,6 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
             result.used_saved_session = true;
             return result;
         }
-
-        std::fprintf(stderr, "rewrite bootstrap: session resume failed after retries: %s\n", saved_session_error.c_str());
     }
 
     bool found_login_file = false;
@@ -187,12 +176,6 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     if (login.handle.empty() || login.password.empty()) {
         return make_error_result("login.txt is missing required handle or password fields", true);
     }
-
-    std::fprintf(stderr,
-                 "rewrite bootstrap: attempting createSession handle=%s pds=%s appview=%s\n",
-                 login.handle.c_str(),
-                 login.pds_url.empty() ? Bsky::DEFAULT_SERVICE_HOST : login.pds_url.c_str(),
-                 login.appview_url.c_str());
 
     bool created = false;
     std::string error_message;

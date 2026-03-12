@@ -8,6 +8,7 @@
 #include "rewrite/platform/network.h"
 #include "rewrite/platform/power.h"
 #include "util/config.h"
+#include "util/image.h"
 #include "util/image_cache.h"
 #include "util/paths.h"
 #include "ui/fb.h"
@@ -31,6 +32,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -58,6 +60,10 @@ constexpr int kExternalThumbSize = 72;
 constexpr int kThreadScrollbarWidth = 18;
 constexpr int kThreadScrollbarGap = 12;
 constexpr int kEmbedImageGap = 6;
+constexpr int kHeaderLogoMaxWidth = 220;
+constexpr int kHeaderLogoMaxHeight = 48;
+constexpr int kSplashLogoMaxWidth = 520;
+constexpr int kSplashLogoMaxHeight = 190;
 constexpr std::uint8_t kColorPostBorder = 0xC0;
 constexpr std::uint8_t kColorAuthor = 0x10;
 constexpr std::uint8_t kColorMeta = 0x60;
@@ -68,6 +74,7 @@ enum class rewrite_view_mode_t {
     feed,
     thread,
     settings,
+    diagnostics,
 };
 
 struct rewrite_post_hit_t {
@@ -95,6 +102,28 @@ struct rewrite_button_t {
     std::string label;
 };
 
+enum class rewrite_text_role_t {
+    body,
+    author,
+    meta,
+    button,
+    card_title,
+    status_title,
+    status_detail,
+    settings_label,
+    settings_detail,
+    action_label,
+    splash_title,
+    splash_detail,
+    fallback_brand,
+};
+
+struct rewrite_text_style_t {
+    int size_px;
+    font_style_t style;
+    int line_spacing;
+};
+
 struct rewrite_app_t {
     rewrite_framebuffer_t framebuffer;
     rewrite_input_t input;
@@ -103,11 +132,15 @@ struct rewrite_app_t {
     rewrite_device_info_t device;
     rewrite_power_info_t power;
     rewrite_network_info_t network;
+    image_t header_logo{};
+    image_t splash_logo{};
     std::string revision_summary;
     std::string status_line = "Checking rewrite auth bootstrap";
     std::string input_line = "Exit via the on-screen button or the hardware power key";
     rewrite_button_t refresh_button;
     rewrite_button_t exit_button;
+    rewrite_button_t diagnostics_back_button;
+    rewrite_button_t diagnostics_refresh_button;
 
     // Feed view state
     rewrite_view_mode_t view_mode = rewrite_view_mode_t::dashboard;
@@ -145,6 +178,7 @@ struct rewrite_app_t {
     rewrite_button_t settings_nudity_button;
     rewrite_button_t settings_porn_button;
     rewrite_button_t settings_suggestive_button;
+    rewrite_button_t settings_diagnostics_button;
     rewrite_button_t settings_sign_out_button;
 };
 
@@ -159,6 +193,80 @@ void handle_signal(int) {
 
 std::string bool_label(bool value) {
     return value ? "yes" : "no";
+}
+
+rewrite_text_style_t text_style(rewrite_text_role_t role) {
+    switch (role) {
+    case rewrite_text_role_t::author:
+        return {16, FONT_STYLE_MEDIUM, 4};
+    case rewrite_text_role_t::meta:
+        return {14, FONT_STYLE_LIGHT, 4};
+    case rewrite_text_role_t::button:
+        return {16, FONT_STYLE_MEDIUM, 0};
+    case rewrite_text_role_t::card_title:
+        return {16, FONT_STYLE_MEDIUM, 4};
+    case rewrite_text_role_t::status_title:
+        return {17, FONT_STYLE_MEDIUM, 4};
+    case rewrite_text_role_t::status_detail:
+        return {15, FONT_STYLE_LIGHT, 4};
+    case rewrite_text_role_t::settings_label:
+        return {16, FONT_STYLE_MEDIUM, 4};
+    case rewrite_text_role_t::settings_detail:
+        return {14, FONT_STYLE_LIGHT, 4};
+    case rewrite_text_role_t::action_label:
+        return {14, FONT_STYLE_MEDIUM, 0};
+    case rewrite_text_role_t::splash_title:
+        return {28, FONT_STYLE_MEDIUM, 6};
+    case rewrite_text_role_t::splash_detail:
+        return {18, FONT_STYLE_LIGHT, 6};
+    case rewrite_text_role_t::fallback_brand:
+        return {24, FONT_STYLE_MEDIUM, 4};
+    case rewrite_text_role_t::body:
+    default:
+        return {14, FONT_STYLE_REGULAR, 4};
+    }
+}
+
+int measure_text(const std::string& text, rewrite_text_role_t role) {
+    const rewrite_text_style_t style = text_style(role);
+    return font_measure_string_styled(text.c_str(), style.size_px, style.style);
+}
+
+int draw_text(rewrite_app_t& app,
+              int x,
+              int y,
+              const std::string& text,
+              rewrite_text_role_t role,
+              std::uint8_t fg,
+              std::uint8_t bg) {
+    const rewrite_text_style_t style = text_style(role);
+    return font_draw_string_styled(&app.text_fb, x, y, text.c_str(), fg, bg, style.size_px, style.style);
+}
+
+int draw_wrapped_text(rewrite_app_t& app,
+                      int x,
+                      int y,
+                      int width,
+                      const std::string& text,
+                      rewrite_text_role_t role,
+                      std::uint8_t fg,
+                      std::uint8_t bg) {
+    const rewrite_text_style_t style = text_style(role);
+    return font_draw_wrapped_styled(&app.text_fb,
+                                    x,
+                                    y,
+                                    width,
+                                    text.c_str(),
+                                    fg,
+                                    bg,
+                                    style.line_spacing,
+                                    style.size_px,
+                                    style.style);
+}
+
+int line_height(rewrite_text_role_t role) {
+    const rewrite_text_style_t style = text_style(role);
+    return font_line_height(style.size_px, style.style);
 }
 
 std::string to_lower_ascii(std::string text) {
@@ -247,6 +355,8 @@ void draw_quote_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::P
 }
 
 int target_preview_thumb_width(const rewrite_app_t& app, int available_width);
+int single_image_embed_height(const rewrite_app_t& app, int embed_width);
+int image_embed_tile_height(const rewrite_app_t& app, int embed_width, int image_count);
 
 bool preview_text_needs_stacked_layout(int side_text_height,
                                        int thumb_height,
@@ -435,6 +545,66 @@ void draw_unsupported_media_block(rewrite_app_t& app, const Bsky::Post& post, in
 int target_image_embed_width(const rewrite_app_t& app, int available_width) {
     const int screen_target = (app.framebuffer.info.screen_width * 7) / 10;
     return std::max(160, std::min(available_width, screen_target));
+}
+
+void queue_feed_image_requests(const rewrite_app_t& app) {
+    if (app.feed_result.state != rewrite_feed_state_t::loaded) {
+        return;
+    }
+
+    const int content_width = app.framebuffer.info.screen_width - (kOuterMargin * 2);
+    const int avatar_block_width = app.profile_images_enabled ? (kFeedAvatarSize + kAvatarGap) : 0;
+    const int post_text_width = std::max(160, content_width - avatar_block_width) - 8;
+    const int count = std::min(6, static_cast<int>(app.feed_result.feed.items.size()));
+
+    for (int index = 0; index < count; ++index) {
+        const Bsky::Post& post = app.feed_result.feed.items[index];
+        if (app.profile_images_enabled && !post.author.avatar_url.empty()) {
+            image_cache_lookup(post.author.avatar_url.c_str(), kFeedAvatarSize, kFeedAvatarSize);
+        }
+        if (!app.embed_images_enabled) {
+            continue;
+        }
+
+        if (!post.media_preview_url.empty()) {
+            const int thumb_width = target_preview_thumb_width(app, post_text_width);
+            const int thumb_height = std::max(96, (thumb_width * 3) / 4);
+            image_cache_lookup(post.media_preview_url.c_str(), thumb_width, thumb_height);
+        }
+        if (!post.ext_thumb_url.empty()) {
+            const int thumb_width = target_preview_thumb_width(app, post_text_width);
+            const int thumb_height = std::max(96, (thumb_width * 3) / 4);
+            image_cache_lookup(post.ext_thumb_url.c_str(), thumb_width, thumb_height);
+        }
+        if (!post.image_urls.empty()) {
+            const int image_count = std::min(4, static_cast<int>(post.image_urls.size()));
+            const int embed_width = target_image_embed_width(app, post_text_width);
+            if (image_count == 1) {
+                image_cache_lookup(post.image_urls[0].c_str(), embed_width, single_image_embed_height(app, embed_width));
+            } else {
+                const int tile_width = std::max(40, (embed_width - kEmbedImageGap) / 2);
+                const int tile_height = image_embed_tile_height(app, embed_width, image_count);
+                for (int image_index = 0; image_index < image_count; ++image_index) {
+                    image_cache_lookup(post.image_urls[image_index].c_str(), tile_width, tile_height);
+                }
+            }
+        }
+    }
+}
+
+void wait_for_initial_feed_images(int max_wait_ms) {
+    const auto start = std::chrono::steady_clock::now();
+    bool saw_ready = false;
+    while (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() < max_wait_ms) {
+        QCoreApplication::processEvents();
+        if (image_cache_redraw_needed()) {
+            saw_ready = true;
+        }
+        if (saw_ready && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() >= 300) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    }
 }
 
 int single_image_embed_height(const rewrite_app_t& app, int embed_width) {
@@ -721,6 +891,65 @@ std::string rewrite_dir() {
     return value && *value ? value : "/mnt/onboard/.adds/sKeets-rewrite";
 }
 
+std::string rewrite_asset_path(const char* filename) {
+    return rewrite_dir() + "/assets/" + filename;
+}
+
+bool load_local_image_asset(image_t& image, const std::string& path, int max_w, int max_h) {
+    image_t loaded{};
+    if (image_load_file(path.c_str(), &loaded) != 0) {
+        return false;
+    }
+    if (max_w > 0 && max_h > 0) {
+        image_scale_to_fit(&loaded, max_w, max_h);
+    }
+    image_free(&image);
+    image = loaded;
+    return true;
+}
+
+void load_brand_assets(rewrite_app_t& app) {
+    load_local_image_asset(app.header_logo,
+                           rewrite_asset_path("sKeets_top_bar_white.png"),
+                           kHeaderLogoMaxWidth,
+                           kHeaderLogoMaxHeight);
+    load_local_image_asset(app.splash_logo,
+                           rewrite_asset_path("sKeets_splash_white.png"),
+                           kSplashLogoMaxWidth,
+                           kSplashLogoMaxHeight);
+}
+
+void free_brand_assets(rewrite_app_t& app) {
+    image_free(&app.header_logo);
+    image_free(&app.splash_logo);
+}
+
+void draw_centered_image(rewrite_app_t& app, const image_t& image, int center_x, int y) {
+    if (!image.pixels || image.width <= 0 || image.height <= 0) {
+        return;
+    }
+    const int draw_x = std::max(0, center_x - (image.width / 2));
+    fb_blit_rgba(&app.text_fb, draw_x, y, image.width, image.height, image.pixels);
+}
+
+void draw_header_brand(rewrite_app_t& app, const rewrite_rect_t& header_rect) {
+    if (app.header_logo.pixels && app.header_logo.width > 0 && app.header_logo.height > 0) {
+        const int logo_y = header_rect.y + std::max(0, (header_rect.height - app.header_logo.height) / 2);
+        draw_centered_image(app, app.header_logo, header_rect.x + (header_rect.width / 2), logo_y);
+        return;
+    }
+
+    const int brand_y = header_rect.y + std::max(0, (header_rect.height - line_height(rewrite_text_role_t::fallback_brand)) / 2);
+    draw_text(app,
+              std::max(kOuterMargin,
+                       header_rect.x + (header_rect.width - measure_text("sKeets", rewrite_text_role_t::fallback_brand)) / 2),
+              brand_y,
+              "sKeets",
+              rewrite_text_role_t::fallback_brand,
+              COLOR_WHITE,
+              kColorHeader);
+}
+
 std::string read_revision_summary() {
     std::ifstream file(rewrite_dir() + "/package-revision.txt");
     if (!file) {
@@ -782,10 +1011,16 @@ void draw_border(rewrite_app_t& app, const rewrite_rect_t& rect, std::uint8_t co
     rewrite_framebuffer_fill_rect(app.framebuffer, rewrite_rect_t{rect.x + rect.width - thickness, rect.y, thickness, rect.height}, color);
 }
 
-void draw_centered_text(rewrite_app_t& app, int center_x, int y, const std::string& text, std::uint8_t fg, std::uint8_t bg) {
-    const int text_width = font_measure_string(text.c_str());
+void draw_centered_text(rewrite_app_t& app,
+                        int center_x,
+                        int y,
+                        const std::string& text,
+                        std::uint8_t fg,
+                        std::uint8_t bg,
+                        rewrite_text_role_t role = rewrite_text_role_t::body) {
+    const int text_width = measure_text(text, role);
     const int start_x = std::max(kOuterMargin, center_x - text_width / 2);
-    font_draw_string(&app.text_fb, start_x, y, text.c_str(), fg, bg);
+    draw_text(app, start_x, y, text, role, fg, bg);
 }
 
 void draw_card(rewrite_app_t& app,
@@ -795,28 +1030,29 @@ void draw_card(rewrite_app_t& app,
     rewrite_framebuffer_fill_rect(app.framebuffer, rect, kColorCard);
     draw_border(app, rect, kColorCardBorder);
 
-    const rewrite_rect_t title_rect{rect.x, rect.y, rect.width, app.text_fb.font_h + kCardPadding};
+    const rewrite_rect_t title_rect{rect.x, rect.y, rect.width, line_height(rewrite_text_role_t::card_title) + kCardPadding};
     rewrite_framebuffer_fill_rect(app.framebuffer, title_rect, kColorCardTitle);
-    font_draw_string(&app.text_fb,
-                     rect.x + kCardPadding,
-                     rect.y + kCardPadding / 2,
-                     title.c_str(),
-                     COLOR_WHITE,
-                     kColorCardTitle);
+    draw_text(app,
+              rect.x + kCardPadding,
+              rect.y + kCardPadding / 2,
+              title,
+              rewrite_text_role_t::card_title,
+              COLOR_WHITE,
+              kColorCardTitle);
 
     int cursor_y = rect.y + title_rect.height + 12;
     const int max_width = rect.width - (kCardPadding * 2);
     for (const std::string& line : lines) {
-        cursor_y = font_draw_wrapped(&app.text_fb,
+        cursor_y = draw_wrapped_text(app,
                                      rect.x + kCardPadding,
                                      cursor_y,
                                      max_width,
-                                     line.c_str(),
+                                     line,
+                                     rewrite_text_role_t::body,
                                      COLOR_BLACK,
-                                     kColorCard,
-                                     4);
+                                     kColorCard);
         cursor_y += 8;
-        if (cursor_y >= rect.y + rect.height - app.text_fb.font_h - kCardPadding) {
+        if (cursor_y >= rect.y + rect.height - line_height(rewrite_text_role_t::body) - kCardPadding) {
             break;
         }
     }
@@ -826,13 +1062,14 @@ void draw_button(rewrite_app_t& app, const rewrite_button_t& button, std::uint8_
     rewrite_framebuffer_fill_rect(app.framebuffer, button.rect, fill);
     draw_border(app, button.rect, COLOR_BLACK, 3);
 
-    const int center_y = button.rect.y + (button.rect.height - app.text_fb.font_h) / 2;
+    const int center_y = button.rect.y + (button.rect.height - line_height(rewrite_text_role_t::button)) / 2;
     draw_centered_text(app,
                        button.rect.x + button.rect.width / 2,
                        center_y,
                        button.label,
                        fill <= 0x40 ? COLOR_WHITE : COLOR_BLACK,
-                       fill);
+                       fill,
+                       rewrite_text_role_t::button);
 }
 
 void refresh_runtime_state(rewrite_app_t& app) {
@@ -1138,12 +1375,13 @@ void render_feed_stats_only(rewrite_app_t& app, const rewrite_post_hit_t& hit) {
     const Bsky::Post& post = app.feed_result.feed.items[hit.post_index];
     const std::string stats = feed_like_label(post) + "  " + feed_reply_label(post) + "  " + feed_repost_label(post);
     rewrite_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
-    font_draw_string(&app.text_fb,
-                     hit.stats_x,
-                     hit.stats_y,
-                     stats.c_str(),
-                     kColorMeta,
-                     COLOR_WHITE);
+    draw_text(app,
+              hit.stats_x,
+              hit.stats_y,
+              stats,
+              rewrite_text_role_t::meta,
+              kColorMeta,
+              COLOR_WHITE);
     refresh_region(app,
                    expand_rect(hit.stats_rect,
                                6,
@@ -1159,12 +1397,13 @@ void render_thread_stats_only(rewrite_app_t& app, const rewrite_thread_post_hit_
                               thread_reply_label(*hit.post) + "  " +
                               thread_repost_label(*hit.post);
     rewrite_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
-    font_draw_string(&app.text_fb,
-                     hit.stats_x,
-                     hit.stats_y,
-                     stats.c_str(),
-                     kColorMeta,
-                     COLOR_WHITE);
+    draw_text(app,
+              hit.stats_x,
+              hit.stats_y,
+              stats,
+              rewrite_text_role_t::meta,
+              kColorMeta,
+              COLOR_WHITE);
     refresh_region(app,
                    expand_rect(hit.stats_rect,
                                6,
@@ -1247,8 +1486,7 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
 
     const rewrite_rect_t header_rect{0, 0, width, header_height};
     rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
-    draw_centered_text(app, width / 2, 26, "sKeets", COLOR_WHITE, kColorHeader);
-    draw_centered_text(app, width / 2, 26 + app.text_fb.font_h + 10, "Auth bootstrap shell", COLOR_WHITE, kColorHeader);
+    draw_header_brand(app, header_rect);
 
     draw_card(app, auth_rect, "Authentication", auth_lines(app));
     draw_card(app, device_rect, "Device", device_lines(app));
@@ -1257,20 +1495,21 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
 
     rewrite_framebuffer_fill_rect(app.framebuffer, status_rect, kColorStatus);
     draw_border(app, status_rect, kColorCardBorder);
-    font_draw_string(&app.text_fb,
-                     status_rect.x + kCardPadding,
-                     status_rect.y + 16,
-                     app.status_line.c_str(),
-                     COLOR_BLACK,
-                     kColorStatus);
-    font_draw_wrapped(&app.text_fb,
+    draw_text(app,
+              status_rect.x + kCardPadding,
+              status_rect.y + 16,
+              app.status_line,
+              rewrite_text_role_t::status_title,
+              COLOR_BLACK,
+              kColorStatus);
+    draw_wrapped_text(app,
                       status_rect.x + kCardPadding,
-                      status_rect.y + 16 + app.text_fb.font_h + 12,
+                      status_rect.y + 16 + line_height(rewrite_text_role_t::status_title) + 12,
                       status_rect.width - (kCardPadding * 2),
-                      app.input_line.c_str(),
+                      app.input_line,
+                      rewrite_text_role_t::status_detail,
                       COLOR_BLACK,
-                      kColorStatus,
-                      4);
+                      kColorStatus);
 
     draw_button(app, app.refresh_button, kColorButtonSecondary);
     draw_button(app, app.exit_button, kColorButtonPrimary);
@@ -1283,6 +1522,125 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
                                      true,
                                      &error_message)) {
         std::fprintf(stderr, "rewrite app: refresh failed: %s\n", error_message.c_str());
+    }
+}
+
+void render_loading_screen(rewrite_app_t& app,
+                           const std::string& title,
+                           const std::string& detail,
+                           bool full_refresh) {
+    const int width = app.framebuffer.info.screen_width;
+    const int height = app.framebuffer.info.screen_height;
+    const int splash_top = std::max(120, height / 7);
+
+    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+
+    if (app.splash_logo.pixels && app.splash_logo.width > 0 && app.splash_logo.height > 0) {
+        draw_centered_image(app, app.splash_logo, width / 2, splash_top);
+    } else {
+        draw_centered_text(app,
+                           width / 2,
+                           splash_top + 24,
+                           "sKeets",
+                           kColorHeader,
+                           COLOR_WHITE,
+                           rewrite_text_role_t::splash_title);
+    }
+
+    const int logo_bottom = splash_top + (app.splash_logo.height > 0 ? app.splash_logo.height : line_height(rewrite_text_role_t::splash_title));
+    const int title_y = logo_bottom + 54;
+    draw_centered_text(app,
+                       width / 2,
+                       title_y,
+                       title,
+                       COLOR_BLACK,
+                       COLOR_WHITE,
+                       rewrite_text_role_t::splash_title);
+    draw_wrapped_text(app,
+                      kOuterMargin * 2,
+                      title_y + line_height(rewrite_text_role_t::splash_title) + 20,
+                      width - (kOuterMargin * 4),
+                      detail,
+                      rewrite_text_role_t::splash_detail,
+                      kColorMeta,
+                      COLOR_WHITE);
+
+    std::string error_message;
+    const rewrite_rect_t screen_rect = full_screen_rect(app);
+    if (!rewrite_framebuffer_refresh(app.framebuffer,
+                                     ui_refresh_mode(app, full_refresh),
+                                     screen_rect,
+                                     true,
+                                     &error_message)) {
+        std::fprintf(stderr, "rewrite app: loading refresh failed: %s\n", error_message.c_str());
+    }
+}
+
+void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
+    const int width = app.framebuffer.info.screen_width;
+    const int height = app.framebuffer.info.screen_height;
+    const int header_height = std::max(108, height / 11);
+    const int button_height = std::max(110, height / 10);
+    const int status_height = std::max(132, height / 10);
+    const int cards_height = height - header_height - button_height - status_height - (kOuterMargin * 5);
+    const int row_height = std::max(180, cards_height / 2);
+    const int half_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
+
+    const rewrite_rect_t auth_rect{kOuterMargin, header_height + kOuterMargin, half_width, row_height};
+    const rewrite_rect_t device_rect{auth_rect.x + auth_rect.width + kCardGap, auth_rect.y, half_width, row_height};
+    const rewrite_rect_t power_rect{kOuterMargin, auth_rect.y + row_height + kCardGap, half_width, row_height};
+    const rewrite_rect_t network_rect{power_rect.x + power_rect.width + kCardGap, power_rect.y, half_width, row_height};
+    const rewrite_rect_t status_rect{kOuterMargin,
+                                     network_rect.y + network_rect.height + kOuterMargin,
+                                     width - (kOuterMargin * 2),
+                                     status_height};
+    const int button_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
+    app.diagnostics_back_button = {{kOuterMargin, height - button_height - kOuterMargin, button_width, button_height}, "< Back"};
+    app.diagnostics_refresh_button = {{app.diagnostics_back_button.rect.x + button_width + kCardGap,
+                                       app.diagnostics_back_button.rect.y,
+                                       button_width,
+                                       button_height},
+                                      "Refresh"};
+
+    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+    const rewrite_rect_t header_rect{0, 0, width, header_height};
+    rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    draw_header_brand(app, header_rect);
+
+    draw_card(app, auth_rect, "Authentication", auth_lines(app));
+    draw_card(app, device_rect, "Device", device_lines(app));
+    draw_card(app, power_rect, "Power And Runtime", power_lines(app));
+    draw_card(app, network_rect, "Connectivity", network_lines(app));
+
+    rewrite_framebuffer_fill_rect(app.framebuffer, status_rect, kColorStatus);
+    draw_border(app, status_rect, kColorCardBorder);
+    draw_text(app,
+              status_rect.x + kCardPadding,
+              status_rect.y + 16,
+              app.status_line,
+              rewrite_text_role_t::status_title,
+              COLOR_BLACK,
+              kColorStatus);
+    draw_wrapped_text(app,
+                      status_rect.x + kCardPadding,
+                      status_rect.y + 16 + line_height(rewrite_text_role_t::status_title) + 12,
+                      status_rect.width - (kCardPadding * 2),
+                      app.input_line,
+                      rewrite_text_role_t::status_detail,
+                      COLOR_BLACK,
+                      kColorStatus);
+
+    draw_button(app, app.diagnostics_back_button, kColorButtonSecondary);
+    draw_button(app, app.diagnostics_refresh_button, kColorButtonPrimary);
+
+    std::string error_message;
+    const rewrite_rect_t screen_rect = full_screen_rect(app);
+    if (!rewrite_framebuffer_refresh(app.framebuffer,
+                                     ui_refresh_mode(app, full_refresh),
+                                     screen_rect,
+                                     true,
+                                     &error_message)) {
+        std::fprintf(stderr, "rewrite app: diagnostics refresh failed: %s\n", error_message.c_str());
     }
 }
 
@@ -1327,8 +1685,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
     const rewrite_rect_t header_rect{0, 0, width, header_height};
     rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_button(app, app.feed_settings_button, kColorButtonSecondary);
-    draw_centered_text(app, width / 2, (header_height - app.text_fb.font_h) / 2,
-                       "sKeets - Home Timeline", COLOR_WHITE, kColorHeader);
+    draw_header_brand(app, header_rect);
 
     // Posts
     const auto& items = app.feed_result.feed.items;
@@ -1371,8 +1728,13 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             // Repost attribution
             if (!post.reposted_by.empty()) {
                 std::string repost_line = sanitize_bitmap_text(">> Reposted by @" + post.reposted_by);
-                font_draw_string(&app.text_fb, text_left, cursor_y,
-                                 repost_line.c_str(), kColorRepost, COLOR_WHITE);
+                draw_text(app,
+                          text_left,
+                          cursor_y,
+                          repost_line,
+                          rewrite_text_role_t::meta,
+                          kColorRepost,
+                          COLOR_WHITE);
                 cursor_y += app.text_fb.font_h + 2;
             }
 
@@ -1417,15 +1779,25 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                 }
             }
 
-            font_draw_string(&app.text_fb, text_left, cursor_y,
-                             author.c_str(), kColorAuthor, COLOR_WHITE);
+            draw_text(app,
+                      text_left,
+                      cursor_y,
+                      author,
+                      rewrite_text_role_t::author,
+                      kColorAuthor,
+                      COLOR_WHITE);
             // Draw timestamp right-aligned
             {
-                int time_w = font_measure_string(time_buf);
+                int time_w = measure_text(time_buf, rewrite_text_role_t::meta);
                 int time_x = width - kOuterMargin - time_w;
-                if (time_x > text_left + font_measure_string(author.c_str()) + 8) {
-                    font_draw_string(&app.text_fb, time_x, cursor_y,
-                                     time_buf, kColorMeta, COLOR_WHITE);
+                if (time_x > text_left + measure_text(author, rewrite_text_role_t::author) + 8) {
+                    draw_text(app,
+                              time_x,
+                              cursor_y,
+                              time_buf,
+                              rewrite_text_role_t::meta,
+                              kColorMeta,
+                              COLOR_WHITE);
                 }
             }
             cursor_y += std::max(app.text_fb.font_h + 4,
@@ -1472,8 +1844,13 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             const std::string reply_label = feed_reply_label(post);
             const std::string repost_label = feed_repost_label(post);
             const std::string stats = like_label + "  " + reply_label + "  " + repost_label;
-            font_draw_string(&app.text_fb, stats_x, cursor_y,
-                             stats.c_str(), kColorMeta, COLOR_WHITE);
+            draw_text(app,
+                      stats_x,
+                      cursor_y,
+                      stats,
+                      rewrite_text_role_t::meta,
+                      kColorMeta,
+                      COLOR_WHITE);
             cursor_y += app.text_fb.font_h;
 
             const std::string middle_label = like_label + "  " + reply_label + "  ";
@@ -1512,7 +1889,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                                 " of " + std::to_string(total);
         if (!app.feed_result.feed.cursor.empty()) page_info += "+";
         int info_y = btn_y - app.text_fb.font_h - 8;
-        draw_centered_text(app, width / 2, info_y, page_info, kColorMeta, COLOR_WHITE);
+        draw_centered_text(app, width / 2, info_y, page_info, kColorMeta, COLOR_WHITE, rewrite_text_role_t::meta);
     }
 
     // Buttons
@@ -1560,8 +1937,7 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_button(app, app.thread_back_button, kColorButtonSecondary);
     draw_button(app, app.thread_settings_button, kColorButtonSecondary);
-    draw_centered_text(app, width / 2, (header_height - app.text_fb.font_h) / 2,
-                       "Thread", COLOR_WHITE, kColorHeader);
+    draw_header_brand(app, header_rect);
 
     int cursor_y = header_height + kOuterMargin;
     if (app.thread_result.state != rewrite_thread_state_t::loaded) {
@@ -1644,7 +2020,7 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
                 }
             }
 
-            font_draw_string(&app.text_fb, text_x, cursor_y, author.c_str(), kColorAuthor, COLOR_WHITE);
+            draw_text(app, text_x, cursor_y, author, rewrite_text_role_t::author, kColorAuthor, COLOR_WHITE);
             cursor_y += std::max(app.text_fb.font_h + 4,
                                  app.profile_images_enabled ? kThreadAvatarSize + 4 : 0);
 
@@ -1688,7 +2064,7 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
             const std::string reply_label = thread_reply_label(*post);
             const std::string repost_label = thread_repost_label(*post);
             const std::string stats = like_label + "  " + reply_label + "  " + repost_label;
-            font_draw_string(&app.text_fb, text_x, cursor_y, stats.c_str(), kColorMeta, COLOR_WHITE);
+            draw_text(app, text_x, cursor_y, stats, rewrite_text_role_t::meta, kColorMeta, COLOR_WHITE);
             const int stats_y = cursor_y;
             const int like_width = std::max(72, font_measure_string(like_label.c_str()) + 16);
             const std::string middle_label = like_label + "  " + reply_label + "  ";
@@ -1762,10 +2138,11 @@ void draw_toggle_chip(rewrite_app_t& app, const rewrite_rect_t& rect, bool enabl
     draw_border(app, rect, COLOR_BLACK, 2);
     draw_centered_text(app,
                        rect.x + rect.width / 2,
-                       rect.y + (rect.height - app.text_fb.font_h) / 2,
+                       rect.y + (rect.height - line_height(rewrite_text_role_t::button)) / 2,
                        enabled ? "ON" : "OFF",
                        enabled ? COLOR_WHITE : COLOR_BLACK,
-                       fill);
+                       fill,
+                       rewrite_text_role_t::button);
 }
 
 void draw_settings_row(rewrite_app_t& app,
@@ -1778,21 +2155,56 @@ void draw_settings_row(rewrite_app_t& app,
 
     const int text_x = row.rect.x + kCardPadding;
     const int text_y = row.rect.y + 12;
-    font_draw_string(&app.text_fb, text_x, text_y, label.c_str(), COLOR_BLACK, kColorCard);
-    font_draw_wrapped(&app.text_fb,
+    draw_text(app, text_x, text_y, label, rewrite_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+    draw_wrapped_text(app,
                       text_x,
-                      text_y + app.text_fb.font_h + 6,
+                      text_y + line_height(rewrite_text_role_t::settings_label) + 6,
                       row.rect.width - 180,
-                      detail.c_str(),
+                      detail,
+                      rewrite_text_role_t::settings_detail,
                       kColorMeta,
-                      kColorCard,
-                      4);
+                      kColorCard);
 
     const rewrite_rect_t toggle_rect{row.rect.x + row.rect.width - 116,
                                      row.rect.y + (row.rect.height - 46) / 2,
                                      92,
                                      46};
     draw_toggle_chip(app, toggle_rect, enabled);
+}
+
+void draw_settings_action_row(rewrite_app_t& app,
+                              const rewrite_button_t& row,
+                              const std::string& label,
+                              const std::string& detail,
+                              const std::string& action_label) {
+    rewrite_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
+    draw_border(app, row.rect, kColorPostBorder, 2);
+
+    const int text_x = row.rect.x + kCardPadding;
+    const int text_y = row.rect.y + 12;
+    draw_text(app, text_x, text_y, label, rewrite_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+    draw_wrapped_text(app,
+                      text_x,
+                      text_y + line_height(rewrite_text_role_t::settings_label) + 6,
+                      row.rect.width - 180,
+                      detail,
+                      rewrite_text_role_t::settings_detail,
+                      kColorMeta,
+                      kColorCard);
+
+    const rewrite_rect_t action_rect{row.rect.x + row.rect.width - 124,
+                                     row.rect.y + (row.rect.height - 46) / 2,
+                                     100,
+                                     46};
+    rewrite_framebuffer_fill_rect(app.framebuffer, action_rect, kColorButtonSecondary);
+    draw_border(app, action_rect, COLOR_BLACK, 2);
+    draw_centered_text(app,
+                       action_rect.x + action_rect.width / 2,
+                       action_rect.y + (action_rect.height - line_height(rewrite_text_role_t::action_label)) / 2,
+                       action_label,
+                       COLOR_BLACK,
+                       kColorButtonSecondary,
+                       rewrite_text_role_t::action_label);
 }
 
 void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
@@ -1810,6 +2222,7 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
     app.settings_nudity_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 2, content_width, row_height}, "Nudity"};
     app.settings_porn_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 3, content_width, row_height}, "Porn"};
     app.settings_suggestive_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 4, content_width, row_height}, "Suggestive"};
+    app.settings_diagnostics_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 5, content_width, row_height}, "Diagnostics"};
     app.settings_sign_out_button = {{kOuterMargin,
                                      height - kOuterMargin - std::max(90, height / 12),
                                      content_width,
@@ -1821,8 +2234,7 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
     const rewrite_rect_t header_rect{0, 0, width, header_height};
     rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_button(app, app.settings_back_button, kColorButtonSecondary);
-    draw_centered_text(app, width / 2, (header_height - app.text_fb.font_h) / 2,
-                       "Settings", COLOR_WHITE, kColorHeader);
+    draw_header_brand(app, header_rect);
 
     draw_settings_row(app,
                       app.settings_profile_button,
@@ -1849,15 +2261,20 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
                       "Suggestive",
                       "Show posts labeled for suggestive or sexual content.",
                       app.allow_suggestive_content);
+    draw_settings_action_row(app,
+                             app.settings_diagnostics_button,
+                             "Diagnostics",
+                             "Open the device and authentication diagnostics screen that used to appear at startup.",
+                             "Open");
 
-    font_draw_wrapped(&app.text_fb,
+    draw_wrapped_text(app,
                       kOuterMargin,
-                      app.settings_suggestive_button.rect.y + app.settings_suggestive_button.rect.height + 20,
+                      app.settings_diagnostics_button.rect.y + app.settings_diagnostics_button.rect.height + 20,
                       content_width,
                       "These toggles are persisted. Adult-content categories default to hidden until enabled here.",
+                      rewrite_text_role_t::settings_detail,
                       kColorMeta,
-                      COLOR_WHITE,
-                      4);
+                      COLOR_WHITE);
 
     draw_button(app, app.settings_sign_out_button, kColorButtonPrimary);
 
@@ -1919,6 +2336,10 @@ void render_active_view(rewrite_app_t& app, bool full_refresh) {
         render_settings_screen(app, full_refresh);
         return;
     }
+    if (app.view_mode == rewrite_view_mode_t::diagnostics) {
+        render_diagnostics_screen(app, full_refresh);
+        return;
+    }
     render_screen(app, full_refresh);
 }
 
@@ -1947,12 +2368,6 @@ int main(int argc, char* argv[]) {
             std::fprintf(stderr, "rewrite openssl: dlopen(%s) failed: %s\n",
                          ssl_path.c_str(), dlerror());
         }
-
-        if (crypto && ssl) {
-            std::fprintf(stderr, "rewrite openssl: preloaded OpenSSL 3.x from %s\n",
-                         lib_dir.c_str());
-
-        }
     }
 
     QCoreApplication app(argc, argv);
@@ -1971,8 +2386,6 @@ int main(int argc, char* argv[]) {
                 auto config = QSslConfiguration::defaultConfiguration();
                 config.setCaCertificates(certs);
                 QSslConfiguration::setDefaultConfiguration(config);
-                std::fprintf(stderr, "rewrite ssl: loaded %d CA certs from %s\n",
-                             certs.size(), ca_path.toUtf8().constData());
             } else {
                 std::fprintf(stderr, "rewrite ssl: no certs parsed from %s\n",
                              ca_path.toUtf8().constData());
@@ -2002,8 +2415,13 @@ int main(int argc, char* argv[]) {
     rewrite_app.text_fb.height = rewrite_app.framebuffer.info.screen_height;
     rewrite_app.text_fb.font_w = rewrite_app.framebuffer.info.font_width;
     rewrite_app.text_fb.font_h = rewrite_app.framebuffer.info.font_height;
+    if (fb_load_fonts(&rewrite_app.text_fb, (rewrite_dir() + "/fonts").c_str()) == 0) {
+        font_set_ot_enabled(true);
+    } else {
+        font_set_ot_enabled(false);
+    }
     font_init(&rewrite_app.text_fb);
-    font_set_ot_enabled(false);
+    load_brand_assets(rewrite_app);
 
     if (!rewrite_input_open(rewrite_app.input,
                             rewrite_app.framebuffer.info.screen_width,
@@ -2022,9 +2440,18 @@ int main(int argc, char* argv[]) {
 
     // If auth succeeded, auto-load the feed and switch to feed view
     if (rewrite_app.bootstrap.authenticated) {
-        render_screen(rewrite_app, true);  // Show dashboard briefly with auth status
+        render_loading_screen(rewrite_app,
+                              "Loading timeline",
+                              "Fetching your home feed and warming the first image batch.",
+                              true);
         load_feed(rewrite_app);
         if (rewrite_app.feed_result.state == rewrite_feed_state_t::loaded) {
+            queue_feed_image_requests(rewrite_app);
+            render_loading_screen(rewrite_app,
+                                  "Loading media",
+                                  "Starting avatar and preview downloads for the first visible posts.",
+                                  true);
+            wait_for_initial_feed_images(1200);
             rewrite_app.view_mode = rewrite_view_mode_t::feed;
             render_feed_screen(rewrite_app, true);
         } else {
@@ -2377,6 +2804,14 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
+            if (contains_point(rewrite_app.settings_diagnostics_button.rect, event.x, event.y)) {
+                rewrite_app.view_mode = rewrite_view_mode_t::diagnostics;
+                rewrite_app.status_line = "Diagnostics";
+                rewrite_app.input_line = "Use Refresh to re-probe device, network, and auth state.";
+                render_diagnostics_screen(rewrite_app, true);
+                continue;
+            }
+
             if (contains_point(rewrite_app.settings_sign_out_button.rect, event.x, event.y)) {
                 clear_saved_session(rewrite_app);
                 refresh_bootstrap_state(rewrite_app);
@@ -2385,6 +2820,25 @@ int main(int argc, char* argv[]) {
                 rewrite_app.status_line = "Signed out";
                 rewrite_app.input_line = "Saved session cleared. Use login.txt or Recheck to sign in again.";
                 render_screen(rewrite_app, true);
+                continue;
+            }
+
+            continue;
+        }
+
+        if (rewrite_app.view_mode == rewrite_view_mode_t::diagnostics) {
+            if (contains_point(rewrite_app.diagnostics_back_button.rect, event.x, event.y)) {
+                rewrite_app.view_mode = rewrite_view_mode_t::settings;
+                render_settings_screen(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.diagnostics_refresh_button.rect, event.x, event.y)) {
+                refresh_bootstrap_state(rewrite_app);
+                refresh_runtime_state(rewrite_app);
+                rewrite_app.status_line = "Diagnostics refreshed";
+                rewrite_app.input_line = "Current authentication, device, power, and network state reloaded.";
+                render_diagnostics_screen(rewrite_app, true);
                 continue;
             }
 
@@ -2427,6 +2881,7 @@ int main(int argc, char* argv[]) {
     }
 
     rewrite_input_close(rewrite_app.input);
+    free_brand_assets(rewrite_app);
     rewrite_framebuffer_close(rewrite_app.framebuffer);
     return 0;
 }
