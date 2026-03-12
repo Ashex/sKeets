@@ -31,7 +31,7 @@ a relogin.
 ### Device under test
 
 - **Kobo Clara Colour** — product_id=393, codename=spaColour, platform=mt8113t-ntx
-- **Touch protocol**: snow (cyttsp5_mt) — set via `SKEETS_REWRITE_TOUCH_PROTOCOL=snow`
+- **Touch protocol**: snow (cyttsp5_mt) — set via `SKEETS_TOUCH_PROTOCOL=snow`
 - **Display**: 1448×1072 (landscape-native NTX quirk, FBInk auto-rotates)
 - **Firmware**: N367490221161,4.9.77,4.44.23552
 - **Filesystem**: `/mnt/onboard` is VFAT — no symlinks possible
@@ -68,7 +68,7 @@ a relogin.
 6. Timeline fetches use `appview_url` (`https://api.bsky.app`) instead of the PDS, which fixed stale refresh results
 7. Feed refresh now pulls new data correctly on-device
 8. Feed pagination works on-device
-9. Clara Colour touch hit-testing works after enabling `SKEETS_REWRITE_TOUCH_MIRROR_X=1`
+9. Clara Colour touch hit-testing works after enabling `SKEETS_TOUCH_MIRROR_X=1`
 10. Feed like/repost actions work on-device
 11. Thread like action works on-device
 12. Stats labels now render as readable word labels (`<Like>`, `Reply`, `<Repost>`) instead of single-letter abbreviations
@@ -129,10 +129,10 @@ Detailed in `/memories/repo/kobo-tls-fixes.md`. Summary:
 ### `src/kobo/main.cpp`
 The main entry point for the current Kobo app. Changes this session:
 - **dlopen OpenSSL preload**: Force-loads bundled OpenSSL 3.x with `RTLD_NOW | RTLD_GLOBAL` before Qt init. The earlier verbose probe spam was removed; only the preload result remains logged.
-- **CA cert loading** (lines ~420-445): After QCoreApplication init, loads bundled CA certs from `<rewrite_dir>/ssl/certs/ca-certificates.crt` via `QSslCertificate::fromDevice()` and sets as default SSL config.
+- **CA cert loading** (lines ~420-445): After QCoreApplication init, loads bundled CA certs from `<skeets_dir>/ssl/certs/ca-certificates.crt` via `QSslCertificate::fromDevice()` and sets as default SSL config.
 - **Localized stat refresh helpers**: Feed and thread action handlers redraw only the relevant stats row and trigger a partial or grayscale-partial framebuffer refresh for that rectangle.
 - **Clearer active-state labels**: Interactive labels keep stable widths while showing active state via flipped carets (`>Like<`, `>Repost<`).
-- **Settings view**: Adds a rewrite-native settings screen reachable from feed and thread headers, with persistent `profile_images_enabled`, `embed_images_enabled`, `allow_nudity_content`, `allow_porn_content`, and `allow_suggestive_content` toggles plus a sign-out action that clears the saved session.
+- **Settings view**: Adds a dedicated settings screen reachable from feed and thread headers, with persistent `profile_images_enabled`, `embed_images_enabled`, `allow_nudity_content`, `allow_porn_content`, and `allow_suggestive_content` toggles plus a sign-out action that clears the saved session.
 - **Avatar/embed rendering**: Reuses the shared async image cache to draw feed/thread avatars and image embeds when the corresponding settings are enabled.
 - **Alt-text fallbacks**: Image embeds now retain per-image alt text and render text-only fallback blocks when embed images are disabled.
 - **Unsupported media previews**: Video/GIF-style embeds now surface a smaller preview thumbnail, when available, with alt text laid out to its right.
@@ -176,7 +176,7 @@ The action helper. Changes this session:
 
 ### `run.sh`
 The main launcher. Changes this session:
-- Auto-enables `SKEETS_REWRITE_TOUCH_MIRROR_X=1` for Kobo Clara Colour (`spaColour`) using the `snow` touch protocol
+- Auto-enables `SKEETS_TOUCH_MIRROR_X=1` for Kobo Clara Colour (`spaColour`) using the `snow` touch protocol
 - Logs `Touch mirror X/Y` to make touch transform verification visible on-device
 
 ### `cmake/package-runtime-libs.cmake`
@@ -213,20 +213,20 @@ src/platform/
 └── power.h/cpp               Battery/charging state probing
 ```
 
-### Key types in the rewrite
+### Key app types
 
-- `rewrite_framebuffer_t` — FBInk framebuffer context with screen dimensions and font metrics
-- `rewrite_input_t` — evdev input context with coordinate normalization
-- `rewrite_bootstrap_result_t` — Auth bootstrap outcome (state enum + session + messages)
-- `rewrite_device_info_t` — Device hardware info
-- `rewrite_power_info_t` / `rewrite_network_info_t` — Runtime hardware state
-- `rewrite_app_t` — Main app state (all of the above + UI state)
+- `skeets_framebuffer_t` — FBInk framebuffer context with screen dimensions and font metrics
+- `skeets_input_t` — evdev input context with coordinate normalization
+- `skeets_bootstrap_result_t` — Auth bootstrap outcome (state enum + session + messages)
+- `skeets_device_info_t` — Device hardware info
+- `skeets_power_info_t` / `skeets_network_info_t` — Runtime hardware state
+- `skeets_app_t` — Main app state (all of the above + UI state)
 
 ### Build targets
 
-- `sKeets` — main Kobo app binary emitted by the rewrite target
+- `sKeets` — main Kobo app binary
 - `sKeets-diag` — hardware diagnostic binary
-- `sKeets-tool` — rewrite support tool binary
+- `sKeets-tool` — support tool binary
 - `kobo-package` — packages the active app + libs + assets into KoboRoot.tgz
 
 ### External dependencies
@@ -326,8 +326,8 @@ cp build-kobo/KoboRoot.tgz /media/$USER/KOBOeReader/.kobo/KoboRoot.tgz
 
 Set in the packaged launcher scripts:
 - `SKEETS_DATA_DIR` — data directory path
-- `SKEETS_REWRITE_DIR` — app directory (default: `/mnt/onboard/.adds/sKeets`)
-- `SKEETS_REWRITE_TOUCH_PROTOCOL=snow` — for Clara Colour touch input
+- `SKEETS_DIR` — app directory (default: `/mnt/onboard/.adds/sKeets`)
+- `SKEETS_TOUCH_PROTOCOL=snow` — for Clara Colour touch input
 - `LD_LIBRARY_PATH` — includes bundled lib directory
 - `QT_QPA_PLATFORM=offscreen` — Qt platform plugin for headless rendering
 

@@ -114,7 +114,7 @@ bool can_resolve_host() {
     return true;
 }
 
-void collect_addresses(rewrite_network_info_t& info) {
+void collect_addresses(skeets_network_info_t& info) {
     ifaddrs* interfaces = nullptr;
     if (getifaddrs(&interfaces) != 0) return;
 
@@ -140,9 +140,9 @@ void collect_addresses(rewrite_network_info_t& info) {
 
 } // namespace
 
-rewrite_network_info_t rewrite_probe_network() {
-    rewrite_network_info_t info;
-    info.interface_name = env_or_default("SKEETS_REWRITE_INTERFACE", "eth0");
+skeets_network_info_t skeets_probe_network() {
+    skeets_network_info_t info;
+    info.interface_name = env_or_default("SKEETS_INTERFACE", "eth0");
 
     const std::string interface_root = "/sys/class/net/" + info.interface_name;
     info.radio_present = path_exists(interface_root);

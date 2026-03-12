@@ -2,7 +2,7 @@
 
 #include <string>
 
-struct rewrite_device_info_t {
+struct skeets_device_info_t {
     std::string version_string;
     std::string product_id;
     std::string product_name;
@@ -18,4 +18,4 @@ struct rewrite_device_info_t {
     bool is_smp = false;
 };
 
-rewrite_device_info_t rewrite_probe_device();
+skeets_device_info_t skeets_probe_device();

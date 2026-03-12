@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-struct rewrite_network_info_t {
+struct skeets_network_info_t {
     std::string interface_name;
     bool radio_present = false;
     bool carrier_up = false;
@@ -17,4 +17,4 @@ struct rewrite_network_info_t {
     bool online = false;
 };
 
-rewrite_network_info_t rewrite_probe_network();
+skeets_network_info_t skeets_probe_network();

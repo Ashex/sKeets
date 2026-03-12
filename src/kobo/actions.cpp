@@ -22,8 +22,8 @@ bool session_changed(const Bsky::Session& before, const Bsky::Session& after) {
 }
 
 template <typename Operation>
-rewrite_action_result_t run_action_with_session(const Bsky::Session& session, Operation operation) {
-    rewrite_action_result_t result;
+skeets_action_result_t run_action_with_session(const Bsky::Session& session, Operation operation) {
+    skeets_action_result_t result;
     const std::string host = session.pds_url.empty()
         ? std::string(Bsky::DEFAULT_SERVICE_HOST)
         : session.pds_url;
@@ -57,10 +57,10 @@ rewrite_action_result_t run_action_with_session(const Bsky::Session& session, Op
 
 } // namespace
 
-rewrite_action_result_t rewrite_like_post(const Bsky::Session& session,
+skeets_action_result_t skeets_like_post(const Bsky::Session& session,
                                           const std::string& post_uri,
                                           const std::string& post_cid) {
-    return run_action_with_session(session, [&](Bsky::AtprotoClient& client, rewrite_action_result_t& result) {
+    return run_action_with_session(session, [&](Bsky::AtprotoClient& client, skeets_action_result_t& result) {
         client.likePost(post_uri,
                         post_cid,
                         [&result](const std::string& like_uri) {
@@ -73,9 +73,9 @@ rewrite_action_result_t rewrite_like_post(const Bsky::Session& session,
     });
 }
 
-rewrite_action_result_t rewrite_unlike_post(const Bsky::Session& session,
+skeets_action_result_t skeets_unlike_post(const Bsky::Session& session,
                                             const std::string& like_uri) {
-    return run_action_with_session(session, [&](Bsky::AtprotoClient& client, rewrite_action_result_t& result) {
+    return run_action_with_session(session, [&](Bsky::AtprotoClient& client, skeets_action_result_t& result) {
         client.unlikePost(like_uri,
                           [&result]() {
                               result.ok = true;
@@ -86,10 +86,10 @@ rewrite_action_result_t rewrite_unlike_post(const Bsky::Session& session,
     });
 }
 
-rewrite_action_result_t rewrite_repost_post(const Bsky::Session& session,
+skeets_action_result_t skeets_repost_post(const Bsky::Session& session,
                                             const std::string& post_uri,
                                             const std::string& post_cid) {
-    return run_action_with_session(session, [&](Bsky::AtprotoClient& client, rewrite_action_result_t& result) {
+    return run_action_with_session(session, [&](Bsky::AtprotoClient& client, skeets_action_result_t& result) {
         client.repostPost(post_uri,
                           post_cid,
                           [&result](const std::string& repost_uri) {
@@ -102,9 +102,9 @@ rewrite_action_result_t rewrite_repost_post(const Bsky::Session& session,
     });
 }
 
-rewrite_action_result_t rewrite_unrepost_post(const Bsky::Session& session,
+skeets_action_result_t skeets_unrepost_post(const Bsky::Session& session,
                                               const std::string& repost_uri) {
-    return run_action_with_session(session, [&](Bsky::AtprotoClient& client, rewrite_action_result_t& result) {
+    return run_action_with_session(session, [&](Bsky::AtprotoClient& client, skeets_action_result_t& result) {
         client.unrepostPost(repost_uri,
                             [&result]() {
                                 result.ok = true;

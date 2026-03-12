@@ -2,7 +2,7 @@
 
 #include <string>
 
-struct rewrite_power_info_t {
+struct skeets_power_info_t {
     std::string battery_sysfs;
     bool battery_present = false;
     int capacity_percent = -1;
@@ -15,4 +15,4 @@ struct rewrite_power_info_t {
     std::string suspend_reason;
 };
 
-rewrite_power_info_t rewrite_probe_power();
+skeets_power_info_t skeets_probe_power();

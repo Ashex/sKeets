@@ -5,15 +5,15 @@
 #include <string>
 #include <vector>
 
-enum class rewrite_feed_state_t {
+enum class skeets_feed_state_t {
     idle,
     loading,
     loaded,
     error,
 };
 
-struct rewrite_feed_result_t {
-    rewrite_feed_state_t state = rewrite_feed_state_t::idle;
+struct skeets_feed_result_t {
+    skeets_feed_state_t state = skeets_feed_state_t::idle;
     Bsky::Feed feed;
     Bsky::Session session;
     std::string error_message;
@@ -23,6 +23,6 @@ struct rewrite_feed_result_t {
 
 /// Fetch the home timeline for an authenticated session.
 /// Creates a fresh AtprotoClient internally (synchronous, blocks via QEventLoop).
-rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
+skeets_feed_result_t skeets_fetch_feed(const Bsky::Session& session,
                                           int limit = 30,
                                           const std::string& cursor = {});

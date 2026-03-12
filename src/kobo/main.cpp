@@ -84,7 +84,7 @@ constexpr const char* kEmojiLike = "💜";
 constexpr const char* kEmojiReply = "💬";
 constexpr const char* kEmojiRepost = "🌀";
 
-enum class rewrite_view_mode_t {
+enum class skeets_view_mode_t {
     dashboard,
     feed,
     thread,
@@ -92,32 +92,32 @@ enum class rewrite_view_mode_t {
     diagnostics,
 };
 
-struct rewrite_post_hit_t {
-    rewrite_rect_t rect;
-    rewrite_rect_t like_rect;
-    rewrite_rect_t repost_rect;
-    rewrite_rect_t stats_rect;
+struct skeets_post_hit_t {
+    skeets_rect_t rect;
+    skeets_rect_t like_rect;
+    skeets_rect_t repost_rect;
+    skeets_rect_t stats_rect;
     int stats_x = 0;
     int stats_y = 0;
     int post_index = -1;
 };
 
-struct rewrite_thread_post_hit_t {
-    rewrite_rect_t rect;
-    rewrite_rect_t like_rect;
-    rewrite_rect_t repost_rect;
-    rewrite_rect_t stats_rect;
+struct skeets_thread_post_hit_t {
+    skeets_rect_t rect;
+    skeets_rect_t like_rect;
+    skeets_rect_t repost_rect;
+    skeets_rect_t stats_rect;
     int stats_x = 0;
     int stats_y = 0;
     Bsky::Post* post = nullptr;
 };
 
-struct rewrite_button_t {
-    rewrite_rect_t rect;
+struct skeets_button_t {
+    skeets_rect_t rect;
     std::string label;
 };
 
-enum class rewrite_text_role_t {
+enum class skeets_text_role_t {
     body,
     author,
     meta,
@@ -136,20 +136,20 @@ enum class rewrite_text_role_t {
     fallback_brand,
 };
 
-struct rewrite_text_style_t {
+struct skeets_text_style_t {
     int size_px;
     font_style_t style;
     int line_spacing;
 };
 
-struct rewrite_app_t {
-    rewrite_framebuffer_t framebuffer;
-    rewrite_input_t input;
+struct skeets_app_t {
+    skeets_framebuffer_t framebuffer;
+    skeets_input_t input;
     fb_t text_fb = {};
-    rewrite_bootstrap_result_t bootstrap;
-    rewrite_device_info_t device;
-    rewrite_power_info_t power;
-    rewrite_network_info_t network;
+    skeets_bootstrap_result_t bootstrap;
+    skeets_device_info_t device;
+    skeets_power_info_t power;
+    skeets_network_info_t network;
     image_t header_logo{};
     image_t splash_logo{};
     image_t like_icon{};
@@ -162,35 +162,35 @@ struct rewrite_app_t {
     image_t enabled_icon{};
     image_t disabled_icon{};
     std::string revision_summary;
-    std::string status_line = "Checking rewrite auth bootstrap";
+    std::string status_line = "Checking login and saved session";
     std::string input_line = "Exit via the on-screen button or the hardware power key";
-    rewrite_button_t refresh_button;
-    rewrite_button_t exit_button;
-    rewrite_button_t diagnostics_back_button;
-    rewrite_button_t diagnostics_refresh_button;
+    skeets_button_t refresh_button;
+    skeets_button_t exit_button;
+    skeets_button_t diagnostics_back_button;
+    skeets_button_t diagnostics_refresh_button;
 
     // Feed view state
-    rewrite_view_mode_t view_mode = rewrite_view_mode_t::dashboard;
-    rewrite_feed_result_t feed_result;
+    skeets_view_mode_t view_mode = skeets_view_mode_t::dashboard;
+    skeets_feed_result_t feed_result;
     int feed_page_start = 0;      // Index of first visible post
     int feed_page_count = 0;      // Number of posts that fit on last render
     std::vector<int> feed_page_history;
-    std::vector<rewrite_post_hit_t> visible_post_hits;
-    rewrite_button_t feed_back_button;
-    rewrite_button_t feed_refresh_button;
-    rewrite_button_t feed_next_button;
-    rewrite_button_t feed_settings_button;
+    std::vector<skeets_post_hit_t> visible_post_hits;
+    skeets_button_t feed_back_button;
+    skeets_button_t feed_refresh_button;
+    skeets_button_t feed_next_button;
+    skeets_button_t feed_settings_button;
 
     // Thread view state
-    rewrite_thread_result_t thread_result;
+    skeets_thread_result_t thread_result;
     std::string selected_post_uri;
     int thread_page_start = 0;
     int thread_page_count = 0;
-    std::vector<rewrite_thread_post_hit_t> thread_post_hits;
-    rewrite_button_t thread_back_button;
-    rewrite_button_t thread_settings_button;
-    rewrite_rect_t thread_scrollbar_rect{};
-    rewrite_rect_t thread_scrollbar_thumb_rect{};
+    std::vector<skeets_thread_post_hit_t> thread_post_hits;
+    skeets_button_t thread_back_button;
+    skeets_button_t thread_settings_button;
+    skeets_rect_t thread_scrollbar_rect{};
+    skeets_rect_t thread_scrollbar_thumb_rect{};
 
     // Settings view state
     bool profile_images_enabled = true;
@@ -198,25 +198,25 @@ struct rewrite_app_t {
     bool allow_nudity_content = false;
     bool allow_porn_content = false;
     bool allow_suggestive_content = false;
-    rewrite_view_mode_t settings_return_view = rewrite_view_mode_t::feed;
-    rewrite_button_t settings_back_button;
-    rewrite_button_t settings_profile_button;
-    rewrite_button_t settings_embed_button;
-    rewrite_button_t settings_nudity_button;
-    rewrite_button_t settings_porn_button;
-    rewrite_button_t settings_suggestive_button;
-    rewrite_button_t settings_diagnostics_button;
-    rewrite_button_t settings_sign_out_button;
+    skeets_view_mode_t settings_return_view = skeets_view_mode_t::feed;
+    skeets_button_t settings_back_button;
+    skeets_button_t settings_profile_button;
+    skeets_button_t settings_embed_button;
+    skeets_button_t settings_nudity_button;
+    skeets_button_t settings_porn_button;
+    skeets_button_t settings_suggestive_button;
+    skeets_button_t settings_diagnostics_button;
+    skeets_button_t settings_sign_out_button;
 };
 
-void draw_border(rewrite_app_t& app, const rewrite_rect_t& rect, std::uint8_t color, int thickness = 2);
-void draw_centered_text(rewrite_app_t& app,
+void draw_border(skeets_app_t& app, const skeets_rect_t& rect, std::uint8_t color, int thickness = 2);
+void draw_centered_text(skeets_app_t& app,
                         int center_x,
                         int y,
                         const std::string& text,
                         std::uint8_t fg,
                         std::uint8_t bg,
-                        rewrite_text_role_t role);
+                        skeets_text_role_t role);
 void flatten_thread_posts(const Bsky::Post& post,
                           int depth,
                           std::vector<std::pair<const Bsky::Post*, int>>& out);
@@ -229,69 +229,69 @@ std::string bool_label(bool value) {
     return value ? "yes" : "no";
 }
 
-rewrite_text_style_t text_style(rewrite_text_role_t role) {
+skeets_text_style_t text_style(skeets_text_role_t role) {
     switch (role) {
-    case rewrite_text_role_t::author:
+    case skeets_text_role_t::author:
         return {32, FONT_STYLE_MEDIUM, 8};
-    case rewrite_text_role_t::meta:
+    case skeets_text_role_t::meta:
         return {28, FONT_STYLE_LIGHT, 8};
-    case rewrite_text_role_t::button:
+    case skeets_text_role_t::button:
         return {32, FONT_STYLE_MEDIUM, 0};
-    case rewrite_text_role_t::button_emoji:
+    case skeets_text_role_t::button_emoji:
         return {42, FONT_STYLE_EMOJI, 0};
-    case rewrite_text_role_t::stat_emoji:
+    case skeets_text_role_t::stat_emoji:
         return {36, FONT_STYLE_EMOJI, 0};
-    case rewrite_text_role_t::card_title:
+    case skeets_text_role_t::card_title:
         return {32, FONT_STYLE_MEDIUM, 8};
-    case rewrite_text_role_t::status_title:
+    case skeets_text_role_t::status_title:
         return {34, FONT_STYLE_MEDIUM, 8};
-    case rewrite_text_role_t::status_detail:
+    case skeets_text_role_t::status_detail:
         return {30, FONT_STYLE_LIGHT, 8};
-    case rewrite_text_role_t::settings_label:
+    case skeets_text_role_t::settings_label:
         return {32, FONT_STYLE_MEDIUM, 8};
-    case rewrite_text_role_t::settings_detail:
+    case skeets_text_role_t::settings_detail:
         return {28, FONT_STYLE_LIGHT, 8};
-    case rewrite_text_role_t::action_label:
+    case skeets_text_role_t::action_label:
         return {28, FONT_STYLE_MEDIUM, 0};
-    case rewrite_text_role_t::action_emoji:
+    case skeets_text_role_t::action_emoji:
         return {36, FONT_STYLE_EMOJI, 0};
-    case rewrite_text_role_t::splash_title:
+    case skeets_text_role_t::splash_title:
         return {42, FONT_STYLE_MEDIUM, 10};
-    case rewrite_text_role_t::splash_detail:
+    case skeets_text_role_t::splash_detail:
         return {32, FONT_STYLE_LIGHT, 10};
-    case rewrite_text_role_t::fallback_brand:
+    case skeets_text_role_t::fallback_brand:
         return {40, FONT_STYLE_MEDIUM, 8};
-    case rewrite_text_role_t::body:
+    case skeets_text_role_t::body:
     default:
         return {28, FONT_STYLE_REGULAR, 8};
     }
 }
 
-int measure_text(const std::string& text, rewrite_text_role_t role) {
-    const rewrite_text_style_t style = text_style(role);
+int measure_text(const std::string& text, skeets_text_role_t role) {
+    const skeets_text_style_t style = text_style(role);
     return font_measure_string_styled(text.c_str(), style.size_px, style.style);
 }
 
-int draw_text(rewrite_app_t& app,
+int draw_text(skeets_app_t& app,
               int x,
               int y,
               const std::string& text,
-              rewrite_text_role_t role,
+              skeets_text_role_t role,
               std::uint8_t fg,
               std::uint8_t bg) {
-    const rewrite_text_style_t style = text_style(role);
+    const skeets_text_style_t style = text_style(role);
     return font_draw_string_styled(&app.text_fb, x, y, text.c_str(), fg, bg, style.size_px, style.style);
 }
 
-int draw_wrapped_text(rewrite_app_t& app,
+int draw_wrapped_text(skeets_app_t& app,
                       int x,
                       int y,
                       int width,
                       const std::string& text,
-                      rewrite_text_role_t role,
+                      skeets_text_role_t role,
                       std::uint8_t fg,
                       std::uint8_t bg) {
-    const rewrite_text_style_t style = text_style(role);
+    const skeets_text_style_t style = text_style(role);
     return font_draw_wrapped_styled(&app.text_fb,
                                     x,
                                     y,
@@ -304,8 +304,8 @@ int draw_wrapped_text(rewrite_app_t& app,
                                     style.style);
 }
 
-int line_height(rewrite_text_role_t role) {
-    const rewrite_text_style_t style = text_style(role);
+int line_height(skeets_text_role_t role) {
+    const skeets_text_style_t style = text_style(role);
     return font_line_height(style.size_px, style.style);
 }
 
@@ -351,7 +351,7 @@ std::string sanitize_bitmap_text(const std::string& text) {
     return out;
 }
 
-int measure_quote_embed_height(const rewrite_app_t& app, int width, const Bsky::Post* quoted) {
+int measure_quote_embed_height(const skeets_app_t& app, int width, const Bsky::Post* quoted) {
     if (!quoted) return 0;
     const int inner_width = std::max(40, width - kQuoteIndent - 8);
     const std::string text = sanitize_bitmap_text(quoted->text);
@@ -361,13 +361,13 @@ int measure_quote_embed_height(const rewrite_app_t& app, int width, const Bsky::
     return app.text_fb.font_h + 4 + body_height + 8;
 }
 
-void draw_quote_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::Post* quoted) {
+void draw_quote_embed(skeets_app_t& app, int x, int y, int width, const Bsky::Post* quoted) {
     if (!quoted) return;
     const int height = measure_quote_embed_height(app, width, quoted);
-    rewrite_framebuffer_fill_rect(app.framebuffer,
-                                  rewrite_rect_t{x, y, kQuoteBorder, height},
+    skeets_framebuffer_fill_rect(app.framebuffer,
+                                  skeets_rect_t{x, y, kQuoteBorder, height},
                                   kColorMeta);
-    draw_border(app, rewrite_rect_t{x, y, width, height}, kColorPostBorder, 1);
+    draw_border(app, skeets_rect_t{x, y, width, height}, kColorPostBorder, 1);
 
     const int quote_x = x + kQuoteIndent;
     const int quote_width = std::max(40, width - kQuoteIndent - 8);
@@ -394,9 +394,9 @@ void draw_quote_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::P
                       4);
 }
 
-int target_preview_thumb_width(const rewrite_app_t& app, int available_width);
-int single_image_embed_height(const rewrite_app_t& app, int embed_width);
-int image_embed_tile_height(const rewrite_app_t& app, int embed_width, int image_count);
+int target_preview_thumb_width(const skeets_app_t& app, int available_width);
+int single_image_embed_height(const skeets_app_t& app, int embed_width);
+int image_embed_tile_height(const skeets_app_t& app, int embed_width, int image_count);
 
 bool preview_text_needs_stacked_layout(int side_text_height,
                                        int thumb_height,
@@ -405,7 +405,7 @@ bool preview_text_needs_stacked_layout(int side_text_height,
     return has_thumb && (side_text_height > thumb_height || side_text_width < 220);
 }
 
-int measure_external_embed_height(const rewrite_app_t& app, int width, const Bsky::Post& post, bool embed_images) {
+int measure_external_embed_height(const skeets_app_t& app, int width, const Bsky::Post& post, bool embed_images) {
     const bool has_thumb = embed_images && !post.ext_thumb_url.empty();
     const bool alt_prefixed_description = post.ext_description.rfind("ALT:", 0) == 0;
     const bool title_only = alt_prefixed_description && !post.ext_title.empty();
@@ -452,7 +452,7 @@ std::vector<std::string> image_alt_lines(const Bsky::Post& post) {
     return lines;
 }
 
-int measure_image_alt_height(const rewrite_app_t& app, const Bsky::Post& post, int width) {
+int measure_image_alt_height(const skeets_app_t& app, const Bsky::Post& post, int width) {
     const int text_width = std::max(120, width - 12);
     int total = 8;
     for (const auto& line : image_alt_lines(post)) {
@@ -461,9 +461,9 @@ int measure_image_alt_height(const rewrite_app_t& app, const Bsky::Post& post, i
     return std::max(total, app.text_fb.font_h + 16);
 }
 
-void draw_image_alt_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
+void draw_image_alt_block(skeets_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
     const int height = measure_image_alt_height(app, post, width);
-    draw_border(app, rewrite_rect_t{x, y, width, height}, kColorPostBorder, 1);
+    draw_border(app, skeets_rect_t{x, y, width, height}, kColorPostBorder, 1);
     int text_y = y + 6;
     for (const auto& line : image_alt_lines(post)) {
         text_y = font_draw_wrapped(&app.text_fb,
@@ -479,14 +479,14 @@ void draw_image_alt_block(rewrite_app_t& app, const Bsky::Post& post, int x, int
     y += height + 8;
 }
 
-int target_preview_thumb_width(const rewrite_app_t& app, int available_width) {
+int target_preview_thumb_width(const skeets_app_t& app, int available_width) {
     const int inner_width = std::max(120, available_width - 12);
     const int width_target = (inner_width * 2) / 5;
     const int screen_target = app.framebuffer.info.screen_width / 3;
     return std::max(120, std::min(inner_width, std::min(width_target, screen_target)));
 }
 
-int measure_unsupported_media_height(const rewrite_app_t& app, const Bsky::Post& post, int width) {
+int measure_unsupported_media_height(const skeets_app_t& app, const Bsky::Post& post, int width) {
     const bool has_preview = !post.media_preview_url.empty();
     const int thumb_width = has_preview ? target_preview_thumb_width(app, width) : 0;
     const int thumb_height = has_preview ? std::max(96, (thumb_width * 3) / 4) : 0;
@@ -505,9 +505,9 @@ int measure_unsupported_media_height(const rewrite_app_t& app, const Bsky::Post&
     return std::max(thumb_height, side_text_height) + 12;
 }
 
-void draw_unsupported_media_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
+void draw_unsupported_media_block(skeets_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
     const int height = measure_unsupported_media_height(app, post, width);
-    draw_border(app, rewrite_rect_t{x, y, width, height}, kColorPostBorder, 1);
+    draw_border(app, skeets_rect_t{x, y, width, height}, kColorPostBorder, 1);
 
     const bool has_preview = !post.media_preview_url.empty();
     const int thumb_width = has_preview ? target_preview_thumb_width(app, width) : 0;
@@ -552,7 +552,7 @@ void draw_unsupported_media_block(rewrite_app_t& app, const Bsky::Post& post, in
                              kColorMeta,
                              COLOR_LGRAY);
         }
-        draw_border(app, rewrite_rect_t{thumb_x, thumb_y, thumb_width, thumb_height}, kColorPostBorder, 1);
+        draw_border(app, skeets_rect_t{thumb_x, thumb_y, thumb_width, thumb_height}, kColorPostBorder, 1);
         if (stacked_layout) {
             text_y = thumb_y + thumb_height + 8;
         } else {
@@ -582,13 +582,13 @@ void draw_unsupported_media_block(rewrite_app_t& app, const Bsky::Post& post, in
     y += height + 8;
 }
 
-int target_image_embed_width(const rewrite_app_t& app, int available_width) {
+int target_image_embed_width(const skeets_app_t& app, int available_width) {
     const int screen_target = (app.framebuffer.info.screen_width * 7) / 10;
     return std::max(160, std::min(available_width, screen_target));
 }
 
-void queue_feed_image_requests(const rewrite_app_t& app) {
-    if (app.feed_result.state != rewrite_feed_state_t::loaded) {
+void queue_feed_image_requests(const skeets_app_t& app) {
+    if (app.feed_result.state != skeets_feed_state_t::loaded) {
         return;
     }
 
@@ -647,13 +647,13 @@ void wait_for_initial_feed_images(int max_wait_ms) {
     }
 }
 
-int single_image_embed_height(const rewrite_app_t& app, int embed_width) {
+int single_image_embed_height(const skeets_app_t& app, int embed_width) {
     const int screen_cap = std::max(kFeedEmbedMaxHeight, app.framebuffer.info.screen_height / 2);
     const int proportional_height = std::max(kFeedEmbedMaxHeight, (embed_width * 4) / 5);
     return std::min(screen_cap, proportional_height);
 }
 
-int image_embed_tile_height(const rewrite_app_t& app, int embed_width, int image_count) {
+int image_embed_tile_height(const skeets_app_t& app, int embed_width, int image_count) {
     if (image_count <= 1) {
         return single_image_embed_height(app, embed_width);
     }
@@ -662,7 +662,7 @@ int image_embed_tile_height(const rewrite_app_t& app, int embed_width, int image
     return std::min(max_tile_height, std::max(110, (tile_width * 4) / 5));
 }
 
-int measure_image_embed_height(const rewrite_app_t& app, int available_width, int image_count) {
+int measure_image_embed_height(const skeets_app_t& app, int available_width, int image_count) {
     if (image_count <= 0) {
         return 0;
     }
@@ -676,7 +676,7 @@ int measure_image_embed_height(const rewrite_app_t& app, int available_width, in
     return (rows * tile_height) + ((rows - 1) * kEmbedImageGap) + 8;
 }
 
-void draw_image_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
+void draw_image_embed_block(skeets_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
     const int image_count = std::min(static_cast<int>(post.image_urls.size()), 4);
     if (image_count <= 0) {
         return;
@@ -769,8 +769,8 @@ void draw_image_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, i
         const int overlay_y = y + tile_height + kEmbedImageGap;
         const int overlay_w = tile_width;
         const int overlay_h = tile_height;
-        rewrite_framebuffer_fill_rect(app.framebuffer,
-                                      rewrite_rect_t{overlay_x, overlay_y, overlay_w, overlay_h},
+        skeets_framebuffer_fill_rect(app.framebuffer,
+                                      skeets_rect_t{overlay_x, overlay_y, overlay_w, overlay_h},
                                       0x80);
         const std::string more = "+" + std::to_string(static_cast<int>(post.image_urls.size()) - image_count);
                         const int text_x = overlay_x + std::max(0, (overlay_w - font_measure_string(more.c_str())) / 2);
@@ -786,9 +786,9 @@ void draw_image_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, i
                     y += measure_image_embed_height(app, width, image_count);
 }
 
-void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::Post& post, bool embed_images) {
+void draw_external_embed(skeets_app_t& app, int x, int y, int width, const Bsky::Post& post, bool embed_images) {
     const int height = measure_external_embed_height(app, width, post, embed_images);
-    draw_border(app, rewrite_rect_t{x, y, width, height}, kColorPostBorder, 1);
+    draw_border(app, skeets_rect_t{x, y, width, height}, kColorPostBorder, 1);
 
     const bool has_thumb = embed_images && !post.ext_thumb_url.empty();
     const bool alt_prefixed_description = post.ext_description.rfind("ALT:", 0) == 0;
@@ -839,7 +839,7 @@ void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky
                              kColorMeta,
                              COLOR_LGRAY);
         }
-        draw_border(app, rewrite_rect_t{thumb_x, thumb_y, thumb_width, thumb_height}, kColorPostBorder, 1);
+        draw_border(app, skeets_rect_t{thumb_x, thumb_y, thumb_width, thumb_height}, kColorPostBorder, 1);
         if (stacked_layout) {
             text_y = thumb_y + thumb_height + 8;
         } else {
@@ -871,7 +871,7 @@ void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky
     }
 }
 
-int measure_embed_block_height(const rewrite_app_t& app, const Bsky::Post& post, int width) {
+int measure_embed_block_height(const skeets_app_t& app, const Bsky::Post& post, int width) {
     switch (post.embed_type) {
         case Bsky::EmbedType::Image:
             return app.embed_images_enabled
@@ -902,7 +902,7 @@ int measure_embed_block_height(const rewrite_app_t& app, const Bsky::Post& post,
     }
 }
 
-void draw_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
+void draw_embed_block(skeets_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
     if ((post.embed_type == Bsky::EmbedType::Image || post.embed_type == Bsky::EmbedType::RecordWithMedia) &&
         !post.image_urls.empty()) {
         if (app.embed_images_enabled) {
@@ -926,13 +926,13 @@ void draw_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y,
     }
 }
 
-std::string rewrite_dir() {
-    const char* value = std::getenv("SKEETS_REWRITE_DIR");
+std::string skeets_dir() {
+    const char* value = std::getenv("SKEETS_DIR");
     return value && *value ? value : "/mnt/onboard/.adds/sKeets";
 }
 
-std::string rewrite_asset_path(const char* filename) {
-    return rewrite_dir() + "/assets/" + filename;
+std::string skeets_asset_path(const char* filename) {
+    return skeets_dir() + "/assets/" + filename;
 }
 
 bool load_local_image_asset(image_t& image, const std::string& path, int max_w, int max_h) {
@@ -948,54 +948,54 @@ bool load_local_image_asset(image_t& image, const std::string& path, int max_w, 
     return true;
 }
 
-void load_brand_assets(rewrite_app_t& app) {
+void load_brand_assets(skeets_app_t& app) {
     load_local_image_asset(app.header_logo,
-                           rewrite_asset_path("skeets_top_bar_asset"),
+                           skeets_asset_path("skeets_top_bar_asset"),
                            kHeaderLogoMaxWidth,
                            kHeaderLogoMaxHeight);
     load_local_image_asset(app.splash_logo,
-                           rewrite_asset_path("skeets_splash_asset"),
+                           skeets_asset_path("skeets_splash_asset"),
                            kSplashLogoMaxWidth,
                            kSplashLogoMaxHeight);
         load_local_image_asset(app.like_icon,
-                               rewrite_asset_path("purple-heart.png"),
+                               skeets_asset_path("purple-heart.png"),
                                kStatIconMaxSize,
                                kStatIconMaxSize);
         load_local_image_asset(app.reply_icon,
-                               rewrite_asset_path("speech.png"),
+                               skeets_asset_path("speech.png"),
                                kStatIconMaxSize,
                                kStatIconMaxSize);
         load_local_image_asset(app.repost_icon,
-                               rewrite_asset_path("cyclone.png"),
+                               skeets_asset_path("cyclone.png"),
                                kStatIconMaxSize,
                                kStatIconMaxSize);
         load_local_image_asset(app.back_icon,
-                               rewrite_asset_path("back.png"),
+                               skeets_asset_path("back.png"),
                                kButtonIconMaxSize,
                                kButtonIconMaxSize);
         load_local_image_asset(app.exit_icon,
-                               rewrite_asset_path("exit.png"),
+                               skeets_asset_path("exit.png"),
                                kButtonIconMaxSize,
                                kButtonIconMaxSize);
         load_local_image_asset(app.settings_icon,
-                               rewrite_asset_path("gear.png"),
+                               skeets_asset_path("gear.png"),
                                kButtonIconMaxSize,
                                kButtonIconMaxSize);
         load_local_image_asset(app.diagnostics_icon,
-                               rewrite_asset_path("diagnostic.png"),
+                               skeets_asset_path("diagnostic.png"),
                                kButtonIconMaxSize,
                                kButtonIconMaxSize);
         load_local_image_asset(app.enabled_icon,
-                               rewrite_asset_path("purple-check.png"),
+                               skeets_asset_path("purple-check.png"),
                                kButtonIconMaxSize,
                                kButtonIconMaxSize);
         load_local_image_asset(app.disabled_icon,
-                               rewrite_asset_path("empty-check.png"),
+                               skeets_asset_path("empty-check.png"),
                                kButtonIconMaxSize,
                                kButtonIconMaxSize);
 }
 
-void free_brand_assets(rewrite_app_t& app) {
+void free_brand_assets(skeets_app_t& app) {
     image_free(&app.header_logo);
     image_free(&app.splash_logo);
         image_free(&app.like_icon);
@@ -1009,7 +1009,7 @@ void free_brand_assets(rewrite_app_t& app) {
         image_free(&app.disabled_icon);
 }
 
-    const image_t* icon_for_label(const rewrite_app_t& app, const std::string& label) {
+    const image_t* icon_for_label(const skeets_app_t& app, const std::string& label) {
         if (label == kEmojiBack && app.back_icon.pixels) return &app.back_icon;
         if (label == kEmojiExit && app.exit_icon.pixels) return &app.exit_icon;
         if (label == kEmojiSettings && app.settings_icon.pixels) return &app.settings_icon;
@@ -1019,10 +1019,10 @@ void free_brand_assets(rewrite_app_t& app) {
         return nullptr;
     }
 
-    void draw_centered_button_content(rewrite_app_t& app,
-                                      const rewrite_rect_t& rect,
+    void draw_centered_button_content(skeets_app_t& app,
+                                      const skeets_rect_t& rect,
                                       const std::string& label,
-                                      rewrite_text_role_t role,
+                                      skeets_text_role_t role,
                                       std::uint8_t fg,
                                       std::uint8_t bg) {
         const image_t* icon = icon_for_label(app, label);
@@ -1043,7 +1043,7 @@ void free_brand_assets(rewrite_app_t& app) {
                            role);
     }
 
-void draw_centered_image(rewrite_app_t& app, const image_t& image, int center_x, int y) {
+void draw_centered_image(skeets_app_t& app, const image_t& image, int center_x, int y) {
     if (!image.pixels || image.width <= 0 || image.height <= 0) {
         return;
     }
@@ -1051,26 +1051,26 @@ void draw_centered_image(rewrite_app_t& app, const image_t& image, int center_x,
     fb_blit_rgba(&app.text_fb, draw_x, y, image.width, image.height, image.pixels);
 }
 
-void draw_header_brand(rewrite_app_t& app, const rewrite_rect_t& header_rect) {
+void draw_header_brand(skeets_app_t& app, const skeets_rect_t& header_rect) {
     if (app.header_logo.pixels && app.header_logo.width > 0 && app.header_logo.height > 0) {
         const int logo_y = header_rect.y + std::max(0, (header_rect.height - app.header_logo.height) / 2);
         draw_centered_image(app, app.header_logo, header_rect.x + (header_rect.width / 2), logo_y);
         return;
     }
 
-    const int brand_y = header_rect.y + std::max(0, (header_rect.height - line_height(rewrite_text_role_t::fallback_brand)) / 2);
+    const int brand_y = header_rect.y + std::max(0, (header_rect.height - line_height(skeets_text_role_t::fallback_brand)) / 2);
     draw_text(app,
               std::max(kOuterMargin,
-                       header_rect.x + (header_rect.width - measure_text("sKeets", rewrite_text_role_t::fallback_brand)) / 2),
+                       header_rect.x + (header_rect.width - measure_text("sKeets", skeets_text_role_t::fallback_brand)) / 2),
               brand_y,
               "sKeets",
-              rewrite_text_role_t::fallback_brand,
+              skeets_text_role_t::fallback_brand,
               COLOR_BLACK,
               kColorHeader);
 }
 
 std::string read_revision_summary() {
-    std::ifstream file(rewrite_dir() + "/package-revision.txt");
+    std::ifstream file(skeets_dir() + "/package-revision.txt");
     if (!file) {
         return "revision unavailable";
     }
@@ -1098,64 +1098,64 @@ std::string read_revision_summary() {
     return "version " + version + " | " + build_timestamp;
 }
 
-rewrite_input_protocol_t detect_input_protocol() {
-    const char* value = std::getenv("SKEETS_REWRITE_TOUCH_PROTOCOL");
-    if (!value || !*value) return rewrite_input_protocol_t::standard_multitouch;
-    if (std::string(value) == "snow") return rewrite_input_protocol_t::snow;
-    return rewrite_input_protocol_t::standard_multitouch;
+skeets_input_protocol_t detect_input_protocol() {
+    const char* value = std::getenv("SKEETS_TOUCH_PROTOCOL");
+    if (!value || !*value) return skeets_input_protocol_t::standard_multitouch;
+    if (std::string(value) == "snow") return skeets_input_protocol_t::snow;
+    return skeets_input_protocol_t::standard_multitouch;
 }
 
-rewrite_refresh_mode_t ui_refresh_mode(const rewrite_app_t& app, bool full_refresh) {
+skeets_refresh_mode_t ui_refresh_mode(const skeets_app_t& app, bool full_refresh) {
     if (full_refresh) {
-        return rewrite_refresh_mode_t::full;
+        return skeets_refresh_mode_t::full;
     }
     if (app.framebuffer.info.supports_grayscale_partial_refresh) {
-        return rewrite_refresh_mode_t::grayscale_partial;
+        return skeets_refresh_mode_t::grayscale_partial;
     }
-    return rewrite_refresh_mode_t::partial;
+    return skeets_refresh_mode_t::partial;
 }
 
-rewrite_rect_t full_screen_rect(const rewrite_app_t& app) {
-    return rewrite_rect_t{0, 0, app.framebuffer.info.screen_width, app.framebuffer.info.screen_height};
+skeets_rect_t full_screen_rect(const skeets_app_t& app) {
+    return skeets_rect_t{0, 0, app.framebuffer.info.screen_width, app.framebuffer.info.screen_height};
 }
 
-bool contains_point(const rewrite_rect_t& rect, int x, int y) {
+bool contains_point(const skeets_rect_t& rect, int x, int y) {
     return x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height;
 }
 
-void draw_border(rewrite_app_t& app, const rewrite_rect_t& rect, std::uint8_t color, int thickness) {
-    rewrite_framebuffer_fill_rect(app.framebuffer, rewrite_rect_t{rect.x, rect.y, rect.width, thickness}, color);
-    rewrite_framebuffer_fill_rect(app.framebuffer, rewrite_rect_t{rect.x, rect.y + rect.height - thickness, rect.width, thickness}, color);
-    rewrite_framebuffer_fill_rect(app.framebuffer, rewrite_rect_t{rect.x, rect.y, thickness, rect.height}, color);
-    rewrite_framebuffer_fill_rect(app.framebuffer, rewrite_rect_t{rect.x + rect.width - thickness, rect.y, thickness, rect.height}, color);
+void draw_border(skeets_app_t& app, const skeets_rect_t& rect, std::uint8_t color, int thickness) {
+    skeets_framebuffer_fill_rect(app.framebuffer, skeets_rect_t{rect.x, rect.y, rect.width, thickness}, color);
+    skeets_framebuffer_fill_rect(app.framebuffer, skeets_rect_t{rect.x, rect.y + rect.height - thickness, rect.width, thickness}, color);
+    skeets_framebuffer_fill_rect(app.framebuffer, skeets_rect_t{rect.x, rect.y, thickness, rect.height}, color);
+    skeets_framebuffer_fill_rect(app.framebuffer, skeets_rect_t{rect.x + rect.width - thickness, rect.y, thickness, rect.height}, color);
 }
 
-void draw_centered_text(rewrite_app_t& app,
+void draw_centered_text(skeets_app_t& app,
                         int center_x,
                         int y,
                         const std::string& text,
                         std::uint8_t fg,
                         std::uint8_t bg,
-                        rewrite_text_role_t role = rewrite_text_role_t::body) {
+                        skeets_text_role_t role = skeets_text_role_t::body) {
     const int text_width = measure_text(text, role);
     const int start_x = std::max(kOuterMargin, center_x - text_width / 2);
     draw_text(app, start_x, y, text, role, fg, bg);
 }
 
-void draw_card(rewrite_app_t& app,
-               const rewrite_rect_t& rect,
+void draw_card(skeets_app_t& app,
+               const skeets_rect_t& rect,
                const std::string& title,
                const std::vector<std::string>& lines) {
-    rewrite_framebuffer_fill_rect(app.framebuffer, rect, kColorCard);
+    skeets_framebuffer_fill_rect(app.framebuffer, rect, kColorCard);
     draw_border(app, rect, kColorCardBorder);
 
-    const rewrite_rect_t title_rect{rect.x, rect.y, rect.width, line_height(rewrite_text_role_t::card_title) + kCardPadding};
-    rewrite_framebuffer_fill_rect(app.framebuffer, title_rect, kColorCardTitle);
+    const skeets_rect_t title_rect{rect.x, rect.y, rect.width, line_height(skeets_text_role_t::card_title) + kCardPadding};
+    skeets_framebuffer_fill_rect(app.framebuffer, title_rect, kColorCardTitle);
     draw_text(app,
               rect.x + kCardPadding,
               rect.y + kCardPadding / 2,
               title,
-              rewrite_text_role_t::card_title,
+              skeets_text_role_t::card_title,
               COLOR_WHITE,
               kColorCardTitle);
 
@@ -1167,39 +1167,39 @@ void draw_card(rewrite_app_t& app,
                                      cursor_y,
                                      max_width,
                                      line,
-                                     rewrite_text_role_t::body,
+                                     skeets_text_role_t::body,
                                      COLOR_BLACK,
                                      kColorCard);
         cursor_y += 8;
-        if (cursor_y >= rect.y + rect.height - line_height(rewrite_text_role_t::body) - kCardPadding) {
+        if (cursor_y >= rect.y + rect.height - line_height(skeets_text_role_t::body) - kCardPadding) {
             break;
         }
     }
 }
 
-void draw_button(rewrite_app_t& app, const rewrite_button_t& button, std::uint8_t fill) {
-    rewrite_framebuffer_fill_rect(app.framebuffer, button.rect, fill);
+void draw_button(skeets_app_t& app, const skeets_button_t& button, std::uint8_t fill) {
+    skeets_framebuffer_fill_rect(app.framebuffer, button.rect, fill);
     draw_border(app, button.rect, COLOR_BLACK, 3);
     draw_centered_button_content(app,
                                  button.rect,
                                  button.label,
-                                 rewrite_text_role_t::button_emoji,
+                                 skeets_text_role_t::button_emoji,
                                  fill <= 0x40 ? COLOR_WHITE : COLOR_BLACK,
                                  fill);
 }
 
-void refresh_runtime_state(rewrite_app_t& app) {
-    app.power = rewrite_probe_power();
-    app.network = rewrite_probe_network();
+void refresh_runtime_state(skeets_app_t& app) {
+    app.power = skeets_probe_power();
+    app.network = skeets_probe_network();
 }
 
-void refresh_bootstrap_state(rewrite_app_t& app) {
-    app.bootstrap = rewrite_run_bootstrap();
+void refresh_bootstrap_state(skeets_app_t& app) {
+    app.bootstrap = skeets_run_bootstrap();
     app.status_line = app.bootstrap.headline;
     app.input_line = app.bootstrap.detail;
 }
 
-void load_settings(rewrite_app_t& app) {
+void load_settings(skeets_app_t& app) {
     config_t* config = config_open(skeets_config_path());
     if (!config) {
         return;
@@ -1212,7 +1212,7 @@ void load_settings(rewrite_app_t& app) {
     config_free(config);
 }
 
-void save_settings(const rewrite_app_t& app) {
+void save_settings(const skeets_app_t& app) {
     config_t* config = config_open(skeets_config_path());
     if (!config) {
         return;
@@ -1226,7 +1226,7 @@ void save_settings(const rewrite_app_t& app) {
     config_free(config);
 }
 
-void clear_saved_session(rewrite_app_t& app) {
+void clear_saved_session(skeets_app_t& app) {
     config_t* config = config_open(skeets_config_path());
     if (config) {
         config_set_str(config, "handle", "");
@@ -1239,9 +1239,9 @@ void clear_saved_session(rewrite_app_t& app) {
         config_free(config);
     }
 
-    app.bootstrap = rewrite_bootstrap_result_t{};
-    app.feed_result = rewrite_feed_result_t{};
-    app.thread_result = rewrite_thread_result_t{};
+    app.bootstrap = skeets_bootstrap_result_t{};
+    app.feed_result = skeets_feed_result_t{};
+    app.thread_result = skeets_thread_result_t{};
     app.feed_page_start = 0;
     app.feed_page_count = 0;
     app.feed_page_history.clear();
@@ -1252,7 +1252,7 @@ void clear_saved_session(rewrite_app_t& app) {
     app.selected_post_uri.clear();
 }
 
-void persist_session(rewrite_app_t& app, const Bsky::Session& session) {
+void persist_session(skeets_app_t& app, const Bsky::Session& session) {
     config_t* config = config_open(skeets_config_path());
     if (config) {
         config_set_str(config, "handle", session.handle.c_str());
@@ -1267,16 +1267,16 @@ void persist_session(rewrite_app_t& app, const Bsky::Session& session) {
     app.bootstrap.session = session;
 }
 
-void apply_updated_session(rewrite_app_t& app, const Bsky::Session& session, bool updated) {
+void apply_updated_session(skeets_app_t& app, const Bsky::Session& session, bool updated) {
     if (!updated) {
         return;
     }
     persist_session(app, session);
 }
 
-void open_settings(rewrite_app_t& app, rewrite_view_mode_t return_view) {
+void open_settings(skeets_app_t& app, skeets_view_mode_t return_view) {
     app.settings_return_view = return_view;
-    app.view_mode = rewrite_view_mode_t::settings;
+    app.view_mode = skeets_view_mode_t::settings;
     app.status_line = "Settings";
     app.input_line = "Toggle image and moderation preferences or sign out";
 }
@@ -1293,7 +1293,7 @@ bool label_matches_suggestive(const std::string& label) {
     return label == "suggestive" || label == "sexual";
 }
 
-std::string moderation_hide_reason(const rewrite_app_t& app, const Bsky::Post& post) {
+std::string moderation_hide_reason(const skeets_app_t& app, const Bsky::Post& post) {
     bool hide_nudity = false;
     bool hide_porn = false;
     bool hide_suggestive = false;
@@ -1317,7 +1317,7 @@ std::string moderation_hide_reason(const rewrite_app_t& app, const Bsky::Post& p
     return reason;
 }
 
-std::string hidden_post_message(const rewrite_app_t& app, const Bsky::Post& post) {
+std::string hidden_post_message(const skeets_app_t& app, const Bsky::Post& post) {
     const std::string reason = moderation_hide_reason(app, post);
     if (reason.empty()) {
         return {};
@@ -1325,15 +1325,15 @@ std::string hidden_post_message(const rewrite_app_t& app, const Bsky::Post& post
     return "Hidden content: " + reason + ". Enable this category in Settings to view it.";
 }
 
-void load_feed(rewrite_app_t& app) {
+void load_feed(skeets_app_t& app) {
     if (!app.bootstrap.authenticated) return;
     app.status_line = "Loading timeline...";
-    app.feed_result = rewrite_fetch_feed(app.bootstrap.session);
+    app.feed_result = skeets_fetch_feed(app.bootstrap.session);
     apply_updated_session(app, app.feed_result.session, app.feed_result.session_updated);
     app.feed_page_start = 0;
     app.feed_page_count = 0;
     app.feed_page_history.clear();
-    if (app.feed_result.state == rewrite_feed_state_t::loaded) {
+    if (app.feed_result.state == skeets_feed_state_t::loaded) {
         app.status_line = std::to_string(app.feed_result.post_count) + " posts loaded";
         app.input_line = "Tap a post area for details, or use the buttons below";
     } else {
@@ -1342,13 +1342,13 @@ void load_feed(rewrite_app_t& app) {
     }
 }
 
-void load_thread(rewrite_app_t& app, const std::string& post_uri) {
+void load_thread(skeets_app_t& app, const std::string& post_uri) {
     app.selected_post_uri = post_uri;
-    app.thread_result = rewrite_fetch_thread(app.bootstrap.session, post_uri);
+    app.thread_result = skeets_fetch_thread(app.bootstrap.session, post_uri);
     apply_updated_session(app, app.thread_result.session, app.thread_result.session_updated);
     app.thread_page_start = 0;
     app.thread_page_count = 0;
-    if (app.thread_result.state == rewrite_thread_state_t::loaded) {
+    if (app.thread_result.state == skeets_thread_state_t::loaded) {
         app.status_line = "Thread loaded";
         app.input_line = "Tap < Back to return to the feed, or use the right scrollbar for longer threads";
     } else {
@@ -1357,7 +1357,7 @@ void load_thread(rewrite_app_t& app, const std::string& post_uri) {
     }
 }
 
-bool advance_feed_page(rewrite_app_t& app) {
+bool advance_feed_page(skeets_app_t& app) {
     const int total = static_cast<int>(app.feed_result.feed.items.size());
     int next_start = app.feed_page_start + app.feed_page_count;
     if (next_start < total) {
@@ -1367,9 +1367,9 @@ bool advance_feed_page(rewrite_app_t& app) {
     }
 
     if (!app.feed_result.feed.cursor.empty()) {
-        auto more = rewrite_fetch_feed(app.bootstrap.session, 30, app.feed_result.feed.cursor);
+        auto more = skeets_fetch_feed(app.bootstrap.session, 30, app.feed_result.feed.cursor);
         apply_updated_session(app, more.session, more.session_updated);
-        if (more.state == rewrite_feed_state_t::loaded) {
+        if (more.state == skeets_feed_state_t::loaded) {
             app.feed_page_history.push_back(app.feed_page_start);
             app.feed_page_start = total;
             for (auto& p : more.feed.items) {
@@ -1393,7 +1393,7 @@ void flatten_thread_posts(const Bsky::Post& post,
     }
 }
 
-struct rewrite_stats_layout_t {
+struct skeets_stats_layout_t {
     int total_width = 0;
     int like_width = 0;
     int repost_x = 0;
@@ -1401,15 +1401,15 @@ struct rewrite_stats_layout_t {
     int line_height = 0;
 };
 
-int stats_line_height(const rewrite_app_t& app) {
+int stats_line_height(const skeets_app_t& app) {
     int icon_height = 0;
     if (app.like_icon.height > 0) icon_height = std::max(icon_height, app.like_icon.height);
     if (app.reply_icon.height > 0) icon_height = std::max(icon_height, app.reply_icon.height);
     if (app.repost_icon.height > 0) icon_height = std::max(icon_height, app.repost_icon.height);
-    return std::max(icon_height, line_height(rewrite_text_role_t::meta));
+    return std::max(icon_height, line_height(skeets_text_role_t::meta));
 }
 
-rewrite_stats_layout_t draw_stat_item(rewrite_app_t& app,
+skeets_stats_layout_t draw_stat_item(skeets_app_t& app,
                                       int x,
                                       int y,
                                       const image_t& icon,
@@ -1418,10 +1418,10 @@ rewrite_stats_layout_t draw_stat_item(rewrite_app_t& app,
                                       std::uint8_t fg,
                                       std::uint8_t bg) {
     const std::string count_text = std::to_string(count);
-    const int icon_width = icon.width > 0 ? icon.width : measure_text(emoji, rewrite_text_role_t::stat_emoji);
-    const int count_width = measure_text(count_text, rewrite_text_role_t::meta);
-    const int icon_height = icon.height > 0 ? icon.height : line_height(rewrite_text_role_t::stat_emoji);
-    const int count_height = line_height(rewrite_text_role_t::meta);
+    const int icon_width = icon.width > 0 ? icon.width : measure_text(emoji, skeets_text_role_t::stat_emoji);
+    const int count_width = measure_text(count_text, skeets_text_role_t::meta);
+    const int icon_height = icon.height > 0 ? icon.height : line_height(skeets_text_role_t::stat_emoji);
+    const int count_height = line_height(skeets_text_role_t::meta);
     const int item_height = std::max(icon_height, count_height);
     const int count_x = x + icon_width + 8;
     const int icon_y = y + std::max(0, (item_height - icon_height) / 2);
@@ -1434,7 +1434,7 @@ rewrite_stats_layout_t draw_stat_item(rewrite_app_t& app,
                   x,
                   icon_y,
                   emoji,
-                  rewrite_text_role_t::stat_emoji,
+                  skeets_text_role_t::stat_emoji,
                   fg,
                   bg);
     }
@@ -1442,7 +1442,7 @@ rewrite_stats_layout_t draw_stat_item(rewrite_app_t& app,
               count_x,
               count_y,
               count_text,
-              rewrite_text_role_t::meta,
+              skeets_text_role_t::meta,
               fg,
               bg);
 
@@ -1455,12 +1455,12 @@ rewrite_stats_layout_t draw_stat_item(rewrite_app_t& app,
     };
 }
 
-rewrite_stats_layout_t draw_post_stats(rewrite_app_t& app,
+skeets_stats_layout_t draw_post_stats(skeets_app_t& app,
                                        int x,
                                        int y,
                                        const Bsky::Post& post,
                                        std::uint8_t bg) {
-    const rewrite_stats_layout_t like_layout = draw_stat_item(app,
+    const skeets_stats_layout_t like_layout = draw_stat_item(app,
                                                               x,
                                                               y,
                                                               app.like_icon,
@@ -1469,7 +1469,7 @@ rewrite_stats_layout_t draw_post_stats(rewrite_app_t& app,
                                                               post.viewer_like.empty() ? kColorMeta : COLOR_BLACK,
                                                               bg);
     const int reply_x = x + like_layout.total_width + kStatsGap;
-    const rewrite_stats_layout_t reply_layout = draw_stat_item(app,
+    const skeets_stats_layout_t reply_layout = draw_stat_item(app,
                                                                reply_x,
                                                                y,
                                                                app.reply_icon,
@@ -1478,7 +1478,7 @@ rewrite_stats_layout_t draw_post_stats(rewrite_app_t& app,
                                                                kColorMeta,
                                                                bg);
     const int repost_x = reply_x + reply_layout.total_width + kStatsGap;
-    const rewrite_stats_layout_t repost_layout = draw_stat_item(app,
+    const skeets_stats_layout_t repost_layout = draw_stat_item(app,
                                                                 repost_x,
                                                                 y,
                                                                 app.repost_icon,
@@ -1497,7 +1497,7 @@ rewrite_stats_layout_t draw_post_stats(rewrite_app_t& app,
     };
 }
 
-int measure_thread_post_height(const rewrite_app_t& app,
+int measure_thread_post_height(const skeets_app_t& app,
                                const Bsky::Post& post,
                                bool include_indent_bar,
                                int text_width_for_post) {
@@ -1534,12 +1534,12 @@ int clamp_thread_page_start(int start, int total) {
     return std::max(0, std::min(start, total - 1));
 }
 
-rewrite_rect_t make_stat_hit_rect(int x, int y, int width, int height) {
-    return rewrite_rect_t{x, std::max(0, y - 6), width, height + 12};
+skeets_rect_t make_stat_hit_rect(int x, int y, int width, int height) {
+    return skeets_rect_t{x, std::max(0, y - 6), width, height + 12};
 }
 
-rewrite_rect_t expand_rect(const rewrite_rect_t& rect, int pad, int max_w, int max_h) {
-    rewrite_rect_t out = rect;
+skeets_rect_t expand_rect(const skeets_rect_t& rect, int pad, int max_w, int max_h) {
+    skeets_rect_t out = rect;
     out.x = std::max(0, out.x - pad);
     out.y = std::max(0, out.y - pad);
     out.width = std::min(max_w - out.x, out.width + pad * 2);
@@ -1547,15 +1547,15 @@ rewrite_rect_t expand_rect(const rewrite_rect_t& rect, int pad, int max_w, int m
     return out;
 }
 
-rewrite_refresh_mode_t stats_refresh_mode(const rewrite_app_t& app) {
+skeets_refresh_mode_t stats_refresh_mode(const skeets_app_t& app) {
     return app.framebuffer.info.supports_grayscale_partial_refresh
-        ? rewrite_refresh_mode_t::grayscale_partial
-        : rewrite_refresh_mode_t::partial;
+        ? skeets_refresh_mode_t::grayscale_partial
+        : skeets_refresh_mode_t::partial;
 }
 
-void refresh_region(rewrite_app_t& app, const rewrite_rect_t& rect) {
+void refresh_region(skeets_app_t& app, const skeets_rect_t& rect) {
     std::string error_message;
-    if (!rewrite_framebuffer_refresh(app.framebuffer,
+    if (!skeets_framebuffer_refresh(app.framebuffer,
                                      stats_refresh_mode(app),
                                      rect,
                                      true,
@@ -1564,12 +1564,12 @@ void refresh_region(rewrite_app_t& app, const rewrite_rect_t& rect) {
     }
 }
 
-void render_feed_stats_only(rewrite_app_t& app, const rewrite_post_hit_t& hit) {
+void render_feed_stats_only(skeets_app_t& app, const skeets_post_hit_t& hit) {
     if (hit.post_index < 0 || hit.post_index >= static_cast<int>(app.feed_result.feed.items.size())) {
         return;
     }
     const Bsky::Post& post = app.feed_result.feed.items[hit.post_index];
-    rewrite_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
+    skeets_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
     draw_post_stats(app, hit.stats_x, hit.stats_y, post, COLOR_WHITE);
     refresh_region(app,
                    expand_rect(hit.stats_rect,
@@ -1578,11 +1578,11 @@ void render_feed_stats_only(rewrite_app_t& app, const rewrite_post_hit_t& hit) {
                                app.framebuffer.info.screen_height));
 }
 
-void render_thread_stats_only(rewrite_app_t& app, const rewrite_thread_post_hit_t& hit) {
+void render_thread_stats_only(skeets_app_t& app, const skeets_thread_post_hit_t& hit) {
     if (!hit.post) {
         return;
     }
-    rewrite_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
+    skeets_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
     draw_post_stats(app, hit.stats_x, hit.stats_y, *hit.post, COLOR_WHITE);
     refresh_region(app,
                    expand_rect(hit.stats_rect,
@@ -1591,11 +1591,11 @@ void render_thread_stats_only(rewrite_app_t& app, const rewrite_thread_post_hit_
                                app.framebuffer.info.screen_height));
 }
 
-std::vector<std::string> auth_lines(const rewrite_app_t& app) {
-    return rewrite_bootstrap_lines(app.bootstrap);
+std::vector<std::string> auth_lines(const skeets_app_t& app) {
+    return skeets_bootstrap_lines(app.bootstrap);
 }
 
-std::vector<std::string> device_lines(const rewrite_app_t& app) {
+std::vector<std::string> device_lines(const skeets_app_t& app) {
     return {
         "Product: " + (app.device.product_name.empty() ? std::string("unknown") : app.device.product_name),
         "Codename: " + (app.device.codename.empty() ? std::string("unknown") : app.device.codename),
@@ -1605,7 +1605,7 @@ std::vector<std::string> device_lines(const rewrite_app_t& app) {
     };
 }
 
-std::vector<std::string> network_lines(const rewrite_app_t& app) {
+std::vector<std::string> network_lines(const skeets_app_t& app) {
     std::string addresses = app.network.addresses.empty() ? "none" : app.network.addresses.front();
     if (app.network.addresses.size() > 1) {
         addresses += " (+" + std::to_string(app.network.addresses.size() - 1) + " more)";
@@ -1621,7 +1621,7 @@ std::vector<std::string> network_lines(const rewrite_app_t& app) {
     };
 }
 
-std::vector<std::string> power_lines(const rewrite_app_t& app) {
+std::vector<std::string> power_lines(const skeets_app_t& app) {
     std::string capacity = app.power.capacity_percent >= 0
         ? std::to_string(app.power.capacity_percent) + "%"
         : "unknown";
@@ -1636,7 +1636,7 @@ std::vector<std::string> power_lines(const rewrite_app_t& app) {
     };
 }
 
-void render_screen(rewrite_app_t& app, bool full_refresh) {
+void render_screen(skeets_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
     const int header_height = std::max(128, height / 9);
@@ -1646,26 +1646,26 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
     const int row_height = std::max(180, cards_height / 2);
     const int half_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
 
-    const rewrite_rect_t auth_rect{kOuterMargin, header_height + kOuterMargin, half_width, row_height};
-    const rewrite_rect_t device_rect{auth_rect.x + auth_rect.width + kCardGap, auth_rect.y, half_width, row_height};
-    const rewrite_rect_t power_rect{kOuterMargin, auth_rect.y + row_height + kCardGap, half_width, row_height};
-    const rewrite_rect_t network_rect{power_rect.x + power_rect.width + kCardGap, power_rect.y, half_width, row_height};
-    const rewrite_rect_t status_rect{kOuterMargin,
+    const skeets_rect_t auth_rect{kOuterMargin, header_height + kOuterMargin, half_width, row_height};
+    const skeets_rect_t device_rect{auth_rect.x + auth_rect.width + kCardGap, auth_rect.y, half_width, row_height};
+    const skeets_rect_t power_rect{kOuterMargin, auth_rect.y + row_height + kCardGap, half_width, row_height};
+    const skeets_rect_t network_rect{power_rect.x + power_rect.width + kCardGap, power_rect.y, half_width, row_height};
+    const skeets_rect_t status_rect{kOuterMargin,
                                      network_rect.y + network_rect.height + kOuterMargin,
                                      width - (kOuterMargin * 2),
                                      status_height};
     const int button_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
-    app.refresh_button = rewrite_button_t{{kOuterMargin, height - button_height - kOuterMargin, button_width, button_height}, kEmojiRefresh};
-    app.exit_button = rewrite_button_t{{app.refresh_button.rect.x + button_width + kCardGap,
+    app.refresh_button = skeets_button_t{{kOuterMargin, height - button_height - kOuterMargin, button_width, button_height}, kEmojiRefresh};
+    app.exit_button = skeets_button_t{{app.refresh_button.rect.x + button_width + kCardGap,
                                         app.refresh_button.rect.y,
                                         button_width,
                                         button_height},
                                        kEmojiExit};
 
-    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+    skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
-    const rewrite_rect_t header_rect{0, 0, width, header_height};
-    rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    const skeets_rect_t header_rect{0, 0, width, header_height};
+    skeets_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_header_brand(app, header_rect);
 
     draw_card(app, auth_rect, "Authentication", auth_lines(app));
@@ -1673,21 +1673,21 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
     draw_card(app, power_rect, "Power And Runtime", power_lines(app));
     draw_card(app, network_rect, "Connectivity", network_lines(app));
 
-    rewrite_framebuffer_fill_rect(app.framebuffer, status_rect, kColorStatus);
+    skeets_framebuffer_fill_rect(app.framebuffer, status_rect, kColorStatus);
     draw_border(app, status_rect, kColorCardBorder);
     draw_text(app,
               status_rect.x + kCardPadding,
               status_rect.y + 16,
               app.status_line,
-              rewrite_text_role_t::status_title,
+              skeets_text_role_t::status_title,
               COLOR_BLACK,
               kColorStatus);
     draw_wrapped_text(app,
                       status_rect.x + kCardPadding,
-                      status_rect.y + 16 + line_height(rewrite_text_role_t::status_title) + 12,
+                      status_rect.y + 16 + line_height(skeets_text_role_t::status_title) + 12,
                       status_rect.width - (kCardPadding * 2),
                       app.input_line,
-                      rewrite_text_role_t::status_detail,
+                      skeets_text_role_t::status_detail,
                       COLOR_BLACK,
                       kColorStatus);
 
@@ -1695,8 +1695,8 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
     draw_button(app, app.exit_button, kColorButtonPrimary);
 
     std::string error_message;
-    const rewrite_rect_t screen_rect = full_screen_rect(app);
-    if (!rewrite_framebuffer_refresh(app.framebuffer,
+    const skeets_rect_t screen_rect = full_screen_rect(app);
+    if (!skeets_framebuffer_refresh(app.framebuffer,
                                      ui_refresh_mode(app, full_refresh),
                                      screen_rect,
                                      true,
@@ -1705,7 +1705,7 @@ void render_screen(rewrite_app_t& app, bool full_refresh) {
     }
 }
 
-void render_loading_screen(rewrite_app_t& app,
+void render_loading_screen(skeets_app_t& app,
                            const std::string& title,
                            const std::string& detail,
                            bool full_refresh) {
@@ -1713,7 +1713,7 @@ void render_loading_screen(rewrite_app_t& app,
     const int height = app.framebuffer.info.screen_height;
     const int splash_top = std::max(72, height / 10);
 
-    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+    skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
     if (app.splash_logo.pixels && app.splash_logo.width > 0 && app.splash_logo.height > 0) {
         draw_centered_image(app, app.splash_logo, width / 2, splash_top);
@@ -1724,10 +1724,10 @@ void render_loading_screen(rewrite_app_t& app,
                            "sKeets",
                            COLOR_BLACK,
                            COLOR_WHITE,
-                           rewrite_text_role_t::splash_title);
+                           skeets_text_role_t::splash_title);
     }
 
-    const int logo_bottom = splash_top + (app.splash_logo.height > 0 ? app.splash_logo.height : line_height(rewrite_text_role_t::splash_title));
+    const int logo_bottom = splash_top + (app.splash_logo.height > 0 ? app.splash_logo.height : line_height(skeets_text_role_t::splash_title));
     const int title_y = logo_bottom + 40;
     draw_centered_text(app,
                        width / 2,
@@ -1735,19 +1735,19 @@ void render_loading_screen(rewrite_app_t& app,
                        title,
                        COLOR_BLACK,
                        COLOR_WHITE,
-                       rewrite_text_role_t::splash_title);
+                       skeets_text_role_t::splash_title);
     draw_wrapped_text(app,
                       kOuterMargin * 2,
-                      title_y + line_height(rewrite_text_role_t::splash_title) + 20,
+                      title_y + line_height(skeets_text_role_t::splash_title) + 20,
                       width - (kOuterMargin * 4),
                       detail,
-                      rewrite_text_role_t::splash_detail,
+                      skeets_text_role_t::splash_detail,
                       kColorMeta,
                       COLOR_WHITE);
 
     std::string error_message;
-    const rewrite_rect_t screen_rect = full_screen_rect(app);
-    if (!rewrite_framebuffer_refresh(app.framebuffer,
+    const skeets_rect_t screen_rect = full_screen_rect(app);
+    if (!skeets_framebuffer_refresh(app.framebuffer,
                                      ui_refresh_mode(app, full_refresh),
                                      screen_rect,
                                      true,
@@ -1756,7 +1756,7 @@ void render_loading_screen(rewrite_app_t& app,
     }
 }
 
-void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
+void render_diagnostics_screen(skeets_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
     const int header_height = std::max(128, height / 9);
@@ -1766,11 +1766,11 @@ void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
     const int row_height = std::max(180, cards_height / 2);
     const int half_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
 
-    const rewrite_rect_t auth_rect{kOuterMargin, header_height + kOuterMargin, half_width, row_height};
-    const rewrite_rect_t device_rect{auth_rect.x + auth_rect.width + kCardGap, auth_rect.y, half_width, row_height};
-    const rewrite_rect_t power_rect{kOuterMargin, auth_rect.y + row_height + kCardGap, half_width, row_height};
-    const rewrite_rect_t network_rect{power_rect.x + power_rect.width + kCardGap, power_rect.y, half_width, row_height};
-    const rewrite_rect_t status_rect{kOuterMargin,
+    const skeets_rect_t auth_rect{kOuterMargin, header_height + kOuterMargin, half_width, row_height};
+    const skeets_rect_t device_rect{auth_rect.x + auth_rect.width + kCardGap, auth_rect.y, half_width, row_height};
+    const skeets_rect_t power_rect{kOuterMargin, auth_rect.y + row_height + kCardGap, half_width, row_height};
+    const skeets_rect_t network_rect{power_rect.x + power_rect.width + kCardGap, power_rect.y, half_width, row_height};
+    const skeets_rect_t status_rect{kOuterMargin,
                                      network_rect.y + network_rect.height + kOuterMargin,
                                      width - (kOuterMargin * 2),
                                      status_height};
@@ -1781,9 +1781,9 @@ void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
                                        button_height},
                                       kEmojiRefresh};
 
-    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
-    const rewrite_rect_t header_rect{0, 0, width, header_height};
-    rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+    const skeets_rect_t header_rect{0, 0, width, header_height};
+    skeets_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_button(app, app.diagnostics_back_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
@@ -1792,29 +1792,29 @@ void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
     draw_card(app, power_rect, "Power And Runtime", power_lines(app));
     draw_card(app, network_rect, "Connectivity", network_lines(app));
 
-    rewrite_framebuffer_fill_rect(app.framebuffer, status_rect, kColorStatus);
+    skeets_framebuffer_fill_rect(app.framebuffer, status_rect, kColorStatus);
     draw_border(app, status_rect, kColorCardBorder);
     draw_text(app,
               status_rect.x + kCardPadding,
               status_rect.y + 16,
               app.status_line,
-              rewrite_text_role_t::status_title,
+              skeets_text_role_t::status_title,
               COLOR_BLACK,
               kColorStatus);
     draw_wrapped_text(app,
                       status_rect.x + kCardPadding,
-                      status_rect.y + 16 + line_height(rewrite_text_role_t::status_title) + 12,
+                      status_rect.y + 16 + line_height(skeets_text_role_t::status_title) + 12,
                       status_rect.width - (kCardPadding * 2),
                       app.input_line,
-                      rewrite_text_role_t::status_detail,
+                      skeets_text_role_t::status_detail,
                       COLOR_BLACK,
                       kColorStatus);
 
     draw_button(app, app.diagnostics_refresh_button, kColorButtonPrimary);
 
     std::string error_message;
-    const rewrite_rect_t screen_rect = full_screen_rect(app);
-    if (!rewrite_framebuffer_refresh(app.framebuffer,
+    const skeets_rect_t screen_rect = full_screen_rect(app);
+    if (!skeets_framebuffer_refresh(app.framebuffer,
                                      ui_refresh_mode(app, full_refresh),
                                      screen_rect,
                                      true,
@@ -1823,7 +1823,7 @@ void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
     }
 }
 
-void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
+void render_feed_screen(skeets_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
     const int header_height = std::max(96, height / 11);
@@ -1858,11 +1858,11 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
         kEmojiSettings
     };
 
-    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+    skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
     // Header
-    const rewrite_rect_t header_rect{0, 0, width, header_height};
-    rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    const skeets_rect_t header_rect{0, 0, width, header_height};
+    skeets_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_button(app, app.feed_settings_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
@@ -1873,8 +1873,8 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
     int rendered = 0;
     app.visible_post_hits.clear();
 
-    if (app.feed_result.state != rewrite_feed_state_t::loaded || total == 0) {
-        const char* msg = total == 0 && app.feed_result.state == rewrite_feed_state_t::loaded
+    if (app.feed_result.state != skeets_feed_state_t::loaded || total == 0) {
+        const char* msg = total == 0 && app.feed_result.state == skeets_feed_state_t::loaded
             ? "No posts in timeline"
             : app.feed_result.error_message.c_str();
         font_draw_wrapped(&app.text_fb,
@@ -1911,7 +1911,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                           text_left,
                           cursor_y,
                           repost_line,
-                          rewrite_text_role_t::meta,
+                          skeets_text_role_t::meta,
                           kColorRepost,
                           COLOR_WHITE);
                 cursor_y += app.text_fb.font_h + 2;
@@ -1962,19 +1962,19 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                       text_left,
                       cursor_y,
                       author,
-                      rewrite_text_role_t::author,
+                      skeets_text_role_t::author,
                       kColorAuthor,
                       COLOR_WHITE);
             // Draw timestamp right-aligned
             {
-                int time_w = measure_text(time_buf, rewrite_text_role_t::meta);
+                int time_w = measure_text(time_buf, skeets_text_role_t::meta);
                 int time_x = width - kOuterMargin - time_w;
-                if (time_x > text_left + measure_text(author, rewrite_text_role_t::author) + 8) {
+                if (time_x > text_left + measure_text(author, skeets_text_role_t::author) + 8) {
                     draw_text(app,
                               time_x,
                               cursor_y,
                               time_buf,
-                              rewrite_text_role_t::meta,
+                              skeets_text_role_t::meta,
                               kColorMeta,
                               COLOR_WHITE);
                 }
@@ -2019,18 +2019,18 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             // Stats line
             const int stats_x = text_left + 4;
             const int stats_y = cursor_y;
-            const rewrite_stats_layout_t stats_layout = draw_post_stats(app, stats_x, cursor_y, post, COLOR_WHITE);
+            const skeets_stats_layout_t stats_layout = draw_post_stats(app, stats_x, cursor_y, post, COLOR_WHITE);
             cursor_y += stats_layout.line_height;
 
             // Separator line
             cursor_y += kPostSeparator / 2;
-            rewrite_framebuffer_fill_rect(app.framebuffer,
-                rewrite_rect_t{kOuterMargin, cursor_y, content_width, 1},
+            skeets_framebuffer_fill_rect(app.framebuffer,
+                skeets_rect_t{kOuterMargin, cursor_y, content_width, 1},
                 kColorPostBorder);
             cursor_y += kPostSeparator / 2;
 
             app.visible_post_hits.push_back({
-                rewrite_rect_t{kOuterMargin, post_top, content_width, cursor_y - post_top},
+                skeets_rect_t{kOuterMargin, post_top, content_width, cursor_y - post_top},
                 make_stat_hit_rect(stats_x, stats_y, std::max(72, stats_layout.like_width + 12), stats_layout.line_height),
                 make_stat_hit_rect(stats_layout.repost_x, stats_y, std::max(72, stats_layout.repost_width + 16), stats_layout.line_height),
                 make_stat_hit_rect(stats_x, stats_y, stats_layout.total_width + 12, stats_layout.line_height),
@@ -2053,7 +2053,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                                 " of " + std::to_string(total);
         if (!app.feed_result.feed.cursor.empty()) page_info += "+";
         int info_y = btn_y - app.text_fb.font_h - 8;
-        draw_centered_text(app, width / 2, info_y, page_info, kColorMeta, COLOR_WHITE, rewrite_text_role_t::meta);
+        draw_centered_text(app, width / 2, info_y, page_info, kColorMeta, COLOR_WHITE, skeets_text_role_t::meta);
     }
 
     // Buttons
@@ -2062,10 +2062,10 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
     draw_button(app, app.feed_next_button, kColorButtonPrimary);
 
     std::string error_message;
-    const rewrite_rect_t refresh_rect = full_refresh
+    const skeets_rect_t refresh_rect = full_refresh
         ? full_screen_rect(app)
-        : rewrite_rect_t{0, header_height, width, btn_y - header_height};
-    if (!rewrite_framebuffer_refresh(app.framebuffer,
+        : skeets_rect_t{0, header_height, width, btn_y - header_height};
+    if (!skeets_framebuffer_refresh(app.framebuffer,
                                      ui_refresh_mode(app, full_refresh),
                                      refresh_rect,
                                      true,
@@ -2074,7 +2074,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
     }
 }
 
-void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
+void render_thread_screen(skeets_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
     const int header_height = std::max(96, height / 11);
@@ -2095,16 +2095,16 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     app.thread_post_hits.clear();
     app.thread_page_count = 0;
 
-    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+    skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
-    const rewrite_rect_t header_rect{0, 0, width, header_height};
-    rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    const skeets_rect_t header_rect{0, 0, width, header_height};
+    skeets_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_button(app, app.thread_back_button, kColorButtonSecondary);
     draw_button(app, app.thread_settings_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
     int cursor_y = header_height + kOuterMargin;
-    if (app.thread_result.state != rewrite_thread_state_t::loaded) {
+    if (app.thread_result.state != skeets_thread_state_t::loaded) {
         const char* msg = app.thread_result.error_message.empty()
             ? "Loading thread..."
             : app.thread_result.error_message.c_str();
@@ -2143,8 +2143,8 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
             }
 
             if (depth > 0) {
-                rewrite_framebuffer_fill_rect(app.framebuffer,
-                                              rewrite_rect_t{kOuterMargin + indent - 12, cursor_y, 2, app.text_fb.font_h + 8},
+                skeets_framebuffer_fill_rect(app.framebuffer,
+                                              skeets_rect_t{kOuterMargin + indent - 12, cursor_y, 2, app.text_fb.font_h + 8},
                                               kColorPostBorder);
             }
 
@@ -2184,7 +2184,7 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
                 }
             }
 
-            draw_text(app, text_x, cursor_y, author, rewrite_text_role_t::author, kColorAuthor, COLOR_WHITE);
+            draw_text(app, text_x, cursor_y, author, skeets_text_role_t::author, kColorAuthor, COLOR_WHITE);
             cursor_y += std::max(app.text_fb.font_h + 4,
                                  app.profile_images_enabled ? kThreadAvatarSize + 4 : 0);
 
@@ -2225,14 +2225,14 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
             }
 
             const int stats_y = cursor_y;
-            const rewrite_stats_layout_t stats_layout = draw_post_stats(app, text_x, cursor_y, *post, COLOR_WHITE);
+            const skeets_stats_layout_t stats_layout = draw_post_stats(app, text_x, cursor_y, *post, COLOR_WHITE);
             cursor_y += stats_layout.line_height + 8;
 
-            rewrite_framebuffer_fill_rect(app.framebuffer,
-                                          rewrite_rect_t{x, cursor_y, width_for_post, 1},
+            skeets_framebuffer_fill_rect(app.framebuffer,
+                                          skeets_rect_t{x, cursor_y, width_for_post, 1},
                                           kColorPostBorder);
             app.thread_post_hits.push_back({
-                rewrite_rect_t{x, post_top, width_for_post, cursor_y - post_top + 1},
+                skeets_rect_t{x, post_top, width_for_post, cursor_y - post_top + 1},
                 make_stat_hit_rect(text_x, stats_y, std::max(72, stats_layout.like_width + 16), stats_layout.line_height),
                 make_stat_hit_rect(stats_layout.repost_x, stats_y, std::max(72, stats_layout.repost_width + 16), stats_layout.line_height),
                 make_stat_hit_rect(text_x, stats_y, stats_layout.total_width + 12, stats_layout.line_height),
@@ -2250,7 +2250,7 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
 
         app.thread_page_count = rendered;
 
-        rewrite_framebuffer_fill_rect(app.framebuffer,
+        skeets_framebuffer_fill_rect(app.framebuffer,
                                       app.thread_scrollbar_rect,
                                       0xDD);
         draw_border(app, app.thread_scrollbar_rect, kColorPostBorder, 1);
@@ -2269,17 +2269,17 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
                                                thumb_y + 2,
                                                std::max(4, app.thread_scrollbar_rect.width - 4),
                                                std::max(12, thumb_height - 4)};
-            rewrite_framebuffer_fill_rect(app.framebuffer,
+            skeets_framebuffer_fill_rect(app.framebuffer,
                                           app.thread_scrollbar_thumb_rect,
                                           kColorButtonPrimary);
         }
     }
 
     std::string error_message;
-    const rewrite_rect_t refresh_rect = full_refresh
+    const skeets_rect_t refresh_rect = full_refresh
         ? full_screen_rect(app)
-        : rewrite_rect_t{0, header_height, width, height - header_height};
-    if (!rewrite_framebuffer_refresh(app.framebuffer,
+        : skeets_rect_t{0, header_height, width, height - header_height};
+    if (!skeets_framebuffer_refresh(app.framebuffer,
                                      ui_refresh_mode(app, full_refresh),
                                      refresh_rect,
                                      true,
@@ -2288,80 +2288,80 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     }
 }
 
-void draw_toggle_chip(rewrite_app_t& app, const rewrite_rect_t& rect, bool enabled) {
+void draw_toggle_chip(skeets_app_t& app, const skeets_rect_t& rect, bool enabled) {
     const std::uint8_t fill = enabled ? kColorButtonPrimary : 0xC8;
-    rewrite_framebuffer_fill_rect(app.framebuffer, rect, fill);
+    skeets_framebuffer_fill_rect(app.framebuffer, rect, fill);
     draw_border(app, rect, COLOR_BLACK, 2);
     draw_centered_button_content(app,
                                  rect,
                                  enabled ? kEmojiEnabled : kEmojiDisabled,
-                                 rewrite_text_role_t::action_emoji,
+                                 skeets_text_role_t::action_emoji,
                                  enabled ? COLOR_WHITE : COLOR_BLACK,
                                  fill);
 }
 
-void draw_settings_row(rewrite_app_t& app,
-                       const rewrite_button_t& row,
+void draw_settings_row(skeets_app_t& app,
+                       const skeets_button_t& row,
                        const std::string& label,
                        const std::string& detail,
                        bool enabled) {
-    rewrite_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
+    skeets_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
     draw_border(app, row.rect, kColorPostBorder, 2);
 
     const int text_x = row.rect.x + kCardPadding;
     const int text_y = row.rect.y + 12;
-    draw_text(app, text_x, text_y, label, rewrite_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+    draw_text(app, text_x, text_y, label, skeets_text_role_t::settings_label, COLOR_BLACK, kColorCard);
     draw_wrapped_text(app,
                       text_x,
-                      text_y + line_height(rewrite_text_role_t::settings_label) + 6,
+                      text_y + line_height(skeets_text_role_t::settings_label) + 6,
                       row.rect.width - 180,
                       detail,
-                      rewrite_text_role_t::settings_detail,
+                      skeets_text_role_t::settings_detail,
                       kColorMeta,
                       kColorCard);
 
-    const rewrite_rect_t toggle_rect{row.rect.x + row.rect.width - 116,
+    const skeets_rect_t toggle_rect{row.rect.x + row.rect.width - 116,
                                      row.rect.y + (row.rect.height - 46) / 2,
                                      92,
                                      46};
     draw_toggle_chip(app, toggle_rect, enabled);
 }
 
-void draw_settings_action_row(rewrite_app_t& app,
-                              const rewrite_button_t& row,
+void draw_settings_action_row(skeets_app_t& app,
+                              const skeets_button_t& row,
                               const std::string& label,
                               const std::string& detail,
                               const std::string& action_label) {
-    rewrite_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
+    skeets_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
     draw_border(app, row.rect, kColorPostBorder, 2);
 
     const int text_x = row.rect.x + kCardPadding;
     const int text_y = row.rect.y + 12;
-    draw_text(app, text_x, text_y, label, rewrite_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+    draw_text(app, text_x, text_y, label, skeets_text_role_t::settings_label, COLOR_BLACK, kColorCard);
     draw_wrapped_text(app,
                       text_x,
-                      text_y + line_height(rewrite_text_role_t::settings_label) + 6,
+                      text_y + line_height(skeets_text_role_t::settings_label) + 6,
                       row.rect.width - 180,
                       detail,
-                      rewrite_text_role_t::settings_detail,
+                      skeets_text_role_t::settings_detail,
                       kColorMeta,
                       kColorCard);
 
-    const rewrite_rect_t action_rect{row.rect.x + row.rect.width - 124,
+    const skeets_rect_t action_rect{row.rect.x + row.rect.width - 124,
                                      row.rect.y + (row.rect.height - 46) / 2,
                                      100,
                                      46};
-    rewrite_framebuffer_fill_rect(app.framebuffer, action_rect, kColorButtonSecondary);
+    skeets_framebuffer_fill_rect(app.framebuffer, action_rect, kColorButtonSecondary);
     draw_border(app, action_rect, COLOR_BLACK, 2);
     draw_centered_button_content(app,
                                  action_rect,
                                  action_label,
-                                 rewrite_text_role_t::action_emoji,
+                                 skeets_text_role_t::action_emoji,
                                  COLOR_BLACK,
                                  kColorButtonSecondary);
 }
 
-void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
+void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
     const int header_height = std::max(96, height / 11);
@@ -2383,10 +2383,10 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
                                      std::max(90, height / 12)},
                                     "Log Out"};
 
-    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+    skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
-    const rewrite_rect_t header_rect{0, 0, width, header_height};
-    rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    const skeets_rect_t header_rect{0, 0, width, header_height};
+    skeets_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_button(app, app.settings_back_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
@@ -2426,15 +2426,15 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
                       app.settings_diagnostics_button.rect.y + app.settings_diagnostics_button.rect.height + 20,
                       content_width,
                       "These toggles are persisted. Adult-content categories default to hidden until enabled here.",
-                      rewrite_text_role_t::settings_detail,
+                      skeets_text_role_t::settings_detail,
                       kColorMeta,
                       COLOR_WHITE);
 
     draw_button(app, app.settings_sign_out_button, kColorButtonPrimary);
 
     std::string error_message;
-    const rewrite_rect_t screen_rect = full_screen_rect(app);
-    if (!rewrite_framebuffer_refresh(app.framebuffer,
+    const skeets_rect_t screen_rect = full_screen_rect(app);
+    if (!skeets_framebuffer_refresh(app.framebuffer,
                                      ui_refresh_mode(app, full_refresh),
                                      screen_rect,
                                      true,
@@ -2443,16 +2443,16 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
     }
 }
 
-void render_fatal_screen(rewrite_framebuffer_t& framebuffer, fb_t& text_fb, const std::string& message) {
-    rewrite_framebuffer_clear(framebuffer, COLOR_WHITE);
-    const rewrite_rect_t box{48, 120, framebuffer.info.screen_width - 96, framebuffer.info.screen_height - 240};
-    rewrite_framebuffer_fill_rect(framebuffer, box, 0xF0);
+void render_fatal_screen(skeets_framebuffer_t& framebuffer, fb_t& text_fb, const std::string& message) {
+    skeets_framebuffer_clear(framebuffer, COLOR_WHITE);
+    const skeets_rect_t box{48, 120, framebuffer.info.screen_width - 96, framebuffer.info.screen_height - 240};
+    skeets_framebuffer_fill_rect(framebuffer, box, 0xF0);
 
-    auto draw_box_border = [&](const rewrite_rect_t& rect) {
-        rewrite_framebuffer_fill_rect(framebuffer, rewrite_rect_t{rect.x, rect.y, rect.width, 3}, COLOR_BLACK);
-        rewrite_framebuffer_fill_rect(framebuffer, rewrite_rect_t{rect.x, rect.y + rect.height - 3, rect.width, 3}, COLOR_BLACK);
-        rewrite_framebuffer_fill_rect(framebuffer, rewrite_rect_t{rect.x, rect.y, 3, rect.height}, COLOR_BLACK);
-        rewrite_framebuffer_fill_rect(framebuffer, rewrite_rect_t{rect.x + rect.width - 3, rect.y, 3, rect.height}, COLOR_BLACK);
+    auto draw_box_border = [&](const skeets_rect_t& rect) {
+        skeets_framebuffer_fill_rect(framebuffer, skeets_rect_t{rect.x, rect.y, rect.width, 3}, COLOR_BLACK);
+        skeets_framebuffer_fill_rect(framebuffer, skeets_rect_t{rect.x, rect.y + rect.height - 3, rect.width, 3}, COLOR_BLACK);
+        skeets_framebuffer_fill_rect(framebuffer, skeets_rect_t{rect.x, rect.y, 3, rect.height}, COLOR_BLACK);
+        skeets_framebuffer_fill_rect(framebuffer, skeets_rect_t{rect.x + rect.width - 3, rect.y, 3, rect.height}, COLOR_BLACK);
     };
 
     draw_box_border(box);
@@ -2467,9 +2467,9 @@ void render_fatal_screen(rewrite_framebuffer_t& framebuffer, fb_t& text_fb, cons
                       4);
 
     std::string error_message;
-    const rewrite_rect_t screen_rect{0, 0, framebuffer.info.screen_width, framebuffer.info.screen_height};
-    if (!rewrite_framebuffer_refresh(framebuffer,
-                                     rewrite_refresh_mode_t::full,
+    const skeets_rect_t screen_rect{0, 0, framebuffer.info.screen_width, framebuffer.info.screen_height};
+    if (!skeets_framebuffer_refresh(framebuffer,
+                                     skeets_refresh_mode_t::full,
                                      screen_rect,
                                      true,
                                      &error_message)) {
@@ -2477,20 +2477,20 @@ void render_fatal_screen(rewrite_framebuffer_t& framebuffer, fb_t& text_fb, cons
     }
 }
 
-void render_active_view(rewrite_app_t& app, bool full_refresh) {
-    if (app.view_mode == rewrite_view_mode_t::feed) {
+void render_active_view(skeets_app_t& app, bool full_refresh) {
+    if (app.view_mode == skeets_view_mode_t::feed) {
         render_feed_screen(app, full_refresh);
         return;
     }
-    if (app.view_mode == rewrite_view_mode_t::thread) {
+    if (app.view_mode == skeets_view_mode_t::thread) {
         render_thread_screen(app, full_refresh);
         return;
     }
-    if (app.view_mode == rewrite_view_mode_t::settings) {
+    if (app.view_mode == skeets_view_mode_t::settings) {
         render_settings_screen(app, full_refresh);
         return;
     }
-    if (app.view_mode == rewrite_view_mode_t::diagnostics) {
+    if (app.view_mode == skeets_view_mode_t::diagnostics) {
         render_diagnostics_screen(app, full_refresh);
         return;
     }
@@ -2507,7 +2507,7 @@ int main(int argc, char* argv[]) {
     // RTLD_GLOBAL makes the symbols available process-wide so the TLS
     // plugin finds them already resident.
     {
-        const std::string lib_dir = rewrite_dir() + "/lib";
+        const std::string lib_dir = skeets_dir() + "/lib";
         const std::string crypto_path = lib_dir + "/libcrypto.so.3";
         const std::string ssl_path = lib_dir + "/libssl.so.3";
 
@@ -2532,7 +2532,7 @@ int main(int argc, char* argv[]) {
     // system paths like /etc/ssl/certs which may be outdated or absent on
     // the Kobo.  Set the default SSL configuration explicitly.
     {
-        const QString ca_path = QString::fromStdString(rewrite_dir() + "/ssl/certs/ca-certificates.crt");
+        const QString ca_path = QString::fromStdString(skeets_dir() + "/ssl/certs/ca-certificates.crt");
         QFile ca_file(ca_path);
         if (ca_file.open(QIODevice::ReadOnly)) {
             auto certs = QSslCertificate::fromDevice(&ca_file, QSsl::Pem);
@@ -2554,116 +2554,116 @@ int main(int argc, char* argv[]) {
     std::signal(SIGTERM, handle_signal);
     std::signal(SIGHUP, handle_signal);
 
-    rewrite_app_t rewrite_app;
-    rewrite_app.device = rewrite_probe_device();
-    rewrite_app.revision_summary = read_revision_summary();
+    skeets_app_t skeets_app;
+    skeets_app.device = skeets_probe_device();
+    skeets_app.revision_summary = read_revision_summary();
 
     std::string error_message;
-    if (!rewrite_framebuffer_open(rewrite_app.framebuffer, &error_message)) {
+    if (!skeets_framebuffer_open(skeets_app.framebuffer, &error_message)) {
         std::fprintf(stderr, "rewrite app: framebuffer open failed: %s\n", error_message.c_str());
         return 1;
     }
 
-    rewrite_app.text_fb.fd = rewrite_app.framebuffer.fd;
-    rewrite_app.text_fb.width = rewrite_app.framebuffer.info.screen_width;
-    rewrite_app.text_fb.height = rewrite_app.framebuffer.info.screen_height;
-    rewrite_app.text_fb.font_w = rewrite_app.framebuffer.info.font_width;
-    rewrite_app.text_fb.font_h = rewrite_app.framebuffer.info.font_height;
-    if (fb_load_fonts(&rewrite_app.text_fb, (rewrite_dir() + "/fonts").c_str()) == 0) {
+    skeets_app.text_fb.fd = skeets_app.framebuffer.fd;
+    skeets_app.text_fb.width = skeets_app.framebuffer.info.screen_width;
+    skeets_app.text_fb.height = skeets_app.framebuffer.info.screen_height;
+    skeets_app.text_fb.font_w = skeets_app.framebuffer.info.font_width;
+    skeets_app.text_fb.font_h = skeets_app.framebuffer.info.font_height;
+    if (fb_load_fonts(&skeets_app.text_fb, (skeets_dir() + "/fonts").c_str()) == 0) {
         font_set_ot_enabled(true);
     } else {
         font_set_ot_enabled(false);
     }
-    font_init(&rewrite_app.text_fb);
-    rewrite_app.text_fb.font_h = font_line_height(28, FONT_STYLE_REGULAR);
-    load_brand_assets(rewrite_app);
+    font_init(&skeets_app.text_fb);
+    skeets_app.text_fb.font_h = font_line_height(28, FONT_STYLE_REGULAR);
+    load_brand_assets(skeets_app);
 
-    if (!rewrite_input_open(rewrite_app.input,
-                            rewrite_app.framebuffer.info.screen_width,
-                            rewrite_app.framebuffer.info.screen_height,
+    if (!skeets_input_open(skeets_app.input,
+                            skeets_app.framebuffer.info.screen_width,
+                            skeets_app.framebuffer.info.screen_height,
                             detect_input_protocol(),
                             &error_message)) {
         std::fprintf(stderr, "rewrite app: input open failed: %s\n", error_message.c_str());
-        render_fatal_screen(rewrite_app.framebuffer, rewrite_app.text_fb, error_message);
-        rewrite_framebuffer_close(rewrite_app.framebuffer);
+        render_fatal_screen(skeets_app.framebuffer, skeets_app.text_fb, error_message);
+        skeets_framebuffer_close(skeets_app.framebuffer);
         return 1;
     }
 
-    refresh_bootstrap_state(rewrite_app);
-    refresh_runtime_state(rewrite_app);
-    load_settings(rewrite_app);
+    refresh_bootstrap_state(skeets_app);
+    refresh_runtime_state(skeets_app);
+    load_settings(skeets_app);
 
     // If auth succeeded, auto-load the feed and switch to feed view
-    if (rewrite_app.bootstrap.authenticated) {
-        render_loading_screen(rewrite_app,
+    if (skeets_app.bootstrap.authenticated) {
+        render_loading_screen(skeets_app,
                               "Loading timeline",
                               "Fetching your home feed and warming the first image batch.",
                               true);
-        load_feed(rewrite_app);
-        if (rewrite_app.feed_result.state == rewrite_feed_state_t::loaded) {
-            queue_feed_image_requests(rewrite_app);
-            render_loading_screen(rewrite_app,
+        load_feed(skeets_app);
+        if (skeets_app.feed_result.state == skeets_feed_state_t::loaded) {
+            queue_feed_image_requests(skeets_app);
+            render_loading_screen(skeets_app,
                                   "Loading media",
                                   "Starting avatar and preview downloads for the first visible posts.",
                                   true);
             wait_for_initial_feed_images(1200);
-            rewrite_app.view_mode = rewrite_view_mode_t::feed;
-            render_feed_screen(rewrite_app, true);
+            skeets_app.view_mode = skeets_view_mode_t::feed;
+            render_feed_screen(skeets_app, true);
         } else {
-            render_screen(rewrite_app, true);
+            render_screen(skeets_app, true);
         }
     } else {
-        render_screen(rewrite_app, true);
+        render_screen(skeets_app, true);
     }
 
     auto last_probe = std::chrono::steady_clock::now();
     while (!g_stop_requested) {
         QCoreApplication::processEvents();
 
-        rewrite_input_event_t event;
+        skeets_input_event_t event;
         error_message.clear();
-        const bool have_event = rewrite_input_poll(rewrite_app.input, event, 500, &error_message);
+        const bool have_event = skeets_input_poll(skeets_app.input, event, 500, &error_message);
         if (!have_event) {
             if (image_cache_redraw_needed() &&
-                (rewrite_app.view_mode == rewrite_view_mode_t::feed ||
-                 rewrite_app.view_mode == rewrite_view_mode_t::thread)) {
-                render_active_view(rewrite_app, false);
+                (skeets_app.view_mode == skeets_view_mode_t::feed ||
+                 skeets_app.view_mode == skeets_view_mode_t::thread)) {
+                render_active_view(skeets_app, false);
             }
 
             if (!error_message.empty()) {
-                rewrite_app.status_line = "Input polling error";
-                rewrite_app.input_line = error_message;
-                render_active_view(rewrite_app, false);
+                skeets_app.status_line = "Input polling error";
+                skeets_app.input_line = error_message;
+                render_active_view(skeets_app, false);
             }
 
             const auto now = std::chrono::steady_clock::now();
             if (now - last_probe >= std::chrono::seconds(20)) {
-                refresh_runtime_state(rewrite_app);
-                if (rewrite_app.view_mode != rewrite_view_mode_t::feed) {
-                    rewrite_app.status_line = rewrite_app.bootstrap.headline;
-                    rewrite_app.input_line = rewrite_app.bootstrap.detail;
+                refresh_runtime_state(skeets_app);
+                if (skeets_app.view_mode != skeets_view_mode_t::feed) {
+                    skeets_app.status_line = skeets_app.bootstrap.headline;
+                    skeets_app.input_line = skeets_app.bootstrap.detail;
                 }
-                render_active_view(rewrite_app, false);
+                render_active_view(skeets_app, false);
                 last_probe = now;
             }
             continue;
         }
 
-        if (event.type == rewrite_input_event_type_t::key_press) {
+        if (event.type == skeets_input_event_type_t::key_press) {
             if (event.key_code == KEY_POWER) {
-                rewrite_app.status_line = "Power key pressed";
-                rewrite_app.input_line = "Exiting rewrite auth bootstrap shell";
-                render_screen(rewrite_app, false);
+                skeets_app.status_line = "Power key pressed";
+                skeets_app.input_line = "Exiting rewrite auth bootstrap shell";
+                render_screen(skeets_app, false);
                 break;
             }
 
-            rewrite_app.status_line = "Unhandled key press";
-            rewrite_app.input_line = "Linux input code " + std::to_string(event.key_code);
-            render_screen(rewrite_app, false);
+            skeets_app.status_line = "Unhandled key press";
+            skeets_app.input_line = "Linux input code " + std::to_string(event.key_code);
+            render_screen(skeets_app, false);
             continue;
         }
 
-        if (event.type != rewrite_input_event_type_t::touch_up) {
+        if (event.type != skeets_input_event_type_t::touch_up) {
             continue;
         }
 
@@ -2671,60 +2671,60 @@ int main(int argc, char* argv[]) {
         touch_message << "Touch released at " << event.x << "," << event.y;
 
         // --- Feed view touch handling ---
-        if (rewrite_app.view_mode == rewrite_view_mode_t::feed) {
-            if (contains_point(rewrite_app.feed_settings_button.rect, event.x, event.y)) {
-                open_settings(rewrite_app, rewrite_view_mode_t::feed);
-                render_settings_screen(rewrite_app, true);
+        if (skeets_app.view_mode == skeets_view_mode_t::feed) {
+            if (contains_point(skeets_app.feed_settings_button.rect, event.x, event.y)) {
+                open_settings(skeets_app, skeets_view_mode_t::feed);
+                render_settings_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.feed_back_button.rect, event.x, event.y)) {
-                if (!rewrite_app.feed_page_history.empty()) {
-                    rewrite_app.feed_page_start = rewrite_app.feed_page_history.back();
-                    rewrite_app.feed_page_history.pop_back();
-                    render_feed_screen(rewrite_app, true);
+            if (contains_point(skeets_app.feed_back_button.rect, event.x, event.y)) {
+                if (!skeets_app.feed_page_history.empty()) {
+                    skeets_app.feed_page_start = skeets_app.feed_page_history.back();
+                    skeets_app.feed_page_history.pop_back();
+                    render_feed_screen(skeets_app, true);
                 } else {
-                    rewrite_app.status_line = "Already at newest page";
-                    rewrite_app.input_line = touch_message.str();
-                    render_feed_screen(rewrite_app, false);
+                    skeets_app.status_line = "Already at newest page";
+                    skeets_app.input_line = touch_message.str();
+                    render_feed_screen(skeets_app, false);
                 }
                 continue;
             }
 
-            if (contains_point(rewrite_app.feed_refresh_button.rect, event.x, event.y)) {
-                render_feed_screen(rewrite_app, false);  // Show current state
-                load_feed(rewrite_app);
-                render_feed_screen(rewrite_app, true);
+            if (contains_point(skeets_app.feed_refresh_button.rect, event.x, event.y)) {
+                render_feed_screen(skeets_app, false);  // Show current state
+                load_feed(skeets_app);
+                render_feed_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.feed_next_button.rect, event.x, event.y)) {
-                if (advance_feed_page(rewrite_app)) {
-                    render_feed_screen(rewrite_app, true);
+            if (contains_point(skeets_app.feed_next_button.rect, event.x, event.y)) {
+                if (advance_feed_page(skeets_app)) {
+                    render_feed_screen(skeets_app, true);
                 } else {
-                    rewrite_app.status_line = "Already at oldest loaded feed page";
-                    rewrite_app.input_line = touch_message.str();
-                    render_feed_screen(rewrite_app, false);
+                    skeets_app.status_line = "Already at oldest loaded feed page";
+                    skeets_app.input_line = touch_message.str();
+                    render_feed_screen(skeets_app, false);
                 }
                 continue;
             }
 
-            for (const auto& hit : rewrite_app.visible_post_hits) {
+            for (const auto& hit : skeets_app.visible_post_hits) {
                 if (!contains_point(hit.rect, event.x, event.y)) {
                     continue;
                 }
-                if (hit.post_index < 0 || hit.post_index >= static_cast<int>(rewrite_app.feed_result.feed.items.size())) {
+                if (hit.post_index < 0 || hit.post_index >= static_cast<int>(skeets_app.feed_result.feed.items.size())) {
                     continue;
                 }
-                Bsky::Post& post = rewrite_app.feed_result.feed.items[hit.post_index];
+                Bsky::Post& post = skeets_app.feed_result.feed.items[hit.post_index];
 
                 if (contains_point(hit.like_rect, event.x, event.y)) {
                     if (post.viewer_like.empty()) {
                         post.like_count++;
                         post.viewer_like = "pending-like";
-                        render_feed_stats_only(rewrite_app, hit);
-                        const auto action = rewrite_like_post(rewrite_app.bootstrap.session, post.uri, post.cid);
-                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        render_feed_stats_only(skeets_app, hit);
+                        const auto action = skeets_like_post(skeets_app.bootstrap.session, post.uri, post.cid);
+                        apply_updated_session(skeets_app, action.session, action.session_updated);
                         if (action.ok) {
                             post.viewer_like = action.record_uri;
                         } else {
@@ -2736,9 +2736,9 @@ int main(int argc, char* argv[]) {
                         const std::string old_uri = post.viewer_like;
                         post.viewer_like.clear();
                         post.like_count = std::max(0, post.like_count - 1);
-                        render_feed_stats_only(rewrite_app, hit);
-                        const auto action = rewrite_unlike_post(rewrite_app.bootstrap.session, old_uri);
-                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        render_feed_stats_only(skeets_app, hit);
+                        const auto action = skeets_unlike_post(skeets_app.bootstrap.session, old_uri);
+                        apply_updated_session(skeets_app, action.session, action.session_updated);
                         if (action.ok) {
                         } else {
                             post.viewer_like = old_uri;
@@ -2746,7 +2746,7 @@ int main(int argc, char* argv[]) {
                             std::fprintf(stderr, "rewrite action: unlike failed: %s\n", action.error_message.c_str());
                         }
                     }
-                    render_feed_stats_only(rewrite_app, hit);
+                    render_feed_stats_only(skeets_app, hit);
                     break;
                 }
 
@@ -2754,9 +2754,9 @@ int main(int argc, char* argv[]) {
                     if (post.viewer_repost.empty()) {
                         post.repost_count++;
                         post.viewer_repost = "pending-repost";
-                        render_feed_stats_only(rewrite_app, hit);
-                        const auto action = rewrite_repost_post(rewrite_app.bootstrap.session, post.uri, post.cid);
-                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        render_feed_stats_only(skeets_app, hit);
+                        const auto action = skeets_repost_post(skeets_app.bootstrap.session, post.uri, post.cid);
+                        apply_updated_session(skeets_app, action.session, action.session_updated);
                         if (action.ok) {
                             post.viewer_repost = action.record_uri;
                         } else {
@@ -2768,9 +2768,9 @@ int main(int argc, char* argv[]) {
                         const std::string old_uri = post.viewer_repost;
                         post.viewer_repost.clear();
                         post.repost_count = std::max(0, post.repost_count - 1);
-                        render_feed_stats_only(rewrite_app, hit);
-                        const auto action = rewrite_unrepost_post(rewrite_app.bootstrap.session, old_uri);
-                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        render_feed_stats_only(skeets_app, hit);
+                        const auto action = skeets_unrepost_post(skeets_app.bootstrap.session, old_uri);
+                        apply_updated_session(skeets_app, action.session, action.session_updated);
                         if (action.ok) {
                         } else {
                             post.viewer_repost = old_uri;
@@ -2778,13 +2778,13 @@ int main(int argc, char* argv[]) {
                             std::fprintf(stderr, "rewrite action: unrepost failed: %s\n", action.error_message.c_str());
                         }
                     }
-                    render_feed_stats_only(rewrite_app, hit);
+                    render_feed_stats_only(skeets_app, hit);
                     break;
                 }
 
-                load_thread(rewrite_app, post.uri);
-                rewrite_app.view_mode = rewrite_view_mode_t::thread;
-                render_thread_screen(rewrite_app, true);
+                load_thread(skeets_app, post.uri);
+                skeets_app.view_mode = skeets_view_mode_t::thread;
+                render_thread_screen(skeets_app, true);
                 break;
             }
 
@@ -2792,43 +2792,43 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        if (rewrite_app.view_mode == rewrite_view_mode_t::thread) {
-            if (contains_point(rewrite_app.thread_back_button.rect, event.x, event.y)) {
-                rewrite_app.view_mode = rewrite_view_mode_t::feed;
-                render_feed_screen(rewrite_app, true);
+        if (skeets_app.view_mode == skeets_view_mode_t::thread) {
+            if (contains_point(skeets_app.thread_back_button.rect, event.x, event.y)) {
+                skeets_app.view_mode = skeets_view_mode_t::feed;
+                render_feed_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.thread_settings_button.rect, event.x, event.y)) {
-                open_settings(rewrite_app, rewrite_view_mode_t::thread);
-                render_settings_screen(rewrite_app, true);
+            if (contains_point(skeets_app.thread_settings_button.rect, event.x, event.y)) {
+                open_settings(skeets_app, skeets_view_mode_t::thread);
+                render_settings_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.thread_scrollbar_rect, event.x, event.y)) {
+            if (contains_point(skeets_app.thread_scrollbar_rect, event.x, event.y)) {
                 std::vector<std::pair<const Bsky::Post*, int>> nodes;
-                if (rewrite_app.thread_result.state == rewrite_thread_state_t::loaded) {
-                    flatten_thread_posts(rewrite_app.thread_result.root, 0, nodes);
+                if (skeets_app.thread_result.state == skeets_thread_state_t::loaded) {
+                    flatten_thread_posts(skeets_app.thread_result.root, 0, nodes);
                 }
                 const int total = static_cast<int>(nodes.size());
-                const int visible = std::max(1, rewrite_app.thread_page_count);
+                const int visible = std::max(1, skeets_app.thread_page_count);
                 const int max_start = std::max(0, total - visible);
-                if (max_start > 0 && rewrite_app.thread_scrollbar_rect.height > 1) {
+                if (max_start > 0 && skeets_app.thread_scrollbar_rect.height > 1) {
                     const int relative_y = std::max(0,
-                                                    std::min(event.y - rewrite_app.thread_scrollbar_rect.y,
-                                                             rewrite_app.thread_scrollbar_rect.height - 1));
-                    rewrite_app.thread_page_start = (relative_y * max_start) /
-                                                    std::max(1, rewrite_app.thread_scrollbar_rect.height - 1);
-                    render_thread_screen(rewrite_app, true);
+                                                    std::min(event.y - skeets_app.thread_scrollbar_rect.y,
+                                                             skeets_app.thread_scrollbar_rect.height - 1));
+                    skeets_app.thread_page_start = (relative_y * max_start) /
+                                                    std::max(1, skeets_app.thread_scrollbar_rect.height - 1);
+                    render_thread_screen(skeets_app, true);
                 } else {
-                    rewrite_app.status_line = "Thread already fits on-screen";
-                    rewrite_app.input_line = touch_message.str();
-                    render_thread_screen(rewrite_app, false);
+                    skeets_app.status_line = "Thread already fits on-screen";
+                    skeets_app.input_line = touch_message.str();
+                    render_thread_screen(skeets_app, false);
                 }
                 continue;
             }
 
-            for (const auto& hit : rewrite_app.thread_post_hits) {
+            for (const auto& hit : skeets_app.thread_post_hits) {
                 if (!hit.post) {
                     continue;
                 }
@@ -2838,9 +2838,9 @@ int main(int argc, char* argv[]) {
                     if (post.viewer_like.empty()) {
                         post.like_count++;
                         post.viewer_like = "pending-like";
-                        render_thread_stats_only(rewrite_app, hit);
-                        const auto action = rewrite_like_post(rewrite_app.bootstrap.session, post.uri, post.cid);
-                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        render_thread_stats_only(skeets_app, hit);
+                        const auto action = skeets_like_post(skeets_app.bootstrap.session, post.uri, post.cid);
+                        apply_updated_session(skeets_app, action.session, action.session_updated);
                         if (action.ok) {
                             post.viewer_like = action.record_uri;
                         } else {
@@ -2852,9 +2852,9 @@ int main(int argc, char* argv[]) {
                         const std::string old_uri = post.viewer_like;
                         post.viewer_like.clear();
                         post.like_count = std::max(0, post.like_count - 1);
-                        render_thread_stats_only(rewrite_app, hit);
-                        const auto action = rewrite_unlike_post(rewrite_app.bootstrap.session, old_uri);
-                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        render_thread_stats_only(skeets_app, hit);
+                        const auto action = skeets_unlike_post(skeets_app.bootstrap.session, old_uri);
+                        apply_updated_session(skeets_app, action.session, action.session_updated);
                         if (action.ok) {
                         } else {
                             post.viewer_like = old_uri;
@@ -2862,7 +2862,7 @@ int main(int argc, char* argv[]) {
                             std::fprintf(stderr, "rewrite action: thread unlike failed: %s\n", action.error_message.c_str());
                         }
                     }
-                    render_thread_stats_only(rewrite_app, hit);
+                    render_thread_stats_only(skeets_app, hit);
                     break;
                 }
 
@@ -2870,9 +2870,9 @@ int main(int argc, char* argv[]) {
                     if (post.viewer_repost.empty()) {
                         post.repost_count++;
                         post.viewer_repost = "pending-repost";
-                        render_thread_stats_only(rewrite_app, hit);
-                        const auto action = rewrite_repost_post(rewrite_app.bootstrap.session, post.uri, post.cid);
-                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        render_thread_stats_only(skeets_app, hit);
+                        const auto action = skeets_repost_post(skeets_app.bootstrap.session, post.uri, post.cid);
+                        apply_updated_session(skeets_app, action.session, action.session_updated);
                         if (action.ok) {
                             post.viewer_repost = action.record_uri;
                         } else {
@@ -2884,9 +2884,9 @@ int main(int argc, char* argv[]) {
                         const std::string old_uri = post.viewer_repost;
                         post.viewer_repost.clear();
                         post.repost_count = std::max(0, post.repost_count - 1);
-                        render_thread_stats_only(rewrite_app, hit);
-                        const auto action = rewrite_unrepost_post(rewrite_app.bootstrap.session, old_uri);
-                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        render_thread_stats_only(skeets_app, hit);
+                        const auto action = skeets_unrepost_post(skeets_app.bootstrap.session, old_uri);
+                        apply_updated_session(skeets_app, action.session, action.session_updated);
                         if (action.ok) {
                         } else {
                             post.viewer_repost = old_uri;
@@ -2894,7 +2894,7 @@ int main(int argc, char* argv[]) {
                             std::fprintf(stderr, "rewrite action: thread unrepost failed: %s\n", action.error_message.c_str());
                         }
                     }
-                    render_thread_stats_only(rewrite_app, hit);
+                    render_thread_stats_only(skeets_app, hit);
                     break;
                 }
 
@@ -2902,98 +2902,98 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        if (rewrite_app.view_mode == rewrite_view_mode_t::settings) {
-            if (contains_point(rewrite_app.settings_back_button.rect, event.x, event.y)) {
-                rewrite_app.view_mode = rewrite_app.settings_return_view;
-                render_active_view(rewrite_app, true);
+        if (skeets_app.view_mode == skeets_view_mode_t::settings) {
+            if (contains_point(skeets_app.settings_back_button.rect, event.x, event.y)) {
+                skeets_app.view_mode = skeets_app.settings_return_view;
+                render_active_view(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.settings_profile_button.rect, event.x, event.y)) {
-                rewrite_app.profile_images_enabled = !rewrite_app.profile_images_enabled;
-                save_settings(rewrite_app);
-                rewrite_app.status_line = "Settings updated";
-                rewrite_app.input_line = std::string("Profile images ") +
-                                         (rewrite_app.profile_images_enabled ? "enabled" : "disabled");
-                render_settings_screen(rewrite_app, true);
+            if (contains_point(skeets_app.settings_profile_button.rect, event.x, event.y)) {
+                skeets_app.profile_images_enabled = !skeets_app.profile_images_enabled;
+                save_settings(skeets_app);
+                skeets_app.status_line = "Settings updated";
+                skeets_app.input_line = std::string("Profile images ") +
+                                         (skeets_app.profile_images_enabled ? "enabled" : "disabled");
+                render_settings_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.settings_embed_button.rect, event.x, event.y)) {
-                rewrite_app.embed_images_enabled = !rewrite_app.embed_images_enabled;
-                save_settings(rewrite_app);
-                rewrite_app.status_line = "Settings updated";
-                rewrite_app.input_line = std::string("Embed images ") +
-                                         (rewrite_app.embed_images_enabled ? "enabled" : "disabled");
-                render_settings_screen(rewrite_app, true);
+            if (contains_point(skeets_app.settings_embed_button.rect, event.x, event.y)) {
+                skeets_app.embed_images_enabled = !skeets_app.embed_images_enabled;
+                save_settings(skeets_app);
+                skeets_app.status_line = "Settings updated";
+                skeets_app.input_line = std::string("Embed images ") +
+                                         (skeets_app.embed_images_enabled ? "enabled" : "disabled");
+                render_settings_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.settings_nudity_button.rect, event.x, event.y)) {
-                rewrite_app.allow_nudity_content = !rewrite_app.allow_nudity_content;
-                save_settings(rewrite_app);
-                rewrite_app.status_line = "Settings updated";
-                rewrite_app.input_line = std::string("Nudity content ") +
-                                         (rewrite_app.allow_nudity_content ? "shown" : "hidden");
-                render_settings_screen(rewrite_app, true);
+            if (contains_point(skeets_app.settings_nudity_button.rect, event.x, event.y)) {
+                skeets_app.allow_nudity_content = !skeets_app.allow_nudity_content;
+                save_settings(skeets_app);
+                skeets_app.status_line = "Settings updated";
+                skeets_app.input_line = std::string("Nudity content ") +
+                                         (skeets_app.allow_nudity_content ? "shown" : "hidden");
+                render_settings_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.settings_porn_button.rect, event.x, event.y)) {
-                rewrite_app.allow_porn_content = !rewrite_app.allow_porn_content;
-                save_settings(rewrite_app);
-                rewrite_app.status_line = "Settings updated";
-                rewrite_app.input_line = std::string("Porn content ") +
-                                         (rewrite_app.allow_porn_content ? "shown" : "hidden");
-                render_settings_screen(rewrite_app, true);
+            if (contains_point(skeets_app.settings_porn_button.rect, event.x, event.y)) {
+                skeets_app.allow_porn_content = !skeets_app.allow_porn_content;
+                save_settings(skeets_app);
+                skeets_app.status_line = "Settings updated";
+                skeets_app.input_line = std::string("Porn content ") +
+                                         (skeets_app.allow_porn_content ? "shown" : "hidden");
+                render_settings_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.settings_suggestive_button.rect, event.x, event.y)) {
-                rewrite_app.allow_suggestive_content = !rewrite_app.allow_suggestive_content;
-                save_settings(rewrite_app);
-                rewrite_app.status_line = "Settings updated";
-                rewrite_app.input_line = std::string("Suggestive content ") +
-                                         (rewrite_app.allow_suggestive_content ? "shown" : "hidden");
-                render_settings_screen(rewrite_app, true);
+            if (contains_point(skeets_app.settings_suggestive_button.rect, event.x, event.y)) {
+                skeets_app.allow_suggestive_content = !skeets_app.allow_suggestive_content;
+                save_settings(skeets_app);
+                skeets_app.status_line = "Settings updated";
+                skeets_app.input_line = std::string("Suggestive content ") +
+                                         (skeets_app.allow_suggestive_content ? "shown" : "hidden");
+                render_settings_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.settings_diagnostics_button.rect, event.x, event.y)) {
-                rewrite_app.view_mode = rewrite_view_mode_t::diagnostics;
-                rewrite_app.status_line = "Diagnostics";
-                rewrite_app.input_line = "Use Refresh to re-probe device, network, and auth state.";
-                render_diagnostics_screen(rewrite_app, true);
+            if (contains_point(skeets_app.settings_diagnostics_button.rect, event.x, event.y)) {
+                skeets_app.view_mode = skeets_view_mode_t::diagnostics;
+                skeets_app.status_line = "Diagnostics";
+                skeets_app.input_line = "Use Refresh to re-probe device, network, and auth state.";
+                render_diagnostics_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.settings_sign_out_button.rect, event.x, event.y)) {
-                clear_saved_session(rewrite_app);
-                refresh_bootstrap_state(rewrite_app);
-                refresh_runtime_state(rewrite_app);
-                rewrite_app.view_mode = rewrite_view_mode_t::dashboard;
-                rewrite_app.status_line = "Signed out";
-                rewrite_app.input_line = "Saved session cleared. Use login.txt or Recheck to sign in again.";
-                render_screen(rewrite_app, true);
+            if (contains_point(skeets_app.settings_sign_out_button.rect, event.x, event.y)) {
+                clear_saved_session(skeets_app);
+                refresh_bootstrap_state(skeets_app);
+                refresh_runtime_state(skeets_app);
+                skeets_app.view_mode = skeets_view_mode_t::dashboard;
+                skeets_app.status_line = "Signed out";
+                skeets_app.input_line = "Saved session cleared. Use login.txt or Recheck to sign in again.";
+                render_screen(skeets_app, true);
                 continue;
             }
 
             continue;
         }
 
-        if (rewrite_app.view_mode == rewrite_view_mode_t::diagnostics) {
-            if (contains_point(rewrite_app.diagnostics_back_button.rect, event.x, event.y)) {
-                rewrite_app.view_mode = rewrite_view_mode_t::settings;
-                render_settings_screen(rewrite_app, true);
+        if (skeets_app.view_mode == skeets_view_mode_t::diagnostics) {
+            if (contains_point(skeets_app.diagnostics_back_button.rect, event.x, event.y)) {
+                skeets_app.view_mode = skeets_view_mode_t::settings;
+                render_settings_screen(skeets_app, true);
                 continue;
             }
 
-            if (contains_point(rewrite_app.diagnostics_refresh_button.rect, event.x, event.y)) {
-                refresh_bootstrap_state(rewrite_app);
-                refresh_runtime_state(rewrite_app);
-                rewrite_app.status_line = "Diagnostics refreshed";
-                rewrite_app.input_line = "Current authentication, device, power, and network state reloaded.";
-                render_diagnostics_screen(rewrite_app, true);
+            if (contains_point(skeets_app.diagnostics_refresh_button.rect, event.x, event.y)) {
+                refresh_bootstrap_state(skeets_app);
+                refresh_runtime_state(skeets_app);
+                skeets_app.status_line = "Diagnostics refreshed";
+                skeets_app.input_line = "Current authentication, device, power, and network state reloaded.";
+                render_diagnostics_screen(skeets_app, true);
                 continue;
             }
 
@@ -3002,41 +3002,41 @@ int main(int argc, char* argv[]) {
 
         // --- Dashboard view touch handling ---
 
-        if (contains_point(rewrite_app.exit_button.rect, event.x, event.y)) {
-            rewrite_app.status_line = "Exit requested";
-            rewrite_app.input_line = touch_message.str();
-            render_screen(rewrite_app, false);
+        if (contains_point(skeets_app.exit_button.rect, event.x, event.y)) {
+            skeets_app.status_line = "Exit requested";
+            skeets_app.input_line = touch_message.str();
+            render_screen(skeets_app, false);
             break;
         }
 
-        if (contains_point(rewrite_app.refresh_button.rect, event.x, event.y)) {
-            refresh_bootstrap_state(rewrite_app);
-            refresh_runtime_state(rewrite_app);
-            if (rewrite_app.bootstrap.authenticated) {
-                render_screen(rewrite_app, false);
-                load_feed(rewrite_app);
-                if (rewrite_app.feed_result.state == rewrite_feed_state_t::loaded) {
-                    rewrite_app.view_mode = rewrite_view_mode_t::feed;
-                    render_feed_screen(rewrite_app, true);
+        if (contains_point(skeets_app.refresh_button.rect, event.x, event.y)) {
+            refresh_bootstrap_state(skeets_app);
+            refresh_runtime_state(skeets_app);
+            if (skeets_app.bootstrap.authenticated) {
+                render_screen(skeets_app, false);
+                load_feed(skeets_app);
+                if (skeets_app.feed_result.state == skeets_feed_state_t::loaded) {
+                    skeets_app.view_mode = skeets_view_mode_t::feed;
+                    render_feed_screen(skeets_app, true);
                 } else {
-                    render_screen(rewrite_app, false);
+                    render_screen(skeets_app, false);
                 }
             } else {
-                rewrite_app.status_line = rewrite_app.bootstrap.headline;
-                rewrite_app.input_line = touch_message.str();
-                render_screen(rewrite_app, false);
+                skeets_app.status_line = skeets_app.bootstrap.headline;
+                skeets_app.input_line = touch_message.str();
+                render_screen(skeets_app, false);
             }
             last_probe = std::chrono::steady_clock::now();
             continue;
         }
 
-        rewrite_app.status_line = "Touch received outside action buttons";
-        rewrite_app.input_line = touch_message.str();
-        render_screen(rewrite_app, false);
+        skeets_app.status_line = "Touch received outside action buttons";
+        skeets_app.input_line = touch_message.str();
+        render_screen(skeets_app, false);
     }
 
-    rewrite_input_close(rewrite_app.input);
-    free_brand_assets(rewrite_app);
-    rewrite_framebuffer_close(rewrite_app.framebuffer);
+    skeets_input_close(skeets_app.input);
+    free_brand_assets(skeets_app);
+    skeets_framebuffer_close(skeets_app.framebuffer);
     return 0;
 }

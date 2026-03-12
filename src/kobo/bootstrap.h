@@ -5,15 +5,15 @@
 #include <string>
 #include <vector>
 
-enum class rewrite_bootstrap_state_t {
+enum class skeets_bootstrap_state_t {
     waiting_for_login,
     session_restored,
     login_succeeded,
     error,
 };
 
-struct rewrite_bootstrap_result_t {
-    rewrite_bootstrap_state_t state = rewrite_bootstrap_state_t::waiting_for_login;
+struct skeets_bootstrap_result_t {
+    skeets_bootstrap_state_t state = skeets_bootstrap_state_t::waiting_for_login;
     Bsky::Session session;
     std::string headline;
     std::string detail;
@@ -23,5 +23,5 @@ struct rewrite_bootstrap_result_t {
     bool consumed_login_file = false;
 };
 
-rewrite_bootstrap_result_t rewrite_run_bootstrap();
-std::vector<std::string> rewrite_bootstrap_lines(const rewrite_bootstrap_result_t& result);
+skeets_bootstrap_result_t skeets_run_bootstrap();
+std::vector<std::string> skeets_bootstrap_lines(const skeets_bootstrap_result_t& result);

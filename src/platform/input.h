@@ -4,13 +4,13 @@
 #include <string>
 #include <vector>
 
-enum class rewrite_input_protocol_t {
+enum class skeets_input_protocol_t {
     unknown,
     standard_multitouch,
     snow,
 };
 
-struct rewrite_input_device_info_t {
+struct skeets_input_device_info_t {
     int fd = -1;
     std::string path;
     std::string name;
@@ -29,7 +29,7 @@ struct rewrite_input_device_info_t {
     bool mirror_y = false;
 };
 
-enum class rewrite_input_event_type_t {
+enum class skeets_input_event_type_t {
     none,
     touch_down,
     touch_move,
@@ -37,8 +37,8 @@ enum class rewrite_input_event_type_t {
     key_press,
 };
 
-struct rewrite_input_event_t {
-    rewrite_input_event_type_t type = rewrite_input_event_type_t::none;
+struct skeets_input_event_t {
+    skeets_input_event_type_t type = skeets_input_event_type_t::none;
     std::string source_path;
     int slot = -1;
     int tracking_id = -1;
@@ -47,7 +47,7 @@ struct rewrite_input_event_t {
     int key_code = 0;
 };
 
-struct rewrite_input_contact_t {
+struct skeets_input_contact_t {
     int slot = -1;
     int tracking_id = -1;
     int raw_x = 0;
@@ -60,28 +60,28 @@ struct rewrite_input_contact_t {
     bool pending_up = false;
 };
 
-struct rewrite_input_t {
+struct skeets_input_t {
     int framebuffer_width = 0;
     int framebuffer_height = 0;
-    rewrite_input_protocol_t protocol = rewrite_input_protocol_t::unknown;
+    skeets_input_protocol_t protocol = skeets_input_protocol_t::unknown;
     bool debug_raw_events = false;
     int raw_event_log_budget = 0;
-    std::vector<rewrite_input_device_info_t> devices;
+    std::vector<skeets_input_device_info_t> devices;
     int touch_device_index = -1;
     int key_device_index = -1;
-    std::vector<rewrite_input_contact_t> contacts;
+    std::vector<skeets_input_contact_t> contacts;
     int current_slot = 0;
     bool pending_snow_lift = false;
 };
 
-bool rewrite_input_open(rewrite_input_t& input,
+bool skeets_input_open(skeets_input_t& input,
                         int framebuffer_width,
                         int framebuffer_height,
-                        rewrite_input_protocol_t protocol,
+                        skeets_input_protocol_t protocol,
                         std::string* error_message = nullptr);
-void rewrite_input_close(rewrite_input_t& input);
-bool rewrite_input_poll(rewrite_input_t& input,
-                        rewrite_input_event_t& event,
+void skeets_input_close(skeets_input_t& input);
+bool skeets_input_poll(skeets_input_t& input,
+                        skeets_input_event_t& event,
                         int timeout_ms,
                         std::string* error_message = nullptr);
-const char* rewrite_input_protocol_name(rewrite_input_protocol_t protocol);
+const char* skeets_input_protocol_name(skeets_input_protocol_t protocol);

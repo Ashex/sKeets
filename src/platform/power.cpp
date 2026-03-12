@@ -61,9 +61,9 @@ std::string env_or_default(const char* key, const char* fallback) {
 
 } // namespace
 
-rewrite_power_info_t rewrite_probe_power() {
-    rewrite_power_info_t info;
-    info.battery_sysfs = env_or_default("SKEETS_REWRITE_BATTERY_SYSFS", "/sys/class/power_supply/battery");
+skeets_power_info_t skeets_probe_power() {
+    skeets_power_info_t info;
+    info.battery_sysfs = env_or_default("SKEETS_BATTERY_SYSFS", "/sys/class/power_supply/battery");
     info.battery_present = path_exists(info.battery_sysfs);
 
     if (info.battery_present) {
@@ -81,7 +81,7 @@ rewrite_power_info_t rewrite_probe_power() {
     info.can_standby = power_state_supports("standby");
     info.can_suspend = path_exists("/sys/power/state-extended") && (power_state_supports("mem") || info.can_standby);
 
-    const bool is_mtk = env_flag_enabled("SKEETS_REWRITE_IS_MTK");
+    const bool is_mtk = env_flag_enabled("SKEETS_IS_MTK");
     if (!info.can_suspend) {
         info.suspend_safe = false;
         info.suspend_reason = "kernel suspend interface unavailable";

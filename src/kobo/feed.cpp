@@ -31,11 +31,11 @@ bool session_changed(const Bsky::Session& before, const Bsky::Session& after) {
 
 }
 
-rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
+skeets_feed_result_t skeets_fetch_feed(const Bsky::Session& session,
                                           int limit,
                                           const std::string& cursor) {
-    rewrite_feed_result_t result;
-    result.state = rewrite_feed_state_t::loading;
+    skeets_feed_result_t result;
+    result.state = skeets_feed_state_t::loading;
 
     const std::string& pds = session.pds_url.empty()
         ? std::string(Bsky::DEFAULT_SERVICE_HOST)
@@ -70,7 +70,7 @@ rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
     }
 
     if (!resumed) {
-        result.state = rewrite_feed_state_t::error;
+        result.state = skeets_feed_state_t::error;
         result.error_message = "Session resume failed: " + resume_error;
         std::fprintf(stderr, "rewrite feed: %s\n", result.error_message.c_str());
         return result;
@@ -105,12 +105,12 @@ rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
     }
 
     if (fetched) {
-        result.state = rewrite_feed_state_t::loaded;
+        result.state = skeets_feed_state_t::loaded;
         std::fprintf(stderr, "rewrite feed: loaded %d posts, cursor=%s\n",
                      result.post_count,
                      result.feed.cursor.empty() ? "(end)" : result.feed.cursor.c_str());
     } else {
-        result.state = rewrite_feed_state_t::error;
+        result.state = skeets_feed_state_t::error;
         if (result.error_message.empty()) result.error_message = "getTimeline returned no data";
         std::fprintf(stderr, "rewrite feed: error: %s\n", result.error_message.c_str());
     }

@@ -42,7 +42,7 @@ const char* event_type_name(__u16 type) {
     }
 }
 
-void log_raw_event(rewrite_input_t& input, const rewrite_input_device_info_t& device, const input_event& ev) {
+void log_raw_event(skeets_input_t& input, const skeets_input_device_info_t& device, const input_event& ev) {
     if (!input.debug_raw_events || input.raw_event_log_budget <= 0) return;
     --input.raw_event_log_budget;
     std::fprintf(stderr,
@@ -85,7 +85,7 @@ bool query_abs_axis(int fd, int primary_code, int fallback_code,
     return false;
 }
 
-bool should_swap_axes(const rewrite_input_device_info_t& device, int fb_w, int fb_h) {
+bool should_swap_axes(const skeets_input_device_info_t& device, int fb_w, int fb_h) {
     const int x_span = device.x_max - device.x_min;
     const int y_span = device.y_max - device.y_min;
     const int normal_score = std::abs(x_span - (fb_w - 1)) + std::abs(y_span - (fb_h - 1));
@@ -105,8 +105,8 @@ int normalize_axis(int value, int min_value, int max_value, int output_max) {
     return static_cast<int>(numerator / denominator);
 }
 
-void map_touch_point(const rewrite_input_t& input,
-                     const rewrite_input_device_info_t& device,
+void map_touch_point(const skeets_input_t& input,
+                     const skeets_input_device_info_t& device,
                      int raw_x,
                      int raw_y,
                      int& mapped_x,
@@ -122,22 +122,22 @@ void map_touch_point(const rewrite_input_t& input,
     mapped_y = y;
 }
 
-rewrite_input_contact_t& ensure_contact(rewrite_input_t& input, int slot) {
+skeets_input_contact_t& ensure_contact(skeets_input_t& input, int slot) {
     if (slot < 0) slot = 0;
     if (slot >= static_cast<int>(input.contacts.size())) {
         input.contacts.resize(std::max(slot + 1, kMaxContacts));
     }
-    rewrite_input_contact_t& contact = input.contacts[slot];
+    skeets_input_contact_t& contact = input.contacts[slot];
     if (contact.slot < 0) contact.slot = slot;
     return contact;
 }
 
-bool enqueue_contact_event(const rewrite_input_t& input,
-                           const rewrite_input_device_info_t& device,
-                           rewrite_input_contact_t& contact,
-                           rewrite_input_event_t& event) {
+bool enqueue_contact_event(const skeets_input_t& input,
+                           const skeets_input_device_info_t& device,
+                           skeets_input_contact_t& contact,
+                           skeets_input_event_t& event) {
     if (contact.pending_up) {
-        event.type = rewrite_input_event_type_t::touch_up;
+        event.type = skeets_input_event_type_t::touch_up;
         event.source_path = device.path;
         event.slot = contact.slot;
         event.tracking_id = contact.tracking_id;
@@ -151,7 +151,7 @@ bool enqueue_contact_event(const rewrite_input_t& input,
     }
 
     if (contact.pending_down) {
-        event.type = rewrite_input_event_type_t::touch_down;
+        event.type = skeets_input_event_type_t::touch_down;
         event.source_path = device.path;
         event.slot = contact.slot;
         event.tracking_id = contact.tracking_id;
@@ -163,7 +163,7 @@ bool enqueue_contact_event(const rewrite_input_t& input,
     }
 
     if (contact.active && contact.dirty) {
-        event.type = rewrite_input_event_type_t::touch_move;
+        event.type = skeets_input_event_type_t::touch_move;
         event.source_path = device.path;
         event.slot = contact.slot;
         event.tracking_id = contact.tracking_id;
@@ -176,13 +176,13 @@ bool enqueue_contact_event(const rewrite_input_t& input,
     return false;
 }
 
-bool flush_contact_events(rewrite_input_t& input, rewrite_input_event_t& event) {
+bool flush_contact_events(skeets_input_t& input, skeets_input_event_t& event) {
     if (input.touch_device_index < 0 || input.touch_device_index >= static_cast<int>(input.devices.size())) {
         return false;
     }
 
-    const rewrite_input_device_info_t& device = input.devices[input.touch_device_index];
-    for (rewrite_input_contact_t& contact : input.contacts) {
+    const skeets_input_device_info_t& device = input.devices[input.touch_device_index];
+    for (skeets_input_contact_t& contact : input.contacts) {
         if (contact.slot < 0) continue;
         if (enqueue_contact_event(input, device, contact, event)) return true;
     }
@@ -201,7 +201,7 @@ bool scan_input_device(const std::string& path,
                        int fd,
                        int fb_w,
                        int fb_h,
-                       rewrite_input_device_info_t& info) {
+                       skeets_input_device_info_t& info) {
     info = {};
     info.fd = fd;
     info.path = path;
@@ -223,8 +223,8 @@ bool scan_input_device(const std::string& path,
         info.has_tracking_id = ioctl(fd, EVIOCGABS(ABS_MT_TRACKING_ID), &absinfo) == 0;
         if (info.is_touch_device) {
             info.swap_axes = should_swap_axes(info, fb_w, fb_h);
-            info.mirror_x = env_flag_enabled("SKEETS_REWRITE_TOUCH_MIRROR_X");
-            info.mirror_y = env_flag_enabled("SKEETS_REWRITE_TOUCH_MIRROR_Y");
+            info.mirror_x = env_flag_enabled("SKEETS_TOUCH_MIRROR_X");
+            info.mirror_y = env_flag_enabled("SKEETS_TOUCH_MIRROR_Y");
         }
     }
 
@@ -239,8 +239,8 @@ bool scan_input_device(const std::string& path,
     return info.is_touch_device || info.is_key_device;
 }
 
-void handle_touch_abs(rewrite_input_t& input, const rewrite_input_device_info_t& device, const input_event& ev) {
-    if (input.protocol == rewrite_input_protocol_t::snow) {
+void handle_touch_abs(skeets_input_t& input, const skeets_input_device_info_t& device, const input_event& ev) {
+    if (input.protocol == skeets_input_protocol_t::snow) {
         if (ev.code == ABS_MT_SLOT) {
             input.current_slot = ev.value;
             ensure_contact(input, input.current_slot);
@@ -248,14 +248,14 @@ void handle_touch_abs(rewrite_input_t& input, const rewrite_input_device_info_t&
         }
         if (ev.code == ABS_MT_TRACKING_ID) {
             if (ev.value == -1) {
-                input.protocol = rewrite_input_protocol_t::standard_multitouch;
-                rewrite_input_contact_t& contact = ensure_contact(input, input.current_slot);
+                input.protocol = skeets_input_protocol_t::standard_multitouch;
+                skeets_input_contact_t& contact = ensure_contact(input, input.current_slot);
                 if (contact.active) contact.pending_up = true;
                 return;
             }
 
             input.current_slot = ev.value;
-            rewrite_input_contact_t& contact = ensure_contact(input, input.current_slot);
+            skeets_input_contact_t& contact = ensure_contact(input, input.current_slot);
             contact.tracking_id = ev.value;
             contact.active = true;
             contact.pending_down = true;
@@ -266,7 +266,7 @@ void handle_touch_abs(rewrite_input_t& input, const rewrite_input_device_info_t&
         ensure_contact(input, input.current_slot);
         return;
     } else if (ev.code == ABS_MT_TRACKING_ID) {
-        rewrite_input_contact_t& contact = ensure_contact(input, input.current_slot);
+        skeets_input_contact_t& contact = ensure_contact(input, input.current_slot);
         if (ev.value == -1) {
             if (contact.active) contact.pending_up = true;
             return;
@@ -278,7 +278,7 @@ void handle_touch_abs(rewrite_input_t& input, const rewrite_input_device_info_t&
         return;
     }
 
-    rewrite_input_contact_t& contact = ensure_contact(input, input.current_slot);
+    skeets_input_contact_t& contact = ensure_contact(input, input.current_slot);
     if (ev.code == device.x_code) {
         contact.raw_x = ev.value;
         map_touch_point(input, device, contact.raw_x, contact.raw_y, contact.mapped_x, contact.mapped_y);
@@ -290,8 +290,8 @@ void handle_touch_abs(rewrite_input_t& input, const rewrite_input_device_info_t&
     }
 }
 
-void handle_touch_key(rewrite_input_t& input, const input_event& ev, rewrite_input_event_t& event) {
-    if (ev.code == BTN_TOUCH && ev.value == 0 && input.protocol == rewrite_input_protocol_t::snow) {
+void handle_touch_key(skeets_input_t& input, const input_event& ev, skeets_input_event_t& event) {
+    if (ev.code == BTN_TOUCH && ev.value == 0 && input.protocol == skeets_input_protocol_t::snow) {
         input.pending_snow_lift = true;
         return;
     }
@@ -301,15 +301,15 @@ void handle_touch_key(rewrite_input_t& input, const input_event& ev, rewrite_inp
     }
 
     if (ev.value == 1) {
-        event.type = rewrite_input_event_type_t::key_press;
+        event.type = skeets_input_event_type_t::key_press;
         event.key_code = ev.code;
     }
 }
 
-void finalize_snow_frame(rewrite_input_t& input) {
+void finalize_snow_frame(skeets_input_t& input) {
     if (!input.pending_snow_lift) return;
     input.pending_snow_lift = false;
-    for (rewrite_input_contact_t& contact : input.contacts) {
+    for (skeets_input_contact_t& contact : input.contacts) {
         if (contact.slot >= 0 && contact.active) {
             contact.pending_up = true;
         }
@@ -318,22 +318,22 @@ void finalize_snow_frame(rewrite_input_t& input) {
 
 } // namespace
 
-const char* rewrite_input_protocol_name(rewrite_input_protocol_t protocol) {
+const char* skeets_input_protocol_name(skeets_input_protocol_t protocol) {
     switch (protocol) {
-    case rewrite_input_protocol_t::standard_multitouch:
+    case skeets_input_protocol_t::standard_multitouch:
         return "standard_multitouch";
-    case rewrite_input_protocol_t::snow:
+    case skeets_input_protocol_t::snow:
         return "snow";
-    case rewrite_input_protocol_t::unknown:
+    case skeets_input_protocol_t::unknown:
     default:
         return "unknown";
     }
 }
 
-bool rewrite_input_open(rewrite_input_t& input,
+bool skeets_input_open(skeets_input_t& input,
                         int framebuffer_width,
                         int framebuffer_height,
-                        rewrite_input_protocol_t protocol,
+                        skeets_input_protocol_t protocol,
                         std::string* error_message) {
     input = {};
     input.framebuffer_width = framebuffer_width;
@@ -355,7 +355,7 @@ bool rewrite_input_open(rewrite_input_t& input,
         int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) continue;
 
-        rewrite_input_device_info_t info;
+        skeets_input_device_info_t info;
         if (!scan_input_device(path, fd, framebuffer_width, framebuffer_height, info)) {
             close(fd);
             continue;
@@ -386,8 +386,8 @@ bool rewrite_input_open(rewrite_input_t& input,
     return true;
 }
 
-void rewrite_input_close(rewrite_input_t& input) {
-    for (rewrite_input_device_info_t& device : input.devices) {
+void skeets_input_close(skeets_input_t& input) {
+    for (skeets_input_device_info_t& device : input.devices) {
         if (device.fd >= 0) {
             ioctl(device.fd, EVIOCGRAB, 0);
             close(device.fd);
@@ -397,8 +397,8 @@ void rewrite_input_close(rewrite_input_t& input) {
     input = {};
 }
 
-bool rewrite_input_poll(rewrite_input_t& input,
-                        rewrite_input_event_t& event,
+bool skeets_input_poll(skeets_input_t& input,
+                        skeets_input_event_t& event,
                         int timeout_ms,
                         std::string* error_message) {
     event = {};
@@ -414,7 +414,7 @@ bool rewrite_input_poll(rewrite_input_t& input,
     std::vector<int> device_indexes;
     device_indexes.reserve(input.devices.size());
     for (size_t index = 0; index < input.devices.size(); ++index) {
-        const rewrite_input_device_info_t& device = input.devices[index];
+        const skeets_input_device_info_t& device = input.devices[index];
         if (device.fd < 0) continue;
         poll_fds.push_back({device.fd, POLLIN, 0});
         device_indexes.push_back(static_cast<int>(index));
@@ -437,7 +437,7 @@ bool rewrite_input_poll(rewrite_input_t& input,
     for (size_t index = 0; index < poll_fds.size(); ++index) {
         if ((poll_fds[index].revents & POLLIN) == 0) continue;
 
-        const rewrite_input_device_info_t& device = input.devices[device_indexes[index]];
+        const skeets_input_device_info_t& device = input.devices[device_indexes[index]];
         input_event raw_event = {};
         while (read(poll_fds[index].fd, &raw_event, sizeof(raw_event)) == sizeof(raw_event)) {
             log_raw_event(input, device, raw_event);
@@ -445,7 +445,7 @@ bool rewrite_input_poll(rewrite_input_t& input,
                 handle_touch_abs(input, device, raw_event);
             } else if (raw_event.type == EV_KEY) {
                 handle_touch_key(input, raw_event, event);
-                if (event.type == rewrite_input_event_type_t::key_press &&
+                if (event.type == skeets_input_event_type_t::key_press &&
                     device_indexes[index] == input.key_device_index) {
                     event.source_path = device.path;
                     return true;

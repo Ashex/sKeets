@@ -1,14 +1,14 @@
 #!/bin/sh
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-REWRITE_DIR="${SKEETS_REWRITE_DIR:-/mnt/onboard/.adds/sKeets}"
-REWRITE_LOG="${SKEETS_REWRITE_LOG:-${REWRITE_DIR}/sKeets.log}"
-INTERFACE="${SKEETS_REWRITE_INTERFACE:-${INTERFACE:-eth0}}"
-PLATFORM="${SKEETS_REWRITE_PLATFORM:-${PLATFORM:-}}"
-WIFI_MODULE="${SKEETS_REWRITE_WIFI_MODULE:-${WIFI_MODULE:-}}"
-CPUFREQ_DVFS="${SKEETS_REWRITE_CPUFREQ_DVFS:-${CPUFREQ_DVFS:-}}"
-CPUFREQ_CONSERVATIVE="${SKEETS_REWRITE_CPUFREQ_CONSERVATIVE:-${CPUFREQ_CONSERVATIVE:-}}"
-REWRITE_WIFI_HELPER="${SKEETS_REWRITE_WIFI_HELPER:-${REWRITE_DIR}/bin/sKeets-tool}"
+APP_DIR="${SKEETS_DIR:-/mnt/onboard/.adds/sKeets}"
+APP_LOG="${SKEETS_LOG:-${APP_DIR}/sKeets.log}"
+INTERFACE="${SKEETS_INTERFACE:-${INTERFACE:-eth0}}"
+PLATFORM="${SKEETS_PLATFORM:-${PLATFORM:-}}"
+WIFI_MODULE="${SKEETS_WIFI_MODULE:-${WIFI_MODULE:-}}"
+CPUFREQ_DVFS="${SKEETS_CPUFREQ_DVFS:-${CPUFREQ_DVFS:-}}"
+CPUFREQ_CONSERVATIVE="${SKEETS_CPUFREQ_CONSERVATIVE:-${CPUFREQ_CONSERVATIVE:-}}"
+APP_WIFI_HELPER="${SKEETS_WIFI_HELPER:-${APP_DIR}/bin/sKeets-tool}"
 
 log_wifi() {
     echo "[$(date)] [$(basename "$0")] $*"
@@ -16,11 +16,11 @@ log_wifi() {
 
 require_wifi_env() {
     if [ -z "${PLATFORM}" ]; then
-        log_wifi "PLATFORM is unset; export SKEETS_REWRITE_PLATFORM before running this script"
+        log_wifi "PLATFORM is unset; export SKEETS_PLATFORM before running this script"
         return 2
     fi
     if [ -z "${WIFI_MODULE}" ]; then
-        log_wifi "WIFI_MODULE is unset; export SKEETS_REWRITE_WIFI_MODULE before running this script"
+        log_wifi "WIFI_MODULE is unset; export SKEETS_WIFI_MODULE before running this script"
         return 2
     fi
     return 0
@@ -28,11 +28,11 @@ require_wifi_env() {
 
 toggle_ntx_wifi() {
     state="$1"
-    if [ -x "${REWRITE_WIFI_HELPER}" ]; then
-        "${REWRITE_WIFI_HELPER}" ntx-io 208 "${state}"
+    if [ -x "${APP_WIFI_HELPER}" ]; then
+        "${APP_WIFI_HELPER}" ntx-io 208 "${state}"
         return $?
     fi
-    log_wifi "ntx_io helper missing at ${REWRITE_WIFI_HELPER}; cannot toggle via ntx_io"
+    log_wifi "ntx_io helper missing at ${APP_WIFI_HELPER}; cannot toggle via ntx_io"
     return 1
 }
 

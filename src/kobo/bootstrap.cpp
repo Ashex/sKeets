@@ -57,7 +57,7 @@ std::string normalize_url(std::string value) {
     return value;
 }
 
-struct rewrite_login_txt_t {
+struct skeets_login_txt_t {
     std::string handle;
     std::string password;
     std::string pds_url;
@@ -104,8 +104,8 @@ void save_session(const Bsky::Session& session) {
     config_free(config);
 }
 
-rewrite_login_txt_t read_login_txt(bool& found_file) {
-    rewrite_login_txt_t login;
+skeets_login_txt_t read_login_txt(bool& found_file) {
+    skeets_login_txt_t login;
     found_file = file_exists(skeets_login_txt_path());
     if (!found_file) return login;
 
@@ -122,17 +122,17 @@ rewrite_login_txt_t read_login_txt(bool& found_file) {
     return login;
 }
 
-rewrite_bootstrap_result_t make_waiting_result() {
-    rewrite_bootstrap_result_t result;
-    result.state = rewrite_bootstrap_state_t::waiting_for_login;
+skeets_bootstrap_result_t make_waiting_result() {
+    skeets_bootstrap_result_t result;
+    result.state = skeets_bootstrap_state_t::waiting_for_login;
     result.headline = "Waiting for sKeets login.txt";
     result.detail = "Create /mnt/onboard/.adds/sKeets/login.txt, then relaunch or tap Recheck.";
     return result;
 }
 
-rewrite_bootstrap_result_t make_error_result(const std::string& error_message, bool consumed_login_file) {
-    rewrite_bootstrap_result_t result;
-    result.state = rewrite_bootstrap_state_t::error;
+skeets_bootstrap_result_t make_error_result(const std::string& error_message, bool consumed_login_file) {
+    skeets_bootstrap_result_t result;
+    result.state = skeets_bootstrap_state_t::error;
     result.headline = "Authentication bootstrap failed";
     result.detail = "Fix login.txt or remove invalid session state, then relaunch or tap Recheck.";
     result.error_message = error_message;
@@ -142,7 +142,7 @@ rewrite_bootstrap_result_t make_error_result(const std::string& error_message, b
 
 } // namespace
 
-rewrite_bootstrap_result_t rewrite_run_bootstrap() {
+skeets_bootstrap_result_t skeets_run_bootstrap() {
     if (skeets_ensure_data_dirs() != 0) {
         return make_error_result("Failed to create rewrite data directories", false);
     }
@@ -154,8 +154,8 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     if (has_saved_session(saved_session)) {
         if (restore_saved_session_with_retry(saved_session, restored_session, saved_session_error)) {
             save_session(restored_session);
-            rewrite_bootstrap_result_t result;
-            result.state = rewrite_bootstrap_state_t::session_restored;
+            skeets_bootstrap_result_t result;
+            result.state = skeets_bootstrap_state_t::session_restored;
             result.session = restored_session;
             result.headline = "Saved session restored";
             result.detail = "Authentication is valid. Loading the home timeline.";
@@ -166,7 +166,7 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     }
 
     bool found_login_file = false;
-    const rewrite_login_txt_t login = read_login_txt(found_login_file);
+    const skeets_login_txt_t login = read_login_txt(found_login_file);
     if (!found_login_file) {
         if (has_saved_session(saved_session)) {
             return make_error_result(saved_session_error.empty() ? "Saved session resume failed" : saved_session_error, false);
@@ -197,8 +197,8 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     created_session.appview_url = login.appview_url.empty() ? kDefaultAppView : login.appview_url;
     save_session(created_session);
 
-    rewrite_bootstrap_result_t result;
-    result.state = rewrite_bootstrap_state_t::login_succeeded;
+    skeets_bootstrap_result_t result;
+    result.state = skeets_bootstrap_state_t::login_succeeded;
     result.session = created_session;
     result.headline = "Login completed";
     result.detail = "Session tokens were saved under the rewrite app root.";
@@ -207,7 +207,7 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     return result;
 }
 
-std::vector<std::string> rewrite_bootstrap_lines(const rewrite_bootstrap_result_t& result) {
+std::vector<std::string> skeets_bootstrap_lines(const skeets_bootstrap_result_t& result) {
     if (result.authenticated) {
         return {
             "State: " + std::string(result.used_saved_session ? "saved session restored" : "login.txt sign-in completed"),

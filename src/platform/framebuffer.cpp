@@ -23,8 +23,8 @@ void set_errno_error(std::string* error_message, const char* prefix) {
     *error_message = std::string(prefix) + ": " + std::strerror(errno);
 }
 
-rewrite_rect_t clamp_rect(const rewrite_framebuffer_t& framebuffer, const rewrite_rect_t& rect) {
-    rewrite_rect_t clamped = rect;
+skeets_rect_t clamp_rect(const skeets_framebuffer_t& framebuffer, const skeets_rect_t& rect) {
+    skeets_rect_t clamped = rect;
     if (clamped.x < 0) {
         clamped.width += clamped.x;
         clamped.x = 0;
@@ -44,13 +44,13 @@ rewrite_rect_t clamp_rect(const rewrite_framebuffer_t& framebuffer, const rewrit
     return clamped;
 }
 
-bool rect_is_empty(const rewrite_rect_t& rect) {
+bool rect_is_empty(const skeets_rect_t& rect) {
     return rect.width <= 0 || rect.height <= 0;
 }
 
-bool refresh_region(rewrite_framebuffer_t& framebuffer,
-                    const rewrite_rect_t* rect,
-                    rewrite_refresh_mode_t mode,
+bool refresh_region(skeets_framebuffer_t& framebuffer,
+                    const skeets_rect_t* rect,
+                    skeets_refresh_mode_t mode,
                     bool wait_for_complete,
                     std::string* error_message) {
     if (framebuffer.fd < 0) {
@@ -65,27 +65,27 @@ bool refresh_region(rewrite_framebuffer_t& framebuffer,
     std::uint32_t height = 0;
 
     switch (mode) {
-    case rewrite_refresh_mode_t::full:
+    case skeets_refresh_mode_t::full:
         config.is_flashing = true;
         break;
-    case rewrite_refresh_mode_t::partial:
+    case skeets_refresh_mode_t::partial:
         config.wfm_mode = WFM_DU;
         break;
-    case rewrite_refresh_mode_t::fast:
+    case skeets_refresh_mode_t::fast:
         config.wfm_mode = WFM_A2;
         break;
-    case rewrite_refresh_mode_t::grayscale_partial:
+    case skeets_refresh_mode_t::grayscale_partial:
         config.wfm_mode = WFM_GC16;
         break;
     }
 
-    if (mode != rewrite_refresh_mode_t::full) {
+    if (mode != skeets_refresh_mode_t::full) {
         if (!rect) {
             set_error(error_message, "refresh rectangle is required");
             return false;
         }
 
-        const rewrite_rect_t clamped = clamp_rect(framebuffer, *rect);
+        const skeets_rect_t clamped = clamp_rect(framebuffer, *rect);
         if (rect_is_empty(clamped)) {
             set_error(error_message, "refresh rectangle is empty after clipping");
             return false;
@@ -103,7 +103,7 @@ bool refresh_region(rewrite_framebuffer_t& framebuffer,
         return false;
     }
 
-    if (wait_for_complete && !rewrite_framebuffer_wait_for_complete(framebuffer, error_message)) {
+    if (wait_for_complete && !skeets_framebuffer_wait_for_complete(framebuffer, error_message)) {
         return false;
     }
 
@@ -112,7 +112,7 @@ bool refresh_region(rewrite_framebuffer_t& framebuffer,
 
 } // namespace
 
-bool rewrite_framebuffer_open(rewrite_framebuffer_t& framebuffer, std::string* error_message) {
+bool skeets_framebuffer_open(skeets_framebuffer_t& framebuffer, std::string* error_message) {
     framebuffer = {};
     framebuffer.fd = -1;
 
@@ -141,12 +141,12 @@ bool rewrite_framebuffer_open(rewrite_framebuffer_t& framebuffer, std::string* e
     framebuffer.info.view_height = static_cast<int>(state.view_height);
     framebuffer.info.font_width = state.font_w > 0 ? static_cast<int>(state.font_w) : 8;
     framebuffer.info.font_height = state.font_h > 0 ? static_cast<int>(state.font_h) : 16;
-    framebuffer.info.is_color_panel = env_flag_enabled("SKEETS_REWRITE_IS_COLOR");
-    framebuffer.info.is_mtk_panel = env_flag_enabled("SKEETS_REWRITE_IS_MTK");
+    framebuffer.info.is_color_panel = env_flag_enabled("SKEETS_IS_COLOR");
+    framebuffer.info.is_mtk_panel = env_flag_enabled("SKEETS_IS_MTK");
     return true;
 }
 
-void rewrite_framebuffer_close(rewrite_framebuffer_t& framebuffer) {
+void skeets_framebuffer_close(skeets_framebuffer_t& framebuffer) {
     fbink_free_ot_fonts();
     if (framebuffer.fd >= 0) {
         fbink_close(framebuffer.fd);
@@ -155,7 +155,7 @@ void rewrite_framebuffer_close(rewrite_framebuffer_t& framebuffer) {
     framebuffer.fd = -1;
 }
 
-void rewrite_framebuffer_clear(rewrite_framebuffer_t& framebuffer, std::uint8_t grayscale) {
+void skeets_framebuffer_clear(skeets_framebuffer_t& framebuffer, std::uint8_t grayscale) {
     if (framebuffer.fd < 0) return;
 
     FBInkConfig config = {};
@@ -164,10 +164,10 @@ void rewrite_framebuffer_clear(rewrite_framebuffer_t& framebuffer, std::uint8_t 
     fbink_cls(framebuffer.fd, &config, nullptr, false);
 }
 
-void rewrite_framebuffer_fill_rect(rewrite_framebuffer_t& framebuffer, const rewrite_rect_t& rect, std::uint8_t grayscale) {
+void skeets_framebuffer_fill_rect(skeets_framebuffer_t& framebuffer, const skeets_rect_t& rect, std::uint8_t grayscale) {
     if (framebuffer.fd < 0) return;
 
-    const rewrite_rect_t clamped = clamp_rect(framebuffer, rect);
+    const skeets_rect_t clamped = clamp_rect(framebuffer, rect);
     if (rect_is_empty(clamped)) return;
 
     FBInkConfig config = {};
@@ -181,8 +181,8 @@ void rewrite_framebuffer_fill_rect(rewrite_framebuffer_t& framebuffer, const rew
     fbink_fill_rect_gray(framebuffer.fd, &config, &fill_rect, false, grayscale);
 }
 
-void rewrite_framebuffer_mark_dirty(rewrite_framebuffer_t& framebuffer, const rewrite_rect_t& rect) {
-    const rewrite_rect_t clamped = clamp_rect(framebuffer, rect);
+void skeets_framebuffer_mark_dirty(skeets_framebuffer_t& framebuffer, const skeets_rect_t& rect) {
+    const skeets_rect_t clamped = clamp_rect(framebuffer, rect);
     if (rect_is_empty(clamped)) return;
 
     if (!framebuffer.has_dirty_region) {
@@ -204,33 +204,33 @@ void rewrite_framebuffer_mark_dirty(rewrite_framebuffer_t& framebuffer, const re
     framebuffer.dirty_region.height = bottom - top;
 }
 
-bool rewrite_framebuffer_refresh(rewrite_framebuffer_t& framebuffer,
-                                rewrite_refresh_mode_t mode,
-                                const rewrite_rect_t& rect,
+bool skeets_framebuffer_refresh(skeets_framebuffer_t& framebuffer,
+                                skeets_refresh_mode_t mode,
+                                const skeets_rect_t& rect,
                                 bool wait_for_complete,
                                 std::string* error_message) {
     return refresh_region(framebuffer,
-                          mode == rewrite_refresh_mode_t::full ? nullptr : &rect,
+                          mode == skeets_refresh_mode_t::full ? nullptr : &rect,
                           mode,
                           wait_for_complete,
                           error_message);
 }
 
-bool rewrite_framebuffer_flush(rewrite_framebuffer_t& framebuffer,
-                              rewrite_refresh_mode_t mode,
+bool skeets_framebuffer_flush(skeets_framebuffer_t& framebuffer,
+                              skeets_refresh_mode_t mode,
                               bool wait_for_complete,
                               std::string* error_message) {
     if (!framebuffer.has_dirty_region) {
         return true;
     }
 
-    const rewrite_rect_t dirty_region = framebuffer.dirty_region;
+    const skeets_rect_t dirty_region = framebuffer.dirty_region;
     framebuffer.has_dirty_region = false;
     framebuffer.dirty_region = {};
     return refresh_region(framebuffer, &dirty_region, mode, wait_for_complete, error_message);
 }
 
-bool rewrite_framebuffer_wait_for_complete(rewrite_framebuffer_t& framebuffer, std::string* error_message) {
+bool skeets_framebuffer_wait_for_complete(skeets_framebuffer_t& framebuffer, std::string* error_message) {
     if (framebuffer.fd < 0) {
         set_error(error_message, "framebuffer is not open");
         return false;

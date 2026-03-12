@@ -38,30 +38,33 @@ After successful login, the `login.txt` file is automatically deleted and your s
 ## Project Structure
 
 ```
-apps/sKeets/
+sKeets/
 ├── CMakeLists.txt              Build system (C++23, Qt6, CMake 3.16+)
+├── run.sh                      Main Kobo launcher
+├── launch/                     NickelMenu-friendly launcher wrappers
+├── scripts/wifi/               Device Wi-Fi helper scripts
 ├── toolchain/
 │   └── arm-kobo-linux-gnueabihf.cmake  ARM cross-compilation toolchain
 ├── src/
-│   ├── main.cpp                  Entry point
-│   ├── app.h / app.cpp           App state machine & event loop
+│   ├── kobo/                   Main app entry points and feed/thread logic
+│   │   ├── main.cpp
+│   │   ├── bootstrap.h/cpp
+│   │   ├── actions.h/cpp
+│   │   ├── feed.h/cpp
+│   │   ├── thread.h/cpp
+│   │   ├── diag_main.cpp
+│   │   └── tool_main.cpp
+│   ├── platform/               Kobo hardware abstractions
+│   │   ├── device.h/cpp
+│   │   ├── framebuffer.h/cpp
+│   │   ├── input.h/cpp
+│   │   ├── network.h/cpp
+│   │   └── power.h/cpp
 │   ├── atproto/                ATProto / Bluesky API layer
-│   │   ├── atproto.h           Shared C++ data structures (Bsky namespace)
-│   │   ├── atproto_client.h/cpp  ATProto SDK wrapper (mfnboer/atproto)
-│   ├── ui/                     UI / rendering layer
-│   │   ├── fb.h/c              Framebuffer + MXCFB e-ink refresh
-│   │   ├── font.h/c            Embedded 8×16 bitmap font
-│   │   ├── input.h/c           Linux evdev touch & key input
-│   │   ├── views.h             Shared view enum & layout constants
-│   │   ├── login_view.h/c
-│   │   ├── feed_view.h/c
-│   │   ├── thread_view.h/c
-│   │   ├── compose_view.h/c
-│   │   └── settings_view.h/c
-│   └── util/
-│       ├── str.h/c             String utilities
-│       ├── config.h/c          INI-style config persistence
-│       └── image.h/c           Image download & decode (stb_image)
+│   ├── ui/                     Shared framebuffer/font helpers
+│   │   ├── fb.h/cpp
+│   │   └── font.h/cpp
+│   └── util/                   Config, image, path, and string utilities
 ```
 
 ## Prerequisites

@@ -155,7 +155,7 @@ const model_hint_t* find_hint_by_product_id(const std::string& product_id) {
     return nullptr;
 }
 
-std::string detect_platform_from_files(const rewrite_device_info_t& info) {
+std::string detect_platform_from_files(const skeets_device_info_t& info) {
     if (info.is_mtk) {
         if (path_exists("/drivers/b300-ntx/mt66xx/wlan_drv_gen4m.ko")) return "b300-ntx";
         if (path_exists("/drivers/mt8113t-ntx/mt66xx/wlan_drv_gen4m.ko")) return "mt8113t-ntx";
@@ -166,7 +166,7 @@ std::string detect_platform_from_files(const rewrite_device_info_t& info) {
     return info.is_mtk ? "b300-ntx" : "freescale";
 }
 
-std::string detect_wifi_module(const rewrite_device_info_t& info) {
+std::string detect_wifi_module(const skeets_device_info_t& info) {
     if (path_exists("/drivers/" + info.platform + "/mt66xx/wlan_drv_gen4m.ko")) return "wlan_drv_gen4m";
     if (path_exists("/drivers/" + info.platform + "/wifi/moal.ko")) return "moal";
     if (path_exists("/drivers/" + info.platform + "/wifi/8821cs.ko")) return "8821cs";
@@ -176,8 +176,8 @@ std::string detect_wifi_module(const rewrite_device_info_t& info) {
 
 } // namespace
 
-rewrite_device_info_t rewrite_probe_device() {
-    rewrite_device_info_t info;
+skeets_device_info_t skeets_probe_device() {
+    skeets_device_info_t info;
 
     if (const char* env_product = std::getenv("PRODUCT")) info.codename = env_product;
     if (const char* env_platform = std::getenv("PLATFORM")) info.platform = env_platform;

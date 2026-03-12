@@ -22,19 +22,19 @@ std::string shell_quote(const std::string& value) {
 }
 
 void print_probe_shell() {
-    const rewrite_device_info_t info = rewrite_probe_device();
-    std::printf("SKEETS_REWRITE_PRODUCT_ID=%s\n", shell_quote(info.product_id).c_str());
-    std::printf("SKEETS_REWRITE_PRODUCT_NAME=%s\n", shell_quote(info.product_name).c_str());
-    std::printf("SKEETS_REWRITE_CODENAME=%s\n", shell_quote(info.codename).c_str());
-    std::printf("SKEETS_REWRITE_PLATFORM=%s\n", shell_quote(info.platform).c_str());
-    std::printf("SKEETS_REWRITE_WIFI_MODULE=%s\n", shell_quote(info.wifi_module).c_str());
-    std::printf("SKEETS_REWRITE_INTERFACE=%s\n", shell_quote(info.interface_name).c_str());
-    std::printf("SKEETS_REWRITE_BATTERY_SYSFS=%s\n", shell_quote(info.battery_sysfs).c_str());
-    std::printf("SKEETS_REWRITE_TOUCH_PROTOCOL=%s\n", shell_quote(info.touch_protocol).c_str());
-    std::printf("SKEETS_REWRITE_IS_MTK=%s\n", info.is_mtk ? "1" : "0");
-    std::printf("SKEETS_REWRITE_IS_SUNXI=%s\n", info.is_sunxi ? "1" : "0");
-    std::printf("SKEETS_REWRITE_IS_COLOR=%s\n", info.is_color ? "1" : "0");
-    std::printf("SKEETS_REWRITE_IS_SMP=%s\n", info.is_smp ? "1" : "0");
+    const skeets_device_info_t info = skeets_probe_device();
+    std::printf("SKEETS_PRODUCT_ID=%s\n", shell_quote(info.product_id).c_str());
+    std::printf("SKEETS_PRODUCT_NAME=%s\n", shell_quote(info.product_name).c_str());
+    std::printf("SKEETS_CODENAME=%s\n", shell_quote(info.codename).c_str());
+    std::printf("SKEETS_PLATFORM=%s\n", shell_quote(info.platform).c_str());
+    std::printf("SKEETS_WIFI_MODULE=%s\n", shell_quote(info.wifi_module).c_str());
+    std::printf("SKEETS_INTERFACE=%s\n", shell_quote(info.interface_name).c_str());
+    std::printf("SKEETS_BATTERY_SYSFS=%s\n", shell_quote(info.battery_sysfs).c_str());
+    std::printf("SKEETS_TOUCH_PROTOCOL=%s\n", shell_quote(info.touch_protocol).c_str());
+    std::printf("SKEETS_IS_MTK=%s\n", info.is_mtk ? "1" : "0");
+    std::printf("SKEETS_IS_SUNXI=%s\n", info.is_sunxi ? "1" : "0");
+    std::printf("SKEETS_IS_COLOR=%s\n", info.is_color ? "1" : "0");
+    std::printf("SKEETS_IS_SMP=%s\n", info.is_smp ? "1" : "0");
 }
 
 int do_ntx_io(const char* command_arg, const char* value_arg) {
