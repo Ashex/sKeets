@@ -39,6 +39,51 @@ file(MAKE_DIRECTORY "${DEST_APP_DIR}/lib")
 file(MAKE_DIRECTORY "${DEST_APP_DIR}/locale")
 file(MAKE_DIRECTORY "${DEST_APP_DIR}/ssl/certs")
 
+function(copy_runtime_lib lib)
+    if(NOT lib)
+        return()
+    endif()
+    if(NOT EXISTS "${lib}")
+        message(FATAL_ERROR "Required runtime library not found: ${lib}")
+    endif()
+    file(REAL_PATH "${lib}" resolved_lib)
+    get_filename_component(dest_name "${lib}" NAME)
+    file(COPY_FILE "${resolved_lib}" "${DEST_LIB_DIR}/${dest_name}" ONLY_IF_DIFFERENT)
+endfunction()
+
+set(RUNTIME_LIB_SEARCH_DIRS
+    "${SYSROOT_LIB_DIR}"
+    "${QT_LIB_DIR}"
+)
+
+foreach(base_lib IN ITEMS LD_LINUX_LIB LIBC_LIB LIBM_LIB LIBSTDCPP_LIB LIBGCC_S_LIB LIBZ_LIB LIBSSL_LIB LIBCRYPTO_LIB ATPROTO_LIB)
+    if(DEFINED ${base_lib} AND ${base_lib})
+        get_filename_component(base_lib_dir "${${base_lib}}" DIRECTORY)
+        list(APPEND RUNTIME_LIB_SEARCH_DIRS "${base_lib_dir}")
+    endif()
+endforeach()
+
+list(APPEND RUNTIME_LIB_SEARCH_DIRS
+    "/lib/arm-linux-gnueabihf"
+    "/usr/lib/arm-linux-gnueabihf"
+    "/usr/arm-linux-gnueabihf/lib"
+)
+list(REMOVE_ITEM RUNTIME_LIB_SEARCH_DIRS "")
+list(REMOVE_DUPLICATES RUNTIME_LIB_SEARCH_DIRS)
+
+function(copy_optional_runtime_lib lib_name)
+    find_file(resolved_optional_lib
+        NAMES "${lib_name}"
+        PATHS ${RUNTIME_LIB_SEARCH_DIRS}
+        NO_DEFAULT_PATH
+    )
+    if(resolved_optional_lib)
+        copy_runtime_lib("${resolved_optional_lib}")
+    else()
+        message(STATUS "Optional runtime library not found, skipping: ${lib_name}")
+    endif()
+endfunction()
+
 set(runtime_libs
     "${LD_LINUX_LIB}"
     "${LIBC_LIB}"
@@ -52,25 +97,25 @@ set(runtime_libs
     "${QT_LIB_DIR}/libQt6Core.so.6"
     "${QT_LIB_DIR}/libQt6Network.so.6"
     "${QT_LIB_DIR}/libQt6Qml.so.6"
-    "${SYSROOT_LIB_DIR}/libicudata.so.70"
-    "${SYSROOT_LIB_DIR}/libicui18n.so.70"
-    "${SYSROOT_LIB_DIR}/libicuuc.so.70"
-    "${SYSROOT_LIB_DIR}/libzstd.so.1"
-    "${SYSROOT_LIB_DIR}/libglib-2.0.so.0"
-    "${SYSROOT_LIB_DIR}/libpcre.so.1"
-    "${SYSROOT_LIB_DIR}/libpcre2-16.so.0"
 )
 
 foreach(lib IN LISTS runtime_libs)
-    if(NOT lib)
-        continue()
-    endif()
-    if(NOT EXISTS "${lib}")
-        message(FATAL_ERROR "Required runtime library not found: ${lib}")
-    endif()
-    file(REAL_PATH "${lib}" resolved_lib)
-    get_filename_component(dest_name "${lib}" NAME)
-    file(COPY_FILE "${resolved_lib}" "${DEST_LIB_DIR}/${dest_name}" ONLY_IF_DIFFERENT)
+    copy_runtime_lib("${lib}")
+endforeach()
+
+# These are transitive runtime dependencies that may be present depending on
+# how Qt and the cross environment were built. GitHub Actions does not provide
+# SYSROOT_LIB_DIR, so resolve them from known armhf library directories.
+foreach(optional_lib IN ITEMS
+    libicudata.so.70
+    libicui18n.so.70
+    libicuuc.so.70
+    libzstd.so.1
+    libglib-2.0.so.0
+    libpcre.so.1
+    libpcre2-16.so.0
+)
+    copy_optional_runtime_lib("${optional_lib}")
 endforeach()
 
 if(EXISTS "${DEST_LIB_DIR}/libssl.so")
