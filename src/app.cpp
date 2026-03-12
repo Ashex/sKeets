@@ -159,10 +159,22 @@ int app_init(app_state_t *state) {
             state->session.appview_url = config_get_str(cfg, "appview_url", "");
 
             bool session_resumed = false;
-            state->atproto_client->resumeSession(state->session,
-                [&session_resumed, state]() {
+            state->atproto_client->restoreSession(state->session,
+                [&session_resumed, state](const Bsky::Session& session) {
                     session_resumed = true;
+                    state->session = session;
                     state->session_last_refresh = time(nullptr);
+                    config_t *session_cfg = config_open(skeets_config_path());
+                    if (session_cfg) {
+                        config_set_str(session_cfg, "handle", state->session.handle.c_str());
+                        config_set_str(session_cfg, "access_jwt", state->session.access_jwt.c_str());
+                        config_set_str(session_cfg, "refresh_jwt", state->session.refresh_jwt.c_str());
+                        config_set_str(session_cfg, "did", state->session.did.c_str());
+                        config_set_str(session_cfg, "pds_url", state->session.pds_url.c_str());
+                        config_set_str(session_cfg, "appview_url", state->session.appview_url.c_str());
+                        config_save(session_cfg);
+                        config_free(session_cfg);
+                    }
                 },
                 [](const std::string&) {});
             if (session_resumed)
@@ -248,9 +260,10 @@ int app_ensure_auth(app_state_t *state) {
     if (state->session_last_refresh > 0 &&
         (now - state->session_last_refresh) > REFRESH_THRESHOLD_SECS) {
         bool refreshed = false;
-        state->atproto_client->resumeSession(state->session,
-            [state, &refreshed, now]() {
+        state->atproto_client->restoreSession(state->session,
+            [state, &refreshed, now](const Bsky::Session& session) {
                 refreshed = true;
+                state->session = session;
                 state->session_last_refresh = now;
             },
             [](const std::string&) {});
@@ -263,9 +276,10 @@ int app_ensure_auth(app_state_t *state) {
     if (state->atproto_client->hasSession()) return 0;
 
     bool ok = false;
-    state->atproto_client->resumeSession(state->session,
-        [&ok, state]() {
+    state->atproto_client->restoreSession(state->session,
+        [&ok, state](const Bsky::Session& session) {
             ok = true;
+            state->session = session;
             config_t *cfg = config_open(skeets_config_path());
             if (cfg) {
                 config_set_str(cfg, "access_jwt",  state->session.access_jwt.c_str());

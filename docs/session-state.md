@@ -14,15 +14,16 @@ protocol path. The rewrite is no longer just an auth bootstrap shell: it now
 renders a usable text-first feed view with author, timestamp, body text, image
 placeholders, and stats.
 
-The current milestone is **post-image-rendering cleanup and richer embed work**.
-Phase 3 interaction support is working in the rewrite, the settings screen is
-in place, and the latest packaged build now renders avatars and image embeds in
-both the feed and thread views through the shared async image cache when the
-persisted toggles are enabled.
+The current milestone is **richer embed rendering and post-image-rendering
+cleanup**. Phase 3 interaction support is working in the rewrite, and Phase 3.5
+settings plus image-gated rendering are now working on-device in both feed and
+thread views. Saved-session restore now uses the ATProto refresh-token path, so
+expired access JWTs are rotated during bootstrap and during rewrite runtime
+requests instead of forcing a relogin.
 
 ### Latest verified build
 
-- **build_timestamp**: `2026-03-11T23:32:59Z`
+- **build_timestamp**: `2026-03-12` (latest successful package after session refresh-token restore and richer embed work)
 - **Package**: `build-kobo/KoboRoot.tgz`
 - **Build command**: `NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh`
 
@@ -49,8 +50,8 @@ persisted toggles are enabled.
 | **Phase 0** | Fix coordinate misalignment (hardcoded dims) | **DEFERRED** — rewrite uses runtime FBInk dims already |
 | **Phase 1** | Scaffolding (remove compose/login views, add auth_view) | **PARTIALLY DONE** — rewrite has its own file structure |
 | **Phase 2** | Credential file login (login.txt flow) | **DONE** ✅ |
-| **Phase 3** | Like and repost support | Basic implementation working |
-| **Phase 3.5** | Settings view: dual image toggles | Working on-device with image-gated rendering |
+| **Phase 3** | Like and repost support | Working on-device |
+| **Phase 3.5** | Settings view: dual image toggles | Working on-device with feed/thread image rendering |
 | **Phase 4** | Input improvements (swipe, long-press) | Not started |
 | **Phase 5** | Framebuffer & reliability improvements | Not started |
 | **Phase 5.5** | Bug fixes (JWT refresh, thread recursion, etc.) | Not started |
@@ -69,20 +70,27 @@ persisted toggles are enabled.
 9. Clara Colour touch hit-testing works after enabling `SKEETS_REWRITE_TOUCH_MIRROR_X=1`
 10. Feed like/repost actions work on-device
 11. Thread like action works on-device
-12. Stats labels now render as readable word labels (`<Like>`, `<Reply>`, `<Repost>`) instead of single-letter abbreviations
-13. Active feed/thread actions now use clearer flipped-caret states (`>Like<`, `>Repost<`) without changing hit-target widths
-14. Feed and thread stat updates now redraw only the affected stat row with partial e-ink refreshes
+12. Stats labels now render as readable word labels (`<Like>`, `Reply`, `<Repost>`) instead of single-letter abbreviations
+13. Active feed/thread actions use clearer flipped-caret states (`>Like<`, `>Repost<`) without changing hit-target widths
+14. Feed and thread stat updates redraw only the affected stat row with partial e-ink refreshes
 15. Feed and thread headers open a settings screen with persisted `profile_images_enabled` / `embed_images_enabled` toggles
 16. Feed and thread avatars render on-device through the shared async image cache when profile images are enabled
 17. Feed image embeds render on-device when embed images are enabled
 18. Thread view now renders image embeds when opening a post with media
-19. The Bluesky CDN image path is coerced to `@jpeg`, which avoids WebP decode failures in the current embedded decoder path
+19. Bluesky CDN image URLs are rewritten to `@jpeg`, avoiding WebP decode failures in the current embedded decoder path
+20. Expired saved access tokens are now refreshed from the saved refresh token during bootstrap, feed/thread loads, and rewrite actions, and the rotated tokens are persisted back to `config.ini`
 
 ### What is still worth validating further
 
 1. Settings toggles persist cleanly across multiple relaunches and sign-out/sign-in cycles
 2. Async-loaded avatars and embeds repaint cleanly without objectionable full-screen artifacts
 3. Thread layouts remain stable when larger images load after initial render
+4. The cached JPEG coercion path remains robust across a wider mix of Bluesky CDN image URLs
+
+### Known open issues from device testing
+
+1. Feed repost/unrepost is implemented and verified, but thread view still only handles like/unlike taps. The thread UI renders a repost label, yet there is no thread-side input handler wired to `rewrite_repost_post()` / `rewrite_unrepost_post()`.
+2. Long thread views with more replies than fit on one screen have a layout/rendering bug where content appears to wrap and re-enter at the top of the screen instead of staying clipped or paged correctly. This needs investigation in the thread layout/pagination logic before richer thread interaction work.
 
 ---
 
@@ -115,16 +123,18 @@ Detailed in `/memories/repo/kobo-tls-fixes.md`. Summary:
 
 ### `src/rewrite/app_main.cpp`
 The main entry point for the rewrite app. Changes this session:
-- **dlopen OpenSSL preload** (lines ~358-390): Force-loads bundled OpenSSL 3.x with `RTLD_NOW | RTLD_GLOBAL` before Qt init. The earlier verbose probe spam was removed; only the preload result remains logged.
+- **dlopen OpenSSL preload**: Force-loads bundled OpenSSL 3.x with `RTLD_NOW | RTLD_GLOBAL` before Qt init. The earlier verbose probe spam was removed; only the preload result remains logged.
 - **CA cert loading** (lines ~420-445): After QCoreApplication init, loads bundled CA certs from `<rewrite_dir>/ssl/certs/ca-certificates.crt` via `QSslCertificate::fromDevice()` and sets as default SSL config.
-- **Localized stat refresh helpers**: Feed and thread action handlers now redraw only the relevant stats row and trigger a partial or grayscale-partial framebuffer refresh for that rectangle.
-- **Clearer active-state labels**: Interactive labels now keep stable widths while showing active state via flipped carets (`>Like<`, `>Repost<`).
+- **Localized stat refresh helpers**: Feed and thread action handlers redraw only the relevant stats row and trigger a partial or grayscale-partial framebuffer refresh for that rectangle.
+- **Clearer active-state labels**: Interactive labels keep stable widths while showing active state via flipped carets (`>Like<`, `>Repost<`).
 - **Settings view**: Adds a rewrite-native settings screen reachable from feed and thread headers, with persistent `profile_images_enabled` and `embed_images_enabled` toggles plus a sign-out action that clears the saved session.
-- **Avatar/embed rendering**: Reuses the shared async image cache to draw feed/thread avatars and the first feed image embed when the corresponding settings are enabled.
-- **Async redraw handling**: Pumps Qt events in the main loop and triggers a repaint when `image_cache_redraw_needed()` signals that a download completed.
+- **Avatar/embed rendering**: Reuses the shared async image cache to draw feed/thread avatars and image embeds when the corresponding settings are enabled.
 - **CDN compatibility fix**: Rewrites Bluesky CDN image URLs to request `@jpeg` so the current decoder path can render avatars and embeds on-device.
 - **Thread media rendering**: The thread view now renders image embeds as well as feed cards, rather than dropping media after navigation.
-- **Includes added**: `<QFile>`, `<QSslCertificate>`, `<QSslConfiguration>`, `<dlfcn.h>`, `<fstream>`
+- **Async redraw handling**: Pumps Qt events in the main loop and triggers a repaint when `image_cache_redraw_needed()` signals that a download completed.
+
+### `src/util/image_cache.cpp` / `src/util/image.cpp`
+- The shared image cache now logs concise fetch/decode state, retries transient failures, reopens raw disk-cache files correctly, and normalizes Bluesky CDN image URLs to `@jpeg` before hashing, fetch, and cache storage.
 
 ### `CMakeLists.txt`
 - The rewrite target now compiles and links the shared `src/ui/fb.cpp`, `src/util/image.cpp`, and `src/util/image_cache.cpp` sources, and links the `stb_image` interface dependency so the rewrite can reuse the legacy image pipeline.
@@ -132,19 +142,20 @@ The main entry point for the rewrite app. Changes this session:
 ### `src/rewrite/bootstrap.cpp`
 The auth bootstrap logic. Changes this session:
 - **saved-session retry path**: Retries transient DNS failures before declaring resume failure and preserves the saved-session error state instead of falling back to "waiting for login.txt"
+- **refresh-token restore path**: Uses the SDK's resume-and-refresh flow so `ExpiredToken` on `getSession` rotates the saved JWTs instead of failing authentication
 - **Include added**: `<fstream>`
 
 ### `src/rewrite/feed.cpp`
 The rewrite feed loader. Changes this session:
 - Fetches the timeline through `session.appview_url` instead of the PDS
-- Resumes saved sessions with retry handling for transient DNS failures
+- Restores saved sessions with retry handling for transient DNS failures and refresh-token fallback for expired access JWTs
 - Filters plain reply posts out of the home feed (unless the item is a repost)
 - Uses a fresh AppView client directly to avoid heap corruption in `AtprotoClient::changeHost()`
 
 ### `src/rewrite/actions.cpp`
 The rewrite action helper. Changes this session:
 - Performs like/unlike and repost/unrepost mutations against the PDS host
-- Reuses the saved-session retry pattern before mutating records
+- Reuses the saved-session retry pattern before mutating records and persists refreshed JWTs when the restore path rotates them
 - Keeps AppView reads and PDS writes separate to avoid host-switch instability
 
 ### `run-rewrite.sh`
@@ -214,11 +225,11 @@ src/rewrite/
 Status: working on-device.
 
 Implemented result:
-- Feed and thread headers now expose a `Settings` action
+- Feed and thread headers expose a `Settings` action
 - The rewrite has a dedicated settings screen with Back and Sign Out actions
 - `profile_images_enabled` defaults to on and `embed_images_enabled` defaults to off, and both values persist in `config.ini`
 - Feed and thread avatars render through the shared async image cache when profile images are enabled
-- The embed-images toggle now controls real image embed rendering in both feed and thread views
+- The embed-images toggle controls image embed rendering in both feed and thread views
 - The rewrite repaints automatically when async image downloads complete
 - Bluesky CDN image URLs are rewritten to `@jpeg` to avoid WebP decode failures in the current decoder path
 
@@ -229,16 +240,18 @@ Remaining polish:
 
 ### 2. Phase 3 interaction polish
 
-Status: verified on-device.
-
 - Feed like/unlike and repost/unrepost use optimistic updates with rollback on failure
 - Thread view has tappable like targets
+- Thread view still does not wire repost/unrepost taps even though it renders a repost label
 - Stats labels are word-based and more readable: `<Like>`, `Reply`, `<Repost>`
 - Post stat updates use localized partial refreshes instead of full-screen redraws
 - Active-state styling is clearer via flipped-caret labels while preserving stable hit-target widths
 
 ### 3. Next candidate milestone
 - Expand embed handling beyond the first image and simple placeholder-level quote/media rendering
+- Improve quote, external-card, and record-with-media rendering in both feed and thread views
+- Fix thread-view overflow/rendering so long reply chains do not wrap back to the top of the screen
+- Add thread-side repost/unrepost handling to match the feed interaction surface
 - Consider replacing the current feed-side reply filter with a richer policy once thread view is in place
 
 ---

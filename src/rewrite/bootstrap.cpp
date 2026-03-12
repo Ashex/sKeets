@@ -20,16 +20,21 @@ bool looks_like_transient_network_error(const std::string& error_message) {
            error_message.find("Temporary failure") != std::string::npos;
 }
 
-bool resume_saved_session_with_retry(const Bsky::Session& session, std::string& error_message) {
+bool restore_saved_session_with_retry(const Bsky::Session& session,
+                                      Bsky::Session& restored_session,
+                                      std::string& error_message) {
     const std::string host = session.pds_url.empty() ? Bsky::DEFAULT_SERVICE_HOST : session.pds_url;
     for (int attempt = 1; attempt <= 3; ++attempt) {
-        bool resumed = false;
+        bool restored = false;
         error_message.clear();
         Bsky::AtprotoClient client(host);
-        client.resumeSession(session,
-                             [&resumed]() { resumed = true; },
-                             [&error_message](const std::string& error) { error_message = error; });
-        if (resumed) {
+        client.restoreSession(session,
+                              [&restored, &restored_session](const Bsky::Session& refreshed_session) {
+                                  restored = true;
+                                  restored_session = refreshed_session;
+                              },
+                              [&error_message](const std::string& error) { error_message = error; });
+        if (restored) {
             return true;
         }
 
@@ -147,6 +152,7 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     }
 
     const Bsky::Session saved_session = load_saved_session();
+    Bsky::Session restored_session;
     std::string saved_session_error;
     if (has_saved_session(saved_session)) {
         std::fprintf(stderr,
@@ -154,10 +160,11 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
                  saved_session.handle.c_str(),
                  saved_session.pds_url.c_str());
 
-        if (resume_saved_session_with_retry(saved_session, saved_session_error)) {
+        if (restore_saved_session_with_retry(saved_session, restored_session, saved_session_error)) {
+            save_session(restored_session);
             rewrite_bootstrap_result_t result;
             result.state = rewrite_bootstrap_state_t::session_restored;
-            result.session = saved_session;
+            result.session = restored_session;
             result.headline = "Saved session restored";
             result.detail = "Authentication is valid. Loading the home timeline.";
             result.authenticated = true;

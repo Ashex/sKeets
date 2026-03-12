@@ -21,6 +21,14 @@ bool should_include_feed_post(const Bsky::Post& post) {
     return true;
 }
 
+bool session_changed(const Bsky::Session& before, const Bsky::Session& after) {
+    return before.access_jwt != after.access_jwt ||
+           before.refresh_jwt != after.refresh_jwt ||
+           before.did != after.did ||
+           before.handle != after.handle ||
+           before.pds_url != after.pds_url;
+}
+
 }
 
 rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
@@ -49,9 +57,13 @@ rewrite_feed_result_t rewrite_fetch_feed(const Bsky::Session& session,
     for (int attempt = 1; attempt <= 3; ++attempt) {
         resumed = false;
         resume_error.clear();
-        client.resumeSession(session,
-                             [&resumed]() { resumed = true; },
-                             [&resume_error](const std::string& e) { resume_error = e; });
+        client.restoreSession(session,
+                              [&result, &resumed, &session](const Bsky::Session& restored_session) {
+                                  resumed = true;
+                                  result.session = restored_session;
+                                  result.session_updated = session_changed(session, restored_session);
+                              },
+                              [&resume_error](const std::string& e) { resume_error = e; });
         if (resumed) break;
         if (attempt == 3 || !looks_like_transient_network_error(resume_error)) break;
         usleep(500000);

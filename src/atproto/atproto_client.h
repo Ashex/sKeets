@@ -40,6 +40,9 @@ public:
     void resumeSession(const Session& session,
                        const SuccessCb& successCb, const ErrorCb& errorCb);
 
+    void restoreSession(const Session& session,
+                        const SessionCb& successCb, const ErrorCb& errorCb);
+
     void getTimeline(int limit, const std::optional<std::string>& cursor,
                      const FeedCb& successCb, const ErrorCb& errorCb);
 

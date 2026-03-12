@@ -13,6 +13,14 @@ bool looks_like_transient_network_error(const std::string& error_message) {
            error_message.find("Temporary failure") != std::string::npos;
 }
 
+bool session_changed(const Bsky::Session& before, const Bsky::Session& after) {
+    return before.access_jwt != after.access_jwt ||
+           before.refresh_jwt != after.refresh_jwt ||
+           before.did != after.did ||
+           before.handle != after.handle ||
+           before.pds_url != after.pds_url;
+}
+
 template <typename Operation>
 rewrite_action_result_t run_action_with_session(const Bsky::Session& session, Operation operation) {
     rewrite_action_result_t result;
@@ -26,9 +34,13 @@ rewrite_action_result_t run_action_with_session(const Bsky::Session& session, Op
     for (int attempt = 1; attempt <= 3; ++attempt) {
         resumed = false;
         resume_error.clear();
-        client.resumeSession(session,
-                             [&resumed]() { resumed = true; },
-                             [&resume_error](const std::string& error) { resume_error = error; });
+        client.restoreSession(session,
+                              [&result, &resumed, &session](const Bsky::Session& restored_session) {
+                                  resumed = true;
+                                  result.session = restored_session;
+                                  result.session_updated = session_changed(session, restored_session);
+                              },
+                              [&resume_error](const std::string& error) { resume_error = error; });
         if (resumed) break;
         if (attempt == 3 || !looks_like_transient_network_error(resume_error)) break;
         usleep(500000);

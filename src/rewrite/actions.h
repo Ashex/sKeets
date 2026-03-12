@@ -6,8 +6,10 @@
 
 struct rewrite_action_result_t {
     bool ok = false;
+    Bsky::Session session;
     std::string record_uri;
     std::string error_message;
+    bool session_updated = false;
 };
 
 rewrite_action_result_t rewrite_like_post(const Bsky::Session& session,

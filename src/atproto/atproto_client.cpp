@@ -26,6 +26,30 @@ static Author convertAuthor(const ATProto::AppBskyActor::ProfileViewBasic::Share
     return au;
 }
 
+static std::shared_ptr<Post> convertQuotedRecord(const ATProto::AppBskyEmbed::RecordView::SharedPtr& rv) {
+    if (!rv) return nullptr;
+    if (rv->mRecordType != ATProto::RecordType::APP_BSKY_EMBED_RECORD_VIEW_RECORD) {
+        return nullptr;
+    }
+
+    auto* vrr = std::get_if<ATProto::AppBskyEmbed::RecordViewRecord::SharedPtr>(&rv->mRecord);
+    if (!vrr || !*vrr) {
+        return nullptr;
+    }
+
+    auto qp = std::make_shared<Post>();
+    qp->uri = (*vrr)->mUri.toStdString();
+    qp->cid = (*vrr)->mCid.toStdString();
+    qp->author = convertAuthor((*vrr)->mAuthor);
+    if ((*vrr)->mValueType == ATProto::RecordType::APP_BSKY_FEED_POST) {
+        auto* vpost = std::get_if<ATProto::AppBskyFeed::Record::Post::SharedPtr>(&(*vrr)->mValue);
+        if (vpost && *vpost) {
+            qp->text = (*vpost)->mText.toStdString();
+        }
+    }
+    return qp;
+}
+
 static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv) {
     Post p;
     if (!pv) return p;
@@ -68,20 +92,7 @@ static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv)
             p.embed_type = EmbedType::Quote;
             auto* rv = std::get_if<ATProto::AppBskyEmbed::RecordView::SharedPtr>(&pv->mEmbed->mEmbed);
             if (rv && *rv) {
-                if ((*rv)->mRecordType == ATProto::RecordType::APP_BSKY_EMBED_RECORD_VIEW_RECORD) {
-                    auto* vrr = std::get_if<ATProto::AppBskyEmbed::RecordViewRecord::SharedPtr>(&(*rv)->mRecord);
-                    if (vrr && *vrr) {
-                        auto qp = std::make_shared<Post>();
-                        qp->uri    = (*vrr)->mUri.toStdString();
-                        qp->cid    = (*vrr)->mCid.toStdString();
-                        qp->author = convertAuthor((*vrr)->mAuthor);
-                        if ((*vrr)->mValueType == ATProto::RecordType::APP_BSKY_FEED_POST) {
-                            auto* vpost = std::get_if<ATProto::AppBskyFeed::Record::Post::SharedPtr>(&(*vrr)->mValue);
-                            if (vpost && *vpost) qp->text = (*vpost)->mText.toStdString();
-                        }
-                        p.quoted_post = std::move(qp);
-                    }
-                }
+                p.quoted_post = convertQuotedRecord(*rv);
             }
         } else if (pv->mEmbed->mType == ATProto::AppBskyEmbed::EmbedViewType::EXTERNAL_VIEW) {
             p.embed_type = EmbedType::External;
@@ -96,17 +107,55 @@ static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv)
             p.embed_type = EmbedType::RecordWithMedia;
             auto* rmv = std::get_if<ATProto::AppBskyEmbed::RecordWithMediaView::SharedPtr>(&pv->mEmbed->mEmbed);
             if (rmv && *rmv) {
+                p.quoted_post = convertQuotedRecord((*rmv)->mRecord);
                 if ((*rmv)->mMediaType == ATProto::AppBskyEmbed::EmbedViewType::IMAGES_VIEW) {
                     auto* iv2 = std::get_if<ATProto::AppBskyEmbed::ImagesView::SharedPtr>(&(*rmv)->mMedia);
                     if (iv2 && *iv2) {
                         for (auto& img : (*iv2)->mImages)
                             p.image_urls.push_back(img->mThumb.toStdString());
                     }
+                } else if ((*rmv)->mMediaType == ATProto::AppBskyEmbed::EmbedViewType::EXTERNAL_VIEW) {
+                    auto* ev2 = std::get_if<ATProto::AppBskyEmbed::ExternalView::SharedPtr>(&(*rmv)->mMedia);
+                    if (ev2 && *ev2 && (*ev2)->mExternal) {
+                        p.ext_uri = (*ev2)->mExternal->mUri.toStdString();
+                        p.ext_title = (*ev2)->mExternal->mTitle.toStdString();
+                        p.ext_description = (*ev2)->mExternal->mDescription.toStdString();
+                        p.ext_thumb_url = (*ev2)->mExternal->mThumb.value_or(QString{}).toStdString();
+                    }
                 }
             }
         }
     }
     return p;
+}
+
+static Session convertSession(const ATProto::ComATProtoServer::Session* session,
+                              const std::string& fallback_host,
+                              const std::string& appview_url,
+                              const Session* fallback_session = nullptr) {
+    Session out;
+    if (fallback_session) {
+        out = *fallback_session;
+    }
+    out.appview_url = appview_url;
+    if (!session) {
+        return out;
+    }
+
+    out.access_jwt = session->mAccessJwt.toStdString();
+    out.refresh_jwt = session->mRefreshJwt.toStdString();
+    out.did = session->mDid.toStdString();
+    out.handle = session->mHandle.toStdString();
+
+    auto pds = session->getPDS();
+    if (pds) {
+        out.pds_url = pds->toStdString();
+    }
+    if (out.pds_url.empty()) {
+        out.pds_url = fallback_host;
+    }
+
+    return out;
 }
 
 AtprotoClient::AtprotoClient(const std::string& serviceHost, QObject* parent)
@@ -144,18 +193,7 @@ void AtprotoClient::createSession(const std::string& identifier, const std::stri
                     return;
                 }
 
-                Session sess;
-                sess.access_jwt  = session->mAccessJwt.toStdString();
-                sess.refresh_jwt = session->mRefreshJwt.toStdString();
-                sess.did         = session->mDid.toStdString();
-                sess.handle      = session->mHandle.toStdString();
-
-                auto pds = session->getPDS();
-                if (pds) {
-                    sess.pds_url = pds->toStdString();
-                }
-                if (sess.pds_url.empty())
-                    sess.pds_url = mHost;
+                Session sess = convertSession(session.get(), mHost, {});
 
                 if (sess.pds_url != mHost)
                     changeHost(sess.pds_url);
@@ -186,19 +224,10 @@ void AtprotoClient::createSession(const std::string& identifier, const std::stri
         std::nullopt, // authFactorToken (2FA)
         [this, &loop, successCb]() {
             auto* s = mClient->getSession();
-            Session sess;
-            sess.access_jwt   = s->mAccessJwt.toStdString();
-            sess.refresh_jwt  = s->mRefreshJwt.toStdString();
-            sess.did          = s->mDid.toStdString();
-            sess.handle       = s->mHandle.toStdString();
-
-            auto pds = s->getPDS();
-            if (pds) {
-                sess.pds_url = pds->toStdString();
+            Session sess = convertSession(s, mHost, {});
+            if (!sess.pds_url.empty() && sess.pds_url != mHost) {
                 changeHost(sess.pds_url);
             }
-            if (sess.pds_url.empty())
-                sess.pds_url = mHost;
 
             successCb(sess);
             loop.quit();
@@ -223,6 +252,32 @@ void AtprotoClient::resumeSession(const Session& session,
         [&loop, successCb]() { successCb(); loop.quit(); },
         [&loop, errorCb](const QString& err, const QString& msg) {
             errorCb((err + ": " + msg).toStdString());
+            loop.quit();
+        });
+    loop.exec();
+}
+
+void AtprotoClient::restoreSession(const Session& session,
+                                   const SessionCb& successCb, const ErrorCb& errorCb) {
+    auto sdkSession = std::make_shared<ATProto::ComATProtoServer::Session>();
+    sdkSession->mAccessJwt = QString::fromStdString(session.access_jwt);
+    sdkSession->mRefreshJwt = QString::fromStdString(session.refresh_jwt);
+    sdkSession->mDid = QString::fromStdString(session.did);
+    sdkSession->mHandle = QString::fromStdString(session.handle);
+
+    QEventLoop loop;
+    mClient->resumeAndRefreshSession(*sdkSession,
+        [this, &loop, &session, successCb]() {
+            Session restored = convertSession(mClient->getSession(), mHost, session.appview_url, &session);
+            if (successCb) {
+                successCb(restored);
+            }
+            loop.quit();
+        },
+        [&loop, errorCb](const QString& err, const QString& msg) {
+            if (errorCb) {
+                errorCb((err + ": " + msg).toStdString());
+            }
             loop.quit();
         });
     loop.exec();

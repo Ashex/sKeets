@@ -52,6 +52,9 @@ constexpr int kFeedAvatarSize = 40;
 constexpr int kThreadAvatarSize = 36;
 constexpr int kAvatarGap = 12;
 constexpr int kFeedEmbedMaxHeight = 112;
+constexpr int kQuoteIndent = 24;
+constexpr int kQuoteBorder = 3;
+constexpr int kExternalThumbSize = 72;
 constexpr std::uint8_t kColorPostBorder = 0xC0;
 constexpr std::uint8_t kColorAuthor = 0x10;
 constexpr std::uint8_t kColorMeta = 0x60;
@@ -131,6 +134,8 @@ struct rewrite_app_t {
     rewrite_button_t settings_sign_out_button;
 };
 
+void draw_border(rewrite_app_t& app, const rewrite_rect_t& rect, std::uint8_t color, int thickness = 2);
+
 void handle_signal(int) {
     g_stop_requested = 1;
 }
@@ -170,6 +175,175 @@ std::string sanitize_bitmap_text(const std::string& text) {
         }
     }
     return out;
+}
+
+int measure_quote_embed_height(const rewrite_app_t& app, int width, const Bsky::Post* quoted) {
+    if (!quoted) return 0;
+    const int inner_width = std::max(40, width - kQuoteIndent - 8);
+    const int body_height = font_measure_wrapped(inner_width,
+                                                 quoted->text.c_str(),
+                                                 4);
+    return app.text_fb.font_h + 4 + body_height + 8;
+}
+
+void draw_quote_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::Post* quoted) {
+    if (!quoted) return;
+    const int height = measure_quote_embed_height(app, width, quoted);
+    rewrite_framebuffer_fill_rect(app.framebuffer,
+                                  rewrite_rect_t{x, y, kQuoteBorder, height},
+                                  kColorMeta);
+    draw_border(app, rewrite_rect_t{x, y, width, height}, kColorPostBorder, 1);
+
+    const int quote_x = x + kQuoteIndent;
+    const int quote_width = std::max(40, width - kQuoteIndent - 8);
+    int quote_y = y + kCardPadding / 2;
+    std::string author = quoted->author.display_name.empty()
+        ? "@" + quoted->author.handle
+        : quoted->author.display_name + "  @" + quoted->author.handle;
+    author = sanitize_bitmap_text(author);
+    font_draw_string(&app.text_fb,
+                     quote_x,
+                     quote_y,
+                     author.c_str(),
+                     kColorMeta,
+                     COLOR_WHITE);
+    quote_y += app.text_fb.font_h + 2;
+    const std::string text = sanitize_bitmap_text(quoted->text);
+    font_draw_wrapped(&app.text_fb,
+                      quote_x,
+                      quote_y,
+                      quote_width,
+                      text.c_str(),
+                      COLOR_BLACK,
+                      COLOR_WHITE,
+                      4);
+}
+
+int measure_external_embed_height(const rewrite_app_t& app, int width, const Bsky::Post& post, bool embed_images) {
+    const bool has_thumb = embed_images && !post.ext_thumb_url.empty();
+    const int text_width = has_thumb ? std::max(80, width - kExternalThumbSize - 16) : width - 12;
+    const int title_height = font_measure_wrapped(text_width,
+                                                  post.ext_title.c_str(),
+                                                  4);
+    const int uri_height = font_measure_wrapped(text_width,
+                                                post.ext_uri.c_str(),
+                                                4);
+    const int body_height = std::max(title_height + uri_height + 14,
+                                     has_thumb ? (kExternalThumbSize + 8) : 0);
+    return std::max(app.text_fb.font_h * 2 + 12, body_height + 8);
+}
+
+void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::Post& post, bool embed_images) {
+    const int height = measure_external_embed_height(app, width, post, embed_images);
+    draw_border(app, rewrite_rect_t{x, y, width, height}, kColorPostBorder, 1);
+
+    const bool has_thumb = embed_images && !post.ext_thumb_url.empty();
+    int text_x = x + 6;
+    int text_width = width - 12;
+    if (has_thumb) {
+        const image_t* thumb = image_cache_lookup(post.ext_thumb_url.c_str(),
+                                                  kExternalThumbSize,
+                                                  kExternalThumbSize);
+        if (thumb) {
+            fb_blit_rgba(&app.text_fb,
+                         x + 6,
+                         y + 6,
+                         thumb->width,
+                         thumb->height,
+                         thumb->pixels);
+        } else {
+            fb_fill_rect(&app.text_fb,
+                         x + 6,
+                         y + 6,
+                         kExternalThumbSize,
+                         kExternalThumbSize,
+                         COLOR_LGRAY);
+        }
+        text_x += kExternalThumbSize + 8;
+        text_width = std::max(80, width - kExternalThumbSize - 20);
+    }
+
+    int text_y = y + 4;
+    const std::string title = sanitize_bitmap_text(post.ext_title.empty() ? post.ext_uri : post.ext_title);
+    text_y = font_draw_wrapped(&app.text_fb,
+                               text_x,
+                               text_y,
+                               text_width,
+                               title.c_str(),
+                               COLOR_BLACK,
+                               COLOR_WHITE,
+                               4);
+    text_y += 4;
+    const std::string uri = sanitize_bitmap_text(post.ext_uri);
+    font_draw_wrapped(&app.text_fb,
+                      text_x,
+                      text_y,
+                      text_width,
+                      uri.c_str(),
+                      kColorMeta,
+                      COLOR_WHITE,
+                      4);
+}
+
+int measure_embed_block_height(const rewrite_app_t& app, const Bsky::Post& post, int width) {
+    switch (post.embed_type) {
+        case Bsky::EmbedType::Image:
+            return !post.image_urls.empty() ? kFeedEmbedMaxHeight + 8 : 0;
+        case Bsky::EmbedType::Quote:
+            return post.quoted_post ? measure_quote_embed_height(app, width, post.quoted_post.get()) + 8 : 0;
+        case Bsky::EmbedType::External:
+            return measure_external_embed_height(app, width, post, app.embed_images_enabled) + 8;
+        case Bsky::EmbedType::RecordWithMedia: {
+            int total = 0;
+            if (!post.image_urls.empty()) total += kFeedEmbedMaxHeight + 8;
+            if (post.quoted_post) total += measure_quote_embed_height(app, width, post.quoted_post.get()) + 8;
+            else if (!post.ext_uri.empty()) total += measure_external_embed_height(app, width, post, app.embed_images_enabled) + 8;
+            return total;
+        }
+        default:
+            return 0;
+    }
+}
+
+void draw_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
+    if ((post.embed_type == Bsky::EmbedType::Image || post.embed_type == Bsky::EmbedType::RecordWithMedia) &&
+        app.embed_images_enabled &&
+        !post.image_urls.empty()) {
+        const image_t* embed = image_cache_lookup(post.image_urls[0].c_str(),
+                                                  width,
+                                                  kFeedEmbedMaxHeight);
+        if (embed) {
+            fb_blit_rgba(&app.text_fb,
+                         x,
+                         y,
+                         embed->width,
+                         embed->height,
+                         embed->pixels);
+            y += embed->height + 8;
+        } else {
+            fb_fill_rect(&app.text_fb,
+                         x,
+                         y,
+                         width,
+                         kFeedEmbedMaxHeight,
+                         COLOR_LGRAY);
+            font_draw_string(&app.text_fb,
+                             x + 8,
+                             y + (kFeedEmbedMaxHeight - app.text_fb.font_h) / 2,
+                             "[image loading]",
+                             kColorMeta,
+                             COLOR_LGRAY);
+            y += kFeedEmbedMaxHeight + 8;
+        }
+    }
+
+    if ((post.embed_type == Bsky::EmbedType::Quote || post.embed_type == Bsky::EmbedType::RecordWithMedia) && post.quoted_post) {
+        draw_quote_embed(app, x, y, std::max(80, width - kQuoteIndent), post.quoted_post.get());
+        y += measure_quote_embed_height(app, std::max(80, width - kQuoteIndent), post.quoted_post.get()) + 8;
+    } else if ((post.embed_type == Bsky::EmbedType::External || post.embed_type == Bsky::EmbedType::RecordWithMedia) && !post.ext_uri.empty()) {
+        draw_external_embed(app, x, y, width, post, app.embed_images_enabled);
+        y += measure_external_embed_height(app, width, post, app.embed_images_enabled) + 8;
+    }
 }
 
 std::string rewrite_dir() {
@@ -231,7 +405,7 @@ bool contains_point(const rewrite_rect_t& rect, int x, int y) {
     return x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height;
 }
 
-void draw_border(rewrite_app_t& app, const rewrite_rect_t& rect, std::uint8_t color, int thickness = 2) {
+void draw_border(rewrite_app_t& app, const rewrite_rect_t& rect, std::uint8_t color, int thickness) {
     rewrite_framebuffer_fill_rect(app.framebuffer, rewrite_rect_t{rect.x, rect.y, rect.width, thickness}, color);
     rewrite_framebuffer_fill_rect(app.framebuffer, rewrite_rect_t{rect.x, rect.y + rect.height - thickness, rect.width, thickness}, color);
     rewrite_framebuffer_fill_rect(app.framebuffer, rewrite_rect_t{rect.x, rect.y, thickness, rect.height}, color);
@@ -347,6 +521,28 @@ void clear_saved_session(rewrite_app_t& app) {
     app.selected_post_uri.clear();
 }
 
+void persist_session(rewrite_app_t& app, const Bsky::Session& session) {
+    config_t* config = config_open(skeets_config_path());
+    if (config) {
+        config_set_str(config, "handle", session.handle.c_str());
+        config_set_str(config, "access_jwt", session.access_jwt.c_str());
+        config_set_str(config, "refresh_jwt", session.refresh_jwt.c_str());
+        config_set_str(config, "did", session.did.c_str());
+        config_set_str(config, "pds_url", session.pds_url.c_str());
+        config_set_str(config, "appview_url", session.appview_url.c_str());
+        config_save(config);
+        config_free(config);
+    }
+    app.bootstrap.session = session;
+}
+
+void apply_updated_session(rewrite_app_t& app, const Bsky::Session& session, bool updated) {
+    if (!updated) {
+        return;
+    }
+    persist_session(app, session);
+}
+
 void open_settings(rewrite_app_t& app, rewrite_view_mode_t return_view) {
     app.settings_return_view = return_view;
     app.view_mode = rewrite_view_mode_t::settings;
@@ -358,6 +554,7 @@ void load_feed(rewrite_app_t& app) {
     if (!app.bootstrap.authenticated) return;
     app.status_line = "Loading timeline...";
     app.feed_result = rewrite_fetch_feed(app.bootstrap.session);
+    apply_updated_session(app, app.feed_result.session, app.feed_result.session_updated);
     app.feed_page_start = 0;
     app.feed_page_count = 0;
     app.feed_page_history.clear();
@@ -373,6 +570,7 @@ void load_feed(rewrite_app_t& app) {
 void load_thread(rewrite_app_t& app, const std::string& post_uri) {
     app.selected_post_uri = post_uri;
     app.thread_result = rewrite_fetch_thread(app.bootstrap.session, post_uri);
+    apply_updated_session(app, app.thread_result.session, app.thread_result.session_updated);
     if (app.thread_result.state == rewrite_thread_state_t::loaded) {
         app.status_line = "Thread loaded";
         app.input_line = "Tap < Back to return to the feed";
@@ -669,9 +867,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             }
             needed += std::max(app.text_fb.font_h + 4, app.profile_images_enabled ? kFeedAvatarSize + 4 : 0); // author/avatar row
             needed += font_measure_wrapped(post_text_width - 8, post.text.c_str(), line_spacing);
-            if (post.embed_type == Bsky::EmbedType::Image && app.embed_images_enabled && !post.image_urls.empty()) {
-                needed += kFeedEmbedMaxHeight + 8;
-            }
+            needed += measure_embed_block_height(app, post, post_text_width - 8);
             needed += app.text_fb.font_h + kPostSeparator + 8; // stats + separator
 
             // Skip this post if it would overflow (except the first one — always show at least 1)
@@ -752,44 +948,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                 cursor_y += 4;
             }
 
-            if (post.embed_type == Bsky::EmbedType::Image && app.embed_images_enabled && !post.image_urls.empty()) {
-                const image_t* embed = image_cache_lookup(post.image_urls[0].c_str(),
-                                                          post_text_width,
-                                                          kFeedEmbedMaxHeight);
-                if (embed) {
-                    fb_blit_rgba(&app.text_fb,
-                                 text_left + 4,
-                                 cursor_y,
-                                 embed->width,
-                                 embed->height,
-                                 embed->pixels);
-                    cursor_y += embed->height + 8;
-                } else {
-                    fb_fill_rect(&app.text_fb,
-                                 text_left + 4,
-                                 cursor_y,
-                                 post_text_width - 8,
-                                 kFeedEmbedMaxHeight,
-                                 COLOR_LGRAY);
-                    font_draw_string(&app.text_fb,
-                                     text_left + 12,
-                                     cursor_y + (kFeedEmbedMaxHeight - app.text_fb.font_h) / 2,
-                                     "[image loading]",
-                                     kColorMeta,
-                                     COLOR_LGRAY);
-                    cursor_y += kFeedEmbedMaxHeight + 8;
-                }
-            } else if (post.embed_type == Bsky::EmbedType::External) {
-                std::string link = sanitize_bitmap_text("[Link: " + post.ext_title + "]");
-                font_draw_string(&app.text_fb, text_left + 4, cursor_y,
-                                 link.c_str(), kColorMeta, COLOR_WHITE);
-                cursor_y += app.text_fb.font_h + 2;
-            } else if (post.embed_type == Bsky::EmbedType::Quote && post.quoted_post) {
-                std::string quote = sanitize_bitmap_text("[Quote: @" + post.quoted_post->author.handle + "]");
-                font_draw_string(&app.text_fb, text_left + 4, cursor_y,
-                                 quote.c_str(), kColorMeta, COLOR_WHITE);
-                cursor_y += app.text_fb.font_h + 2;
-            }
+            draw_embed_block(app, post, text_left + 4, cursor_y, post_text_width - 8);
 
             // Stats line
             const int stats_x = text_left + 4;
@@ -961,54 +1120,7 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
                                          line_spacing);
             cursor_y += 4;
 
-            if (post->embed_type == Bsky::EmbedType::Image &&
-                app.embed_images_enabled &&
-                !post->image_urls.empty()) {
-                const image_t* embed = image_cache_lookup(post->image_urls[0].c_str(),
-                                                          text_width_for_post,
-                                                          kFeedEmbedMaxHeight);
-                if (embed) {
-                    fb_blit_rgba(&app.text_fb,
-                                 text_x,
-                                 cursor_y,
-                                 embed->width,
-                                 embed->height,
-                                 embed->pixels);
-                    cursor_y += embed->height + 8;
-                } else {
-                    fb_fill_rect(&app.text_fb,
-                                 text_x,
-                                 cursor_y,
-                                 text_width_for_post,
-                                 kFeedEmbedMaxHeight,
-                                 COLOR_LGRAY);
-                    font_draw_string(&app.text_fb,
-                                     text_x + 8,
-                                     cursor_y + (kFeedEmbedMaxHeight - app.text_fb.font_h) / 2,
-                                     "[image loading]",
-                                     kColorMeta,
-                                     COLOR_LGRAY);
-                    cursor_y += kFeedEmbedMaxHeight + 8;
-                }
-            } else if (post->embed_type == Bsky::EmbedType::External) {
-                const std::string link = sanitize_bitmap_text("[Link: " + post->ext_title + "]");
-                font_draw_string(&app.text_fb,
-                                 text_x,
-                                 cursor_y,
-                                 link.c_str(),
-                                 kColorMeta,
-                                 COLOR_WHITE);
-                cursor_y += app.text_fb.font_h + 2;
-            } else if (post->embed_type == Bsky::EmbedType::Quote && post->quoted_post) {
-                const std::string quote = sanitize_bitmap_text("[Quote: @" + post->quoted_post->author.handle + "]");
-                font_draw_string(&app.text_fb,
-                                 text_x,
-                                 cursor_y,
-                                 quote.c_str(),
-                                 kColorMeta,
-                                 COLOR_WHITE);
-                cursor_y += app.text_fb.font_h + 2;
-            }
+            draw_embed_block(app, *post, text_x, cursor_y, text_width_for_post);
 
             const std::string like_label = thread_like_label(*post);
             const std::string reply_label = thread_reply_label(*post);
@@ -1402,6 +1514,7 @@ int main(int argc, char* argv[]) {
                     // Load more posts from the server
                     auto more = rewrite_fetch_feed(rewrite_app.bootstrap.session, 30,
                                                    rewrite_app.feed_result.feed.cursor);
+                    apply_updated_session(rewrite_app, more.session, more.session_updated);
                     if (more.state == rewrite_feed_state_t::loaded) {
                         rewrite_app.feed_page_history.push_back(rewrite_app.feed_page_start);
                         rewrite_app.feed_page_start = total;  // Jump to newly loaded posts
@@ -1432,6 +1545,7 @@ int main(int argc, char* argv[]) {
                         post.viewer_like = "pending-like";
                         render_feed_stats_only(rewrite_app, hit);
                         const auto action = rewrite_like_post(rewrite_app.bootstrap.session, post.uri, post.cid);
+                        apply_updated_session(rewrite_app, action.session, action.session_updated);
                         if (action.ok) {
                             post.viewer_like = action.record_uri;
                         } else {
@@ -1445,6 +1559,7 @@ int main(int argc, char* argv[]) {
                         post.like_count = std::max(0, post.like_count - 1);
                         render_feed_stats_only(rewrite_app, hit);
                         const auto action = rewrite_unlike_post(rewrite_app.bootstrap.session, old_uri);
+                        apply_updated_session(rewrite_app, action.session, action.session_updated);
                         if (action.ok) {
                         } else {
                             post.viewer_like = old_uri;
@@ -1462,6 +1577,7 @@ int main(int argc, char* argv[]) {
                         post.viewer_repost = "pending-repost";
                         render_feed_stats_only(rewrite_app, hit);
                         const auto action = rewrite_repost_post(rewrite_app.bootstrap.session, post.uri, post.cid);
+                        apply_updated_session(rewrite_app, action.session, action.session_updated);
                         if (action.ok) {
                             post.viewer_repost = action.record_uri;
                         } else {
@@ -1475,6 +1591,7 @@ int main(int argc, char* argv[]) {
                         post.repost_count = std::max(0, post.repost_count - 1);
                         render_feed_stats_only(rewrite_app, hit);
                         const auto action = rewrite_unrepost_post(rewrite_app.bootstrap.session, old_uri);
+                        apply_updated_session(rewrite_app, action.session, action.session_updated);
                         if (action.ok) {
                         } else {
                             post.viewer_repost = old_uri;
@@ -1520,6 +1637,7 @@ int main(int argc, char* argv[]) {
                     post.viewer_like = "pending-like";
                     render_thread_stats_only(rewrite_app, hit);
                     const auto action = rewrite_like_post(rewrite_app.bootstrap.session, post.uri, post.cid);
+                    apply_updated_session(rewrite_app, action.session, action.session_updated);
                     if (action.ok) {
                         post.viewer_like = action.record_uri;
                     } else {
@@ -1533,6 +1651,7 @@ int main(int argc, char* argv[]) {
                     post.like_count = std::max(0, post.like_count - 1);
                     render_thread_stats_only(rewrite_app, hit);
                     const auto action = rewrite_unlike_post(rewrite_app.bootstrap.session, old_uri);
+                    apply_updated_session(rewrite_app, action.session, action.session_updated);
                     if (action.ok) {
                     } else {
                         post.viewer_like = old_uri;

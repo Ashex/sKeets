@@ -15,8 +15,10 @@ enum class rewrite_feed_state_t {
 struct rewrite_feed_result_t {
     rewrite_feed_state_t state = rewrite_feed_state_t::idle;
     Bsky::Feed feed;
+    Bsky::Session session;
     std::string error_message;
     int post_count = 0;
+    bool session_updated = false;
 };
 
 /// Fetch the home timeline for an authenticated session.
