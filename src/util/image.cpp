@@ -160,6 +160,36 @@ int image_scale_to_fit(image_t *img, int max_w, int max_h) {
     return 0;
 }
 
+int image_scaled_copy(const image_t *src, int target_w, int target_h, image_t *out) {
+    if (!src || !src->pixels || !out || target_w <= 0 || target_h <= 0) return -1;
+
+    out->pixels = NULL;
+    out->width = 0;
+    out->height = 0;
+
+    if (src->width == target_w && src->height == target_h) {
+        size_t sz = (size_t)target_w * (size_t)target_h * 4;
+        uint8_t *dst = (uint8_t *)malloc(sz);
+        if (!dst) return -1;
+        memcpy(dst, src->pixels, sz);
+        out->pixels = dst;
+        out->width = target_w;
+        out->height = target_h;
+        return 0;
+    }
+
+    uint8_t *dst = (uint8_t *)malloc((size_t)target_w * (size_t)target_h * 4);
+    if (!dst) return -1;
+
+    stbir_resize_uint8(src->pixels, src->width, src->height, 0,
+                       dst, target_w, target_h, 0, 4);
+
+    out->pixels = dst;
+    out->width = target_w;
+    out->height = target_h;
+    return 0;
+}
+
 void image_free(image_t *img) {
     if (!img) return;
     if (img->pixels) { free(img->pixels); img->pixels = NULL; }

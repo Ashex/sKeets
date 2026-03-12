@@ -57,24 +57,28 @@ constexpr int kFeedEmbedMaxHeight = 168;
 constexpr int kQuoteIndent = 24;
 constexpr int kQuoteBorder = 3;
 constexpr int kExternalThumbSize = 72;
-constexpr int kThreadScrollbarWidth = 18;
+constexpr int kThreadScrollbarWidth = 36;
 constexpr int kThreadScrollbarGap = 12;
+constexpr int kThreadScrollbarEndCapHeight = 72;
+constexpr int kThreadScrollbarEndCapGap = 10;
 constexpr int kEmbedImageGap = 6;
 constexpr int kHeaderLogoMaxWidth = 280;
 constexpr int kHeaderLogoMaxHeight = 64;
 constexpr int kSplashLogoMaxWidth = 760;
 constexpr int kSplashLogoMaxHeight = 280;
 constexpr int kButtonIconMaxSize = 42;
-constexpr int kStatIconMaxSize = 34;
+constexpr int kStatIconMaxSize = 68;
+constexpr int kNonInteractionImageScale = 3;
 constexpr std::uint8_t kColorPostBorder = 0xC0;
 constexpr std::uint8_t kColorAuthor = 0x10;
 constexpr std::uint8_t kColorMeta = 0x60;
 constexpr std::uint8_t kColorRepost = 0x50;
-constexpr int kStatsGap = 24;
+constexpr int kStatsGap = 32;
 
 constexpr const char* kEmojiBack = "⬅️";
-constexpr const char* kEmojiNext = "➡️";
-constexpr const char* kEmojiRefresh = "🔄";
+constexpr const char* kButtonPrev = "Prev";
+constexpr const char* kButtonNext = "Next";
+constexpr const char* kButtonRefresh = "Refresh";
 constexpr const char* kEmojiSettings = "⚙️";
 constexpr const char* kEmojiExit = "🚪";
 constexpr const char* kEmojiOpen = "🔎";
@@ -83,6 +87,7 @@ constexpr const char* kEmojiDisabled = "❌";
 constexpr const char* kEmojiLike = "💜";
 constexpr const char* kEmojiReply = "💬";
 constexpr const char* kEmojiRepost = "🌀";
+constexpr const char* kButtonSignOut = "Log Out";
 
 enum class skeets_view_mode_t {
     dashboard,
@@ -156,6 +161,9 @@ struct skeets_app_t {
     image_t reply_icon{};
     image_t repost_icon{};
     image_t back_icon{};
+    image_t prev_icon{};
+    image_t next_icon{};
+    image_t refresh_icon{};
     image_t exit_icon{};
     image_t settings_icon{};
     image_t diagnostics_icon{};
@@ -189,6 +197,8 @@ struct skeets_app_t {
     std::vector<skeets_thread_post_hit_t> thread_post_hits;
     skeets_button_t thread_back_button;
     skeets_button_t thread_settings_button;
+    skeets_rect_t thread_scrollbar_up_rect{};
+    skeets_rect_t thread_scrollbar_down_rect{};
     skeets_rect_t thread_scrollbar_rect{};
     skeets_rect_t thread_scrollbar_thumb_rect{};
 
@@ -302,6 +312,43 @@ int draw_wrapped_text(skeets_app_t& app,
                                     style.line_spacing,
                                     style.size_px,
                                     style.style);
+}
+
+bool draw_scaled_image(skeets_app_t& app,
+                       const image_t& image,
+                       const skeets_rect_t& bounds,
+                       int scale_factor,
+                       int padding = 0) {
+    if (!image.pixels || image.width <= 0 || image.height <= 0 || bounds.width <= 0 || bounds.height <= 0) {
+        return false;
+    }
+
+    const int available_width = std::max(1, bounds.width - (padding * 2));
+    const int available_height = std::max(1, bounds.height - (padding * 2));
+    const int requested_width = image.width * std::max(1, scale_factor);
+    const int requested_height = image.height * std::max(1, scale_factor);
+    const float fit_scale = std::min(static_cast<float>(available_width) / static_cast<float>(requested_width),
+                                     static_cast<float>(available_height) / static_cast<float>(requested_height));
+    const float effective_scale = std::min(1.0f, fit_scale);
+    const int target_width = std::max(1, static_cast<int>(requested_width * effective_scale));
+    const int target_height = std::max(1, static_cast<int>(requested_height * effective_scale));
+    const int draw_x = bounds.x + std::max(0, (bounds.width - target_width) / 2);
+    const int draw_y = bounds.y + std::max(0, (bounds.height - target_height) / 2);
+
+    if (target_width == image.width && target_height == image.height) {
+        fb_blit_rgba(&app.text_fb, draw_x, draw_y, image.width, image.height, image.pixels);
+        return true;
+    }
+
+    image_t scaled{};
+    if (image_scaled_copy(&image, target_width, target_height, &scaled) != 0) {
+        fb_blit_rgba(&app.text_fb, draw_x, draw_y, image.width, image.height, image.pixels);
+        return true;
+    }
+
+    fb_blit_rgba(&app.text_fb, draw_x, draw_y, scaled.width, scaled.height, scaled.pixels);
+    image_free(&scaled);
+    return true;
 }
 
 int line_height(skeets_text_role_t role) {
@@ -932,7 +979,11 @@ std::string skeets_dir() {
 }
 
 std::string skeets_asset_path(const char* filename) {
-    return skeets_dir() + "/assets/" + filename;
+    std::string deployed_name = filename ? filename : "";
+    if (deployed_name.size() > 4 && deployed_name.substr(deployed_name.size() - 4) == ".png") {
+        deployed_name.replace(deployed_name.size() - 4, 4, ".img");
+    }
+    return skeets_dir() + "/assets/" + deployed_name;
 }
 
 bool load_local_image_asset(image_t& image, const std::string& path, int max_w, int max_h) {
@@ -973,6 +1024,18 @@ void load_brand_assets(skeets_app_t& app) {
                                skeets_asset_path("back.png"),
                                kButtonIconMaxSize,
                                kButtonIconMaxSize);
+        load_local_image_asset(app.prev_icon,
+                       skeets_asset_path("left-arrow.png"),
+                       kButtonIconMaxSize,
+                       kButtonIconMaxSize);
+        load_local_image_asset(app.next_icon,
+                       skeets_asset_path("right-arrow.png"),
+                       kButtonIconMaxSize,
+                       kButtonIconMaxSize);
+        load_local_image_asset(app.refresh_icon,
+                       skeets_asset_path("refresh.png"),
+                       kButtonIconMaxSize,
+                       kButtonIconMaxSize);
         load_local_image_asset(app.exit_icon,
                                skeets_asset_path("exit.png"),
                                kButtonIconMaxSize,
@@ -1002,6 +1065,9 @@ void free_brand_assets(skeets_app_t& app) {
         image_free(&app.reply_icon);
         image_free(&app.repost_icon);
         image_free(&app.back_icon);
+        image_free(&app.prev_icon);
+        image_free(&app.next_icon);
+        image_free(&app.refresh_icon);
         image_free(&app.exit_icon);
         image_free(&app.settings_icon);
         image_free(&app.diagnostics_icon);
@@ -1011,7 +1077,11 @@ void free_brand_assets(skeets_app_t& app) {
 
     const image_t* icon_for_label(const skeets_app_t& app, const std::string& label) {
         if (label == kEmojiBack && app.back_icon.pixels) return &app.back_icon;
+            if (label == kButtonPrev && app.prev_icon.pixels) return &app.prev_icon;
+            if (label == kButtonNext && app.next_icon.pixels) return &app.next_icon;
+            if (label == kButtonRefresh && app.refresh_icon.pixels) return &app.refresh_icon;
         if (label == kEmojiExit && app.exit_icon.pixels) return &app.exit_icon;
+            if (label == kButtonSignOut && app.exit_icon.pixels) return &app.exit_icon;
         if (label == kEmojiSettings && app.settings_icon.pixels) return &app.settings_icon;
         if (label == kEmojiOpen && app.diagnostics_icon.pixels) return &app.diagnostics_icon;
         if (label == kEmojiEnabled && app.enabled_icon.pixels) return &app.enabled_icon;
@@ -1027,9 +1097,7 @@ void free_brand_assets(skeets_app_t& app) {
                                       std::uint8_t bg) {
         const image_t* icon = icon_for_label(app, label);
         if (icon && icon->width > 0 && icon->height > 0) {
-            const int icon_x = rect.x + std::max(0, (rect.width - icon->width) / 2);
-            const int icon_y = rect.y + std::max(0, (rect.height - icon->height) / 2);
-            fb_blit_rgba(&app.text_fb, icon_x, icon_y, icon->width, icon->height, icon->pixels);
+            draw_scaled_image(app, *icon, rect, kNonInteractionImageScale, 10);
             return;
         }
 
@@ -1178,8 +1246,11 @@ void draw_card(skeets_app_t& app,
 }
 
 void draw_button(skeets_app_t& app, const skeets_button_t& button, std::uint8_t fill) {
-    skeets_framebuffer_fill_rect(app.framebuffer, button.rect, fill);
-    draw_border(app, button.rect, COLOR_BLACK, 3);
+    const image_t* icon = icon_for_label(app, button.label);
+    if (!icon) {
+        skeets_framebuffer_fill_rect(app.framebuffer, button.rect, fill);
+        draw_border(app, button.rect, COLOR_BLACK, 3);
+    }
     draw_centered_button_content(app,
                                  button.rect,
                                  button.label,
@@ -1423,7 +1494,7 @@ skeets_stats_layout_t draw_stat_item(skeets_app_t& app,
     const int icon_height = icon.height > 0 ? icon.height : line_height(skeets_text_role_t::stat_emoji);
     const int count_height = line_height(skeets_text_role_t::meta);
     const int item_height = std::max(icon_height, count_height);
-    const int count_x = x + icon_width + 8;
+    const int count_x = x + icon_width + 12;
     const int icon_y = y + std::max(0, (item_height - icon_height) / 2);
     const int count_y = y + std::max(0, (item_height - count_height) / 2);
 
@@ -1447,8 +1518,8 @@ skeets_stats_layout_t draw_stat_item(skeets_app_t& app,
               bg);
 
     return {
-    icon_width + 8 + count_width,
-    icon_width + 8 + count_width,
+        icon_width + 12 + count_width,
+        icon_width + 12 + count_width,
         0,
         0,
         item_height,
@@ -1655,7 +1726,7 @@ void render_screen(skeets_app_t& app, bool full_refresh) {
                                      width - (kOuterMargin * 2),
                                      status_height};
     const int button_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
-    app.refresh_button = skeets_button_t{{kOuterMargin, height - button_height - kOuterMargin, button_width, button_height}, kEmojiRefresh};
+    app.refresh_button = skeets_button_t{{kOuterMargin, height - button_height - kOuterMargin, button_width, button_height}, kButtonRefresh};
     app.exit_button = skeets_button_t{{app.refresh_button.rect.x + button_width + kCardGap,
                                         app.refresh_button.rect.y,
                                         button_width,
@@ -1779,7 +1850,7 @@ void render_diagnostics_screen(skeets_app_t& app, bool full_refresh) {
                                        height - button_height - kOuterMargin,
                                        width - (kOuterMargin * 2),
                                        button_height},
-                                      kEmojiRefresh};
+                                      kButtonRefresh};
 
     skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
     const skeets_rect_t header_rect{0, 0, width, header_height};
@@ -1843,15 +1914,15 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
     const int btn_y = height - button_height - kOuterMargin;
     app.feed_back_button = {
         {kOuterMargin, btn_y, btn_width, button_height},
-        kEmojiBack
+        kButtonPrev
     };
     app.feed_refresh_button = {
         {kOuterMargin + btn_width + btn_gap, btn_y, btn_width, button_height},
-        kEmojiRefresh
+        kButtonRefresh
     };
     app.feed_next_button = {
         {kOuterMargin + (btn_width + btn_gap) * 2, btn_y, btn_width, button_height},
-        kEmojiNext
+        kButtonNext
     };
     app.feed_settings_button = {
         {width - kOuterMargin - 176, 10, 176, header_height - 20},
@@ -2083,12 +2154,24 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
     const int content_bottom = height - kOuterMargin;
     const int line_spacing = 4;
     const int scrollbar_top = header_height + kOuterMargin;
-    const int scrollbar_height = std::max(80, content_bottom - scrollbar_top);
+    const int scrollbar_x = width - kOuterMargin - kThreadScrollbarWidth;
+    const int scrollbar_end_cap_height = std::max(kThreadScrollbarEndCapHeight, header_height - 20);
+    const int scrollbar_track_top = scrollbar_top + scrollbar_end_cap_height + kThreadScrollbarEndCapGap;
+    const int scrollbar_track_bottom = content_bottom - scrollbar_end_cap_height - kThreadScrollbarEndCapGap;
+    const int scrollbar_height = std::max(80, scrollbar_track_bottom - scrollbar_track_top);
 
     app.thread_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
     app.thread_settings_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, kEmojiSettings};
-    app.thread_scrollbar_rect = {width - kOuterMargin - kThreadScrollbarWidth,
-                                 scrollbar_top,
+    app.thread_scrollbar_up_rect = {scrollbar_x,
+                                    scrollbar_top,
+                                    kThreadScrollbarWidth,
+                                    scrollbar_end_cap_height};
+    app.thread_scrollbar_down_rect = {scrollbar_x,
+                                      content_bottom - scrollbar_end_cap_height,
+                                      kThreadScrollbarWidth,
+                                      scrollbar_end_cap_height};
+    app.thread_scrollbar_rect = {scrollbar_x,
+                                 scrollbar_track_top,
                                  kThreadScrollbarWidth,
                                  scrollbar_height};
     app.thread_scrollbar_thumb_rect = app.thread_scrollbar_rect;
@@ -2251,6 +2334,30 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
         app.thread_page_count = rendered;
 
         skeets_framebuffer_fill_rect(app.framebuffer,
+                          app.thread_scrollbar_up_rect,
+                          kColorButtonSecondary);
+        draw_border(app, app.thread_scrollbar_up_rect, kColorPostBorder, 1);
+        draw_centered_text(app,
+                   app.thread_scrollbar_up_rect.x + (app.thread_scrollbar_up_rect.width / 2),
+                   app.thread_scrollbar_up_rect.y + std::max(0, (app.thread_scrollbar_up_rect.height - line_height(skeets_text_role_t::meta)) / 2),
+                   "UP",
+                   COLOR_BLACK,
+                   kColorButtonSecondary,
+                   skeets_text_role_t::meta);
+
+        skeets_framebuffer_fill_rect(app.framebuffer,
+                          app.thread_scrollbar_down_rect,
+                          kColorButtonSecondary);
+        draw_border(app, app.thread_scrollbar_down_rect, kColorPostBorder, 1);
+        draw_centered_text(app,
+                   app.thread_scrollbar_down_rect.x + (app.thread_scrollbar_down_rect.width / 2),
+                   app.thread_scrollbar_down_rect.y + std::max(0, (app.thread_scrollbar_down_rect.height - line_height(skeets_text_role_t::meta)) / 2),
+                   "DN",
+                   COLOR_BLACK,
+                   kColorButtonSecondary,
+                   skeets_text_role_t::meta);
+
+        skeets_framebuffer_fill_rect(app.framebuffer,
                                       app.thread_scrollbar_rect,
                                       0xDD);
         draw_border(app, app.thread_scrollbar_rect, kColorPostBorder, 1);
@@ -2290,11 +2397,14 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
 
 void draw_toggle_chip(skeets_app_t& app, const skeets_rect_t& rect, bool enabled) {
     const std::uint8_t fill = enabled ? kColorButtonPrimary : 0xC8;
-    skeets_framebuffer_fill_rect(app.framebuffer, rect, fill);
-    draw_border(app, rect, COLOR_BLACK, 2);
+    const std::string icon_label = enabled ? kEmojiEnabled : kEmojiDisabled;
+    if (!icon_for_label(app, icon_label)) {
+        skeets_framebuffer_fill_rect(app.framebuffer, rect, fill);
+        draw_border(app, rect, COLOR_BLACK, 2);
+    }
     draw_centered_button_content(app,
                                  rect,
-                                 enabled ? kEmojiEnabled : kEmojiDisabled,
+                                 icon_label,
                                  skeets_text_role_t::action_emoji,
                                  enabled ? COLOR_WHITE : COLOR_BLACK,
                                  fill);
@@ -2351,8 +2461,10 @@ void draw_settings_action_row(skeets_app_t& app,
                                      row.rect.y + (row.rect.height - 46) / 2,
                                      100,
                                      46};
-    skeets_framebuffer_fill_rect(app.framebuffer, action_rect, kColorButtonSecondary);
-    draw_border(app, action_rect, COLOR_BLACK, 2);
+    if (!icon_for_label(app, action_label)) {
+        skeets_framebuffer_fill_rect(app.framebuffer, action_rect, kColorButtonSecondary);
+        draw_border(app, action_rect, COLOR_BLACK, 2);
+    }
     draw_centered_button_content(app,
                                  action_rect,
                                  action_label,
@@ -2381,7 +2493,7 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
                                      height - kOuterMargin - std::max(90, height / 12),
                                      content_width,
                                      std::max(90, height / 12)},
-                                    "Log Out"};
+                                    kButtonSignOut};
 
     skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
@@ -2802,6 +2914,39 @@ int main(int argc, char* argv[]) {
             if (contains_point(skeets_app.thread_settings_button.rect, event.x, event.y)) {
                 open_settings(skeets_app, skeets_view_mode_t::thread);
                 render_settings_screen(skeets_app, true);
+                continue;
+            }
+
+            if (contains_point(skeets_app.thread_scrollbar_up_rect, event.x, event.y)) {
+                if (skeets_app.thread_page_start > 0) {
+                    const int page_step = std::max(1, skeets_app.thread_page_count - 1);
+                    skeets_app.thread_page_start = std::max(0, skeets_app.thread_page_start - page_step);
+                    render_thread_screen(skeets_app, true);
+                } else {
+                    skeets_app.status_line = "Already at top of thread";
+                    skeets_app.input_line = touch_message.str();
+                    render_thread_screen(skeets_app, false);
+                }
+                continue;
+            }
+
+            if (contains_point(skeets_app.thread_scrollbar_down_rect, event.x, event.y)) {
+                std::vector<std::pair<const Bsky::Post*, int>> nodes;
+                if (skeets_app.thread_result.state == skeets_thread_state_t::loaded) {
+                    flatten_thread_posts(skeets_app.thread_result.root, 0, nodes);
+                }
+                const int total = static_cast<int>(nodes.size());
+                const int visible = std::max(1, skeets_app.thread_page_count);
+                const int max_start = std::max(0, total - visible);
+                if (skeets_app.thread_page_start < max_start) {
+                    const int page_step = std::max(1, visible - 1);
+                    skeets_app.thread_page_start = std::min(max_start, skeets_app.thread_page_start + page_step);
+                    render_thread_screen(skeets_app, true);
+                } else {
+                    skeets_app.status_line = "Already at bottom of thread";
+                    skeets_app.input_line = touch_message.str();
+                    render_thread_screen(skeets_app, false);
+                }
                 continue;
             }
 

@@ -245,9 +245,21 @@ if(SKEETS_FONT_ASSETS)
         COMPONENT Kobo)
 endif()
 if(SKEETS_IMAGE_ASSETS)
-    install(FILES ${SKEETS_IMAGE_ASSETS}
-        DESTINATION ${KOBO_INSTALL_PREFIX}/assets
-        COMPONENT Kobo)
+    foreach(SKEETS_IMAGE_ASSET IN LISTS SKEETS_IMAGE_ASSETS)
+        get_filename_component(SKEETS_IMAGE_ASSET_NAME "${SKEETS_IMAGE_ASSET}" NAME)
+        get_filename_component(SKEETS_IMAGE_ASSET_EXT "${SKEETS_IMAGE_ASSET}" EXT)
+        if(SKEETS_IMAGE_ASSET_EXT STREQUAL ".png")
+            get_filename_component(SKEETS_IMAGE_ASSET_BASENAME "${SKEETS_IMAGE_ASSET}" NAME_WE)
+            install(FILES "${SKEETS_IMAGE_ASSET}"
+                DESTINATION ${KOBO_INSTALL_PREFIX}/assets
+                RENAME "${SKEETS_IMAGE_ASSET_BASENAME}.img"
+                COMPONENT Kobo)
+        else()
+            install(FILES "${SKEETS_IMAGE_ASSET}"
+                DESTINATION ${KOBO_INSTALL_PREFIX}/assets
+                COMPONENT Kobo)
+        endif()
+    endforeach()
 endif()
 
 add_custom_target(kobo-package

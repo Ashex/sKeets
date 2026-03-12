@@ -30,6 +30,10 @@ int image_load_file(const char *path, image_t *out);
  * Replaces img->pixels with a new allocation. */
 int image_scale_to_fit(image_t *img, int max_w, int max_h);
 
+/* Create a resized copy of src at the exact target size.
+ * Caller must image_free(out) on success. */
+int image_scaled_copy(const image_t *src, int target_w, int target_h, image_t *out);
+
 /* Free pixel data. */
 void image_free(image_t *img);
 
