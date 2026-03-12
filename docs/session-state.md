@@ -14,10 +14,10 @@ protocol path. The rewrite is no longer just an auth bootstrap shell: it now
 renders a usable text-first feed view with author, timestamp, body text, image
 placeholders, and stats.
 
-The current milestone is **richer embed rendering and post-image-rendering
-cleanup**. Phase 3 interaction support is working in the rewrite, and Phase 3.5
-settings plus image-gated rendering are now working on-device in both feed and
-thread views. Saved-session restore now uses the ATProto refresh-token path, so
+The current milestone is **richer embed rendering and image-fallback cleanup**.
+Phase 3 interaction support is working in the rewrite, and Phase 3.5 settings
+plus image-gated rendering are now working on-device in both feed and thread
+views. Saved-session restore now uses the ATProto refresh-token path, so
 expired access JWTs are rotated during bootstrap and during rewrite runtime
 requests instead of forcing a relogin.
 
@@ -52,8 +52,8 @@ requests instead of forcing a relogin.
 | **Phase 2** | Credential file login (login.txt flow) | **DONE** ✅ |
 | **Phase 3** | Like and repost support | Working on-device |
 | **Phase 3.5** | Settings view: dual image toggles | Working on-device with feed/thread image rendering |
-| **Phase 4** | Input improvements (swipe, long-press) | In progress — feed/thread swipe navigation landed in rewrite UI |
-| **Phase 5** | Framebuffer & reliability improvements | Not started |
+| **Phase 4** | Input improvements (swipe, long-press) | Deferred again — swipe experiment removed after poor device behavior |
+| **Phase 5** | Framebuffer & reliability improvements | In progress — rewrite redraw scoping work has started |
 | **Phase 5.5** | Bug fixes (JWT refresh, thread recursion, etc.) | Not started |
 | **Phase 6** | Cleanup (README, docs, stale comments) | Not started |
 
@@ -79,15 +79,18 @@ requests instead of forcing a relogin.
 18. Thread view now renders image embeds when opening a post with media
 19. Bluesky CDN image URLs are rewritten to `@jpeg`, avoiding WebP decode failures in the current embedded decoder path
 20. Expired saved access tokens are now refreshed from the saved refresh token during bootstrap, feed/thread loads, and rewrite actions, and the rotated tokens are persisted back to `config.ini`
+21. Feed and thread image embeds now preserve per-image alt text so the rewrite can show text fallbacks when embed images are disabled
+22. Unsupported media embeds such as video or GIF-style posts now render a left-aligned preview thumbnail, when available, with alt text beside it instead of disappearing entirely
+23. Non-full feed and thread repaints now refresh only the content region rather than the full screen, reducing unnecessary e-ink flashing during async image updates
 
 ### What is still worth validating further
 
 1. Settings toggles persist cleanly across multiple relaunches and sign-out/sign-in cycles
-2. Async-loaded avatars and embeds repaint cleanly without objectionable full-screen artifacts
+2. Async-loaded avatars and embeds repaint cleanly without objectionable artifacts now that non-full redraws are scoped to the content region
 3. Thread layouts remain stable when larger images load after initial render
 4. The cached JPEG coercion path remains robust across a wider mix of Bluesky CDN image URLs
 5. Newly landed thread fixes still need on-device validation: thread-side repost/unrepost taps are now wired, and long threads now use a right-side scrollbar with pre-measured clipping instead of bottom paging controls or drawing past the bottom edge
-6. Newly landed Phase 4 slice still needs on-device validation: swipe up/down now advances feed pages and scrolls longer thread chains without requiring the on-screen controls
+6. Newly landed media fallback behavior still needs on-device validation: image alt-text blocks should appear when embed images are disabled, and unsupported media previews should show left-aligned thumbnails with adjacent alt text
 
 ---
 
@@ -126,12 +129,15 @@ The main entry point for the rewrite app. Changes this session:
 - **Clearer active-state labels**: Interactive labels keep stable widths while showing active state via flipped carets (`>Like<`, `>Repost<`).
 - **Settings view**: Adds a rewrite-native settings screen reachable from feed and thread headers, with persistent `profile_images_enabled` and `embed_images_enabled` toggles plus a sign-out action that clears the saved session.
 - **Avatar/embed rendering**: Reuses the shared async image cache to draw feed/thread avatars and image embeds when the corresponding settings are enabled.
+- **Alt-text fallbacks**: Image embeds now retain per-image alt text and render text-only fallback blocks when embed images are disabled.
+- **Unsupported media previews**: Video/GIF-style embeds now surface a smaller preview thumbnail, when available, with alt text laid out to its right.
 - **CDN compatibility fix**: Rewrites Bluesky CDN image URLs to request `@jpeg` so the current decoder path can render avatars and embeds on-device.
 - **Thread media rendering**: The thread view now renders image embeds as well as feed cards, rather than dropping media after navigation.
 - **Async redraw handling**: Pumps Qt events in the main loop and triggers a repaint when `image_cache_redraw_needed()` signals that a download completed.
+- **Bounded partial redraws**: Non-full feed and thread repaints now refresh only the content region instead of the whole screen.
 - **Thread scrollbar and overflow fix**: Thread rendering now pre-measures each visible post, stops before drawing beyond the bottom edge, and uses a right-side scrollbar as the navigation surface for longer reply chains.
 - **Thread repost handling**: Thread stat hit targets now include repost/unrepost actions, matching the feed interaction surface.
-- **Swipe navigation**: The rewrite now tracks touch-down/up displacement so swipe up/down advances feed pages and moves through longer threads without depending solely on tap targets.
+- **Swipe rollback**: The earlier swipe experiment was removed after poor on-device behavior; navigation remains tap-driven for now.
 
 ### `src/util/image_cache.cpp` / `src/util/image.cpp`
 - The shared image cache now logs concise fetch/decode state, retries transient failures, reopens raw disk-cache files correctly, and normalizes Bluesky CDN image URLs to `@jpeg` before hashing, fetch, and cache storage.
@@ -231,11 +237,13 @@ Implemented result:
 - Feed and thread avatars render through the shared async image cache when profile images are enabled
 - The embed-images toggle controls image embed rendering in both feed and thread views
 - The rewrite repaints automatically when async image downloads complete
+- When embed images are disabled, the rewrite now shows per-image alt text instead of dropping image attachments entirely
+- Unsupported media embeds now show a smaller preview thumbnail, when available, with alt text beside it
 - Bluesky CDN image URLs are rewritten to `@jpeg` to avoid WebP decode failures in the current decoder path
 
 Remaining polish:
 - Confirm toggles persist across relaunches and sign-out/sign-in cycles
-- Confirm async-loaded avatars and embeds repaint cleanly without full-screen artifacts
+- Confirm async-loaded avatars and embeds repaint cleanly with the new bounded content-region redraws
 - Consider a cleaner image decode path if WebP support is needed later without CDN coercion
 
 ### 2. Phase 3 interaction polish
@@ -248,11 +256,10 @@ Remaining polish:
 - Active-state styling is clearer via flipped-caret labels while preserving stable hit-target widths
 
 ### 3. Next candidate milestone
-- Expand embed handling beyond the first image and simple placeholder-level quote/media rendering
-- Improve quote, external-card, and record-with-media rendering in both feed and thread views
 - Validate the new right-side thread scrollbar and thread repost behavior on-device
+- Validate image alt-text fallback blocks and unsupported media preview rows on-device
+- Continue Phase 5 rewrite-specific redraw cleanup beyond content-region scoping if more flashing remains visible
 - Defer a future settings refinement for the thread scrollbar: make it slightly wider and add pagination buttons at either end, while keeping left-side placement as a later settings option
-- Validate the new swipe-based feed/thread navigation on-device before pushing deeper into Phase 4 input work
 - Consider replacing the current feed-side reply filter with a richer policy once thread view is in place
 
 ---

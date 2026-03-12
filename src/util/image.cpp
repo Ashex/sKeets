@@ -135,7 +135,7 @@ int image_load_url(const char *url, image_t *out) {
 
 int image_scale_to_fit(image_t *img, int max_w, int max_h) {
     if (!img || !img->pixels) return -1;
-    if (img->width <= max_w && img->height <= max_h) return 0;
+    if (max_w <= 0 || max_h <= 0) return 0;
 
     float sx = (float)max_w / (float)img->width;
     float sy = (float)max_h / (float)img->height;
@@ -145,6 +145,7 @@ int image_scale_to_fit(image_t *img, int max_w, int max_h) {
     int new_h = (int)(img->height * s);
     if (new_w < 1) new_w = 1;
     if (new_h < 1) new_h = 1;
+    if (new_w == img->width && new_h == img->height) return 0;
 
     uint8_t *dst = (uint8_t *)malloc((size_t)(new_w * new_h * 4));
     if (!dst) return -1;

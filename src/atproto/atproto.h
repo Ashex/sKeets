@@ -13,7 +13,7 @@ struct Author {
     std::string avatar_url;
 };
 
-enum class EmbedType { None, Image, Quote, RecordWithMedia, External };
+enum class EmbedType { None, Image, Quote, RecordWithMedia, External, Video };
 
 struct Post {
     std::string uri;
@@ -27,7 +27,11 @@ struct Post {
     EmbedType embed_type = EmbedType::None;
     std::shared_ptr<Post> quoted_post;
     std::vector<std::string> image_urls;
+    std::vector<std::string> image_alts;
     std::string ext_uri, ext_title, ext_description, ext_thumb_url;
+    std::string media_preview_url;
+    std::string media_alt_text;
+    std::string media_label;
     std::string reply_parent_uri, reply_parent_cid;
     std::string reply_root_uri,   reply_root_cid;
     std::vector<std::shared_ptr<Post>> replies;

@@ -85,8 +85,20 @@ static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv)
             p.embed_type = EmbedType::Image;
             auto* iv = std::get_if<ATProto::AppBskyEmbed::ImagesView::SharedPtr>(&pv->mEmbed->mEmbed);
             if (iv && *iv) {
-                for (auto& img : (*iv)->mImages)
+                for (auto& img : (*iv)->mImages) {
                     p.image_urls.push_back(img->mThumb.toStdString());
+                    p.image_alts.push_back(img->mAlt.toStdString());
+                }
+            }
+        } else if (pv->mEmbed->mType == ATProto::AppBskyEmbed::EmbedViewType::VIDEO_VIEW) {
+            p.embed_type = EmbedType::Video;
+            auto* vv = std::get_if<ATProto::AppBskyEmbed::VideoView::SharedPtr>(&pv->mEmbed->mEmbed);
+            if (vv && *vv) {
+                p.media_preview_url = (*vv)->mThumbnail.value_or(QString{}).toStdString();
+                p.media_alt_text = (*vv)->mAlt.value_or(QString{}).toStdString();
+                const bool is_gif = (*vv)->mPresentation &&
+                    *(*vv)->mPresentation == ATProto::AppBskyEmbed::VideoPresentation::GIF;
+                p.media_label = is_gif ? "Animated media" : "Video";
             }
         } else if (pv->mEmbed->mType == ATProto::AppBskyEmbed::EmbedViewType::RECORD_VIEW) {
             p.embed_type = EmbedType::Quote;
@@ -111,8 +123,19 @@ static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv)
                 if ((*rmv)->mMediaType == ATProto::AppBskyEmbed::EmbedViewType::IMAGES_VIEW) {
                     auto* iv2 = std::get_if<ATProto::AppBskyEmbed::ImagesView::SharedPtr>(&(*rmv)->mMedia);
                     if (iv2 && *iv2) {
-                        for (auto& img : (*iv2)->mImages)
+                        for (auto& img : (*iv2)->mImages) {
                             p.image_urls.push_back(img->mThumb.toStdString());
+                            p.image_alts.push_back(img->mAlt.toStdString());
+                        }
+                    }
+                } else if ((*rmv)->mMediaType == ATProto::AppBskyEmbed::EmbedViewType::VIDEO_VIEW) {
+                    auto* vv2 = std::get_if<ATProto::AppBskyEmbed::VideoView::SharedPtr>(&(*rmv)->mMedia);
+                    if (vv2 && *vv2) {
+                        p.media_preview_url = (*vv2)->mThumbnail.value_or(QString{}).toStdString();
+                        p.media_alt_text = (*vv2)->mAlt.value_or(QString{}).toStdString();
+                        const bool is_gif = (*vv2)->mPresentation &&
+                            *(*vv2)->mPresentation == ATProto::AppBskyEmbed::VideoPresentation::GIF;
+                        p.media_label = is_gif ? "Animated media" : "Video";
                     }
                 } else if ((*rmv)->mMediaType == ATProto::AppBskyEmbed::EmbedViewType::EXTERNAL_VIEW) {
                     auto* ev2 = std::get_if<ATProto::AppBskyEmbed::ExternalView::SharedPtr>(&(*rmv)->mMedia);
