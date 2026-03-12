@@ -304,17 +304,25 @@ The ATProto layer is synchronous (blocking HTTP). On slow networks or large
 feeds this may cause brief pauses; a future improvement would be to offload
 network calls to a background thread.
 
-## Nickel Plugin Port
+## Reference Projects
 
-A real Nickel plugin port is not a drop-in build change. The public Kobo plugin
-examples target QWidget plugins on Qt Embedded 4.6, while sKeets currently uses
-Qt6. The backend now resolves config and cache paths at runtime so storage can
-be preserved during a future port, but the UI and build stack still need a
-separate Nickel-specific implementation. See `docs/plugin-port.md` for the
-constraints and migration plan.
+The following open-source projects were invaluable references during development. Their codebases informed sKeets' approach to e-ink rendering, touch input handling, device quirk management, and Kobo platform integration.
+
+| Project | Description | License |
+|---------|-------------|---------|
+| [KOReader](https://github.com/koreader/koreader) | Document reader for e-ink devices — reference for per-device touch transforms, EPDC waveform selection, suspend/resume, and input handling | AGPL-3.0 |
+| [KOReader-base](https://github.com/koreader/koreader-base) | KOReader's C/Lua platform layer — reference for framebuffer abstraction, mxcfb/MTK/sunxi ioctl patterns, and blitbuffer architecture | AGPL-3.0 |
+| [NickelMenu](https://github.com/pgaskin/NickelMenu) | Menu injection plugin for Kobo's Nickel reader — used as the primary app launcher via `cmd_spawn` | MIT, Copyright (c) 2020-2025 Patrick Gaskin |
+| [NickelHook](https://github.com/pgaskin/NickelHook) | PLT/GOT hooking library for Nickel — NickelMenu's hook foundation and reference for Nickel plugin architecture | MIT, Copyright (c) 2020-2025 Patrick Gaskin |
+| [Kobo-Reader](https://github.com/kobolabs/Kobo-Reader) | Kobo's open-source build tree — reference for cross-compilation toolchain setup and QWidget plugin interface examples | No explicit license (Kobo Labs) |
+| [kobo-anki](https://github.com/tent4kel/kobo-anki) | Anki flashcard app for Kobo using FBInk — reference for FBInk integration patterns on Kobo | MIT, Copyright (c) 2025 tent4kel |
 
 ## License
 
-GPLv3 — see individual source files for copyright notices.  
+GPLv3 — see individual source files for copyright notices.
 
-stb_image: MIT/Public Domain, Copyright (c) 2017 Sean Barrett.
+### Third-party components
+
+- **stb_image**: MIT/Public Domain, Copyright (c) 2017 Sean Barrett
+- **[libatproto](https://github.com/mfnboer/atproto)**: C++ ATProto SDK by mfnboer (pinned commit, locally patched for Kobo cross-compilation)
+- **[FBInk](https://github.com/NiLuJe/FBInk)**: E-ink framebuffer library by NiLuJe
