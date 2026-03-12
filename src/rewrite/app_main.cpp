@@ -55,6 +55,8 @@ constexpr int kFeedEmbedMaxHeight = 112;
 constexpr int kQuoteIndent = 24;
 constexpr int kQuoteBorder = 3;
 constexpr int kExternalThumbSize = 72;
+constexpr int kThreadScrollbarWidth = 18;
+constexpr int kThreadScrollbarGap = 12;
 constexpr std::uint8_t kColorPostBorder = 0xC0;
 constexpr std::uint8_t kColorAuthor = 0x10;
 constexpr std::uint8_t kColorMeta = 0x60;
@@ -80,6 +82,7 @@ struct rewrite_post_hit_t {
 struct rewrite_thread_post_hit_t {
     rewrite_rect_t rect;
     rewrite_rect_t like_rect;
+    rewrite_rect_t repost_rect;
     rewrite_rect_t stats_rect;
     int stats_x = 0;
     int stats_y = 0;
@@ -120,9 +123,13 @@ struct rewrite_app_t {
     // Thread view state
     rewrite_thread_result_t thread_result;
     std::string selected_post_uri;
+    int thread_page_start = 0;
+    int thread_page_count = 0;
     std::vector<rewrite_thread_post_hit_t> thread_post_hits;
     rewrite_button_t thread_back_button;
     rewrite_button_t thread_settings_button;
+    rewrite_rect_t thread_scrollbar_rect{};
+    rewrite_rect_t thread_scrollbar_thumb_rect{};
 
     // Settings view state
     bool profile_images_enabled = true;
@@ -516,6 +523,8 @@ void clear_saved_session(rewrite_app_t& app) {
     app.feed_page_start = 0;
     app.feed_page_count = 0;
     app.feed_page_history.clear();
+    app.thread_page_start = 0;
+    app.thread_page_count = 0;
     app.visible_post_hits.clear();
     app.thread_post_hits.clear();
     app.selected_post_uri.clear();
@@ -571,9 +580,11 @@ void load_thread(rewrite_app_t& app, const std::string& post_uri) {
     app.selected_post_uri = post_uri;
     app.thread_result = rewrite_fetch_thread(app.bootstrap.session, post_uri);
     apply_updated_session(app, app.thread_result.session, app.thread_result.session_updated);
+    app.thread_page_start = 0;
+    app.thread_page_count = 0;
     if (app.thread_result.state == rewrite_thread_state_t::loaded) {
         app.status_line = "Thread loaded";
-        app.input_line = "Tap < Back to return to the feed";
+        app.input_line = "Tap < Back to return to the feed, or use the right scrollbar for longer threads";
     } else {
         app.status_line = "Thread load failed";
         app.input_line = app.thread_result.error_message;
@@ -610,7 +621,37 @@ std::string thread_reply_label(const Bsky::Post& post) {
 }
 
 std::string thread_repost_label(const Bsky::Post& post) {
-    return "<Repost> " + std::to_string(post.repost_count);
+    return std::string(post.viewer_repost.empty() ? "<Repost> " : ">Repost< ") + std::to_string(post.repost_count);
+}
+
+int measure_thread_post_height(const rewrite_app_t& app,
+                               const Bsky::Post& post,
+                               bool include_indent_bar,
+                               int text_width_for_post) {
+    int needed = 0;
+    if (include_indent_bar) {
+        needed += 0;
+    }
+    needed += std::max(app.text_fb.font_h + 4,
+                       app.profile_images_enabled ? kThreadAvatarSize + 4 : 0);
+    if (!post.text.empty()) {
+        needed += font_measure_wrapped(text_width_for_post,
+                                       post.text.c_str(),
+                                       4);
+        needed += 4;
+    }
+    needed += measure_embed_block_height(app, post, text_width_for_post);
+    needed += app.text_fb.font_h + 8;
+    needed += 1;
+    needed += 12;
+    return needed;
+}
+
+int clamp_thread_page_start(int start, int total) {
+    if (total <= 0) {
+        return 0;
+    }
+    return std::max(0, std::min(start, total - 1));
 }
 
 rewrite_rect_t make_stat_hit_rect(int x, int y, int width, int height) {
@@ -1020,12 +1061,22 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
     const int header_height = std::max(72, height / 14);
-    const int content_width = width - (kOuterMargin * 2);
+    const int content_right = width - kOuterMargin - kThreadScrollbarWidth - kThreadScrollbarGap;
+    const int content_width = content_right - kOuterMargin;
+    const int content_bottom = height - kOuterMargin;
     const int line_spacing = 4;
+    const int scrollbar_top = header_height + kOuterMargin;
+    const int scrollbar_height = std::max(80, content_bottom - scrollbar_top);
 
     app.thread_back_button = {{kOuterMargin, 10, 160, header_height - 20}, "< Back"};
     app.thread_settings_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, "Settings"};
+    app.thread_scrollbar_rect = {width - kOuterMargin - kThreadScrollbarWidth,
+                                 scrollbar_top,
+                                 kThreadScrollbarWidth,
+                                 scrollbar_height};
+    app.thread_scrollbar_thumb_rect = app.thread_scrollbar_rect;
     app.thread_post_hits.clear();
+    app.thread_page_count = 0;
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
@@ -1052,7 +1103,11 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     } else {
         std::vector<std::pair<const Bsky::Post*, int>> nodes;
         flatten_thread_posts(app.thread_result.root, 0, nodes);
-        for (const auto& node : nodes) {
+        const int total = static_cast<int>(nodes.size());
+        app.thread_page_start = clamp_thread_page_start(app.thread_page_start, total);
+        int rendered = 0;
+        for (int index = app.thread_page_start; index < total && cursor_y < content_bottom; ++index) {
+            const auto& node = nodes[index];
             Bsky::Post* post = const_cast<Bsky::Post*>(node.first);
             const int depth = node.second;
             const int indent = depth * 28;
@@ -1062,6 +1117,14 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
             const int width_for_post = std::max(120, content_width - indent);
             const int text_width_for_post = std::max(120, width_for_post - avatar_block_width);
             const int post_top = cursor_y;
+            const int needed = measure_thread_post_height(app,
+                                                          *post,
+                                                          depth > 0,
+                                                          text_width_for_post);
+
+            if (rendered > 0 && cursor_y + needed > content_bottom) {
+                break;
+            }
 
             if (depth > 0) {
                 rewrite_framebuffer_fill_rect(app.framebuffer,
@@ -1129,6 +1192,9 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
             font_draw_string(&app.text_fb, text_x, cursor_y, stats.c_str(), kColorMeta, COLOR_WHITE);
             const int stats_y = cursor_y;
             const int like_width = std::max(72, font_measure_string(like_label.c_str()) + 16);
+            const std::string middle_label = like_label + "  " + reply_label + "  ";
+            const int repost_x = text_x + font_measure_string(middle_label.c_str());
+            const int repost_width = std::max(72, font_measure_string(repost_label.c_str()) + 16);
             cursor_y += app.text_fb.font_h + 8;
 
             rewrite_framebuffer_fill_rect(app.framebuffer,
@@ -1137,16 +1203,44 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
             app.thread_post_hits.push_back({
                 rewrite_rect_t{x, post_top, width_for_post, cursor_y - post_top + 1},
                 make_stat_hit_rect(text_x, stats_y, like_width, app.text_fb.font_h),
+                make_stat_hit_rect(repost_x, stats_y, repost_width, app.text_fb.font_h),
                 make_stat_hit_rect(text_x, stats_y, font_measure_string(stats.c_str()) + 12, app.text_fb.font_h),
                 text_x,
                 stats_y,
                 post,
             });
             cursor_y += 12;
+            rendered++;
 
             if (cursor_y > height - kOuterMargin - app.text_fb.font_h) {
                 break;
             }
+        }
+
+        app.thread_page_count = rendered;
+
+        rewrite_framebuffer_fill_rect(app.framebuffer,
+                                      app.thread_scrollbar_rect,
+                                      0xDD);
+        draw_border(app, app.thread_scrollbar_rect, kColorPostBorder, 1);
+
+        if (total > 0 && rendered > 0) {
+            const int max_start = std::max(0, total - rendered);
+            const int thumb_height = std::max(40,
+                                              (app.thread_scrollbar_rect.height * rendered) /
+                                                  std::max(1, total));
+            const int travel = std::max(0, app.thread_scrollbar_rect.height - thumb_height);
+            int thumb_y = app.thread_scrollbar_rect.y;
+            if (max_start > 0 && travel > 0) {
+                thumb_y += (app.thread_page_start * travel) / max_start;
+            }
+            app.thread_scrollbar_thumb_rect = {app.thread_scrollbar_rect.x + 2,
+                                               thumb_y + 2,
+                                               std::max(4, app.thread_scrollbar_rect.width - 4),
+                                               std::max(12, thumb_height - 4)};
+            rewrite_framebuffer_fill_rect(app.framebuffer,
+                                          app.thread_scrollbar_thumb_rect,
+                                          kColorButtonPrimary);
         }
     }
 
@@ -1626,41 +1720,99 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
+            if (contains_point(rewrite_app.thread_scrollbar_rect, event.x, event.y)) {
+                std::vector<std::pair<const Bsky::Post*, int>> nodes;
+                if (rewrite_app.thread_result.state == rewrite_thread_state_t::loaded) {
+                    flatten_thread_posts(rewrite_app.thread_result.root, 0, nodes);
+                }
+                const int total = static_cast<int>(nodes.size());
+                const int visible = std::max(1, rewrite_app.thread_page_count);
+                const int max_start = std::max(0, total - visible);
+                if (max_start > 0 && rewrite_app.thread_scrollbar_rect.height > 1) {
+                    const int relative_y = std::max(0,
+                                                    std::min(event.y - rewrite_app.thread_scrollbar_rect.y,
+                                                             rewrite_app.thread_scrollbar_rect.height - 1));
+                    rewrite_app.thread_page_start = (relative_y * max_start) /
+                                                    std::max(1, rewrite_app.thread_scrollbar_rect.height - 1);
+                    render_thread_screen(rewrite_app, true);
+                } else {
+                    rewrite_app.status_line = "Thread already fits on-screen";
+                    rewrite_app.input_line = touch_message.str();
+                    render_thread_screen(rewrite_app, false);
+                }
+                continue;
+            }
+
             for (const auto& hit : rewrite_app.thread_post_hits) {
-                if (!hit.post || !contains_point(hit.like_rect, event.x, event.y)) {
+                if (!hit.post) {
                     continue;
                 }
 
                 Bsky::Post& post = *hit.post;
-                if (post.viewer_like.empty()) {
-                    post.like_count++;
-                    post.viewer_like = "pending-like";
-                    render_thread_stats_only(rewrite_app, hit);
-                    const auto action = rewrite_like_post(rewrite_app.bootstrap.session, post.uri, post.cid);
-                    apply_updated_session(rewrite_app, action.session, action.session_updated);
-                    if (action.ok) {
-                        post.viewer_like = action.record_uri;
-                    } else {
-                        post.viewer_like.clear();
-                        post.like_count--;
-                        std::fprintf(stderr, "rewrite action: thread like failed: %s\n", action.error_message.c_str());
-                    }
-                } else {
-                    const std::string old_uri = post.viewer_like;
-                    post.viewer_like.clear();
-                    post.like_count = std::max(0, post.like_count - 1);
-                    render_thread_stats_only(rewrite_app, hit);
-                    const auto action = rewrite_unlike_post(rewrite_app.bootstrap.session, old_uri);
-                    apply_updated_session(rewrite_app, action.session, action.session_updated);
-                    if (action.ok) {
-                    } else {
-                        post.viewer_like = old_uri;
+                if (contains_point(hit.like_rect, event.x, event.y)) {
+                    if (post.viewer_like.empty()) {
                         post.like_count++;
-                        std::fprintf(stderr, "rewrite action: thread unlike failed: %s\n", action.error_message.c_str());
+                        post.viewer_like = "pending-like";
+                        render_thread_stats_only(rewrite_app, hit);
+                        const auto action = rewrite_like_post(rewrite_app.bootstrap.session, post.uri, post.cid);
+                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        if (action.ok) {
+                            post.viewer_like = action.record_uri;
+                        } else {
+                            post.viewer_like.clear();
+                            post.like_count--;
+                            std::fprintf(stderr, "rewrite action: thread like failed: %s\n", action.error_message.c_str());
+                        }
+                    } else {
+                        const std::string old_uri = post.viewer_like;
+                        post.viewer_like.clear();
+                        post.like_count = std::max(0, post.like_count - 1);
+                        render_thread_stats_only(rewrite_app, hit);
+                        const auto action = rewrite_unlike_post(rewrite_app.bootstrap.session, old_uri);
+                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        if (action.ok) {
+                        } else {
+                            post.viewer_like = old_uri;
+                            post.like_count++;
+                            std::fprintf(stderr, "rewrite action: thread unlike failed: %s\n", action.error_message.c_str());
+                        }
                     }
+                    render_thread_stats_only(rewrite_app, hit);
+                    break;
                 }
-                render_thread_stats_only(rewrite_app, hit);
-                break;
+
+                if (contains_point(hit.repost_rect, event.x, event.y)) {
+                    if (post.viewer_repost.empty()) {
+                        post.repost_count++;
+                        post.viewer_repost = "pending-repost";
+                        render_thread_stats_only(rewrite_app, hit);
+                        const auto action = rewrite_repost_post(rewrite_app.bootstrap.session, post.uri, post.cid);
+                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        if (action.ok) {
+                            post.viewer_repost = action.record_uri;
+                        } else {
+                            post.viewer_repost.clear();
+                            post.repost_count--;
+                            std::fprintf(stderr, "rewrite action: thread repost failed: %s\n", action.error_message.c_str());
+                        }
+                    } else {
+                        const std::string old_uri = post.viewer_repost;
+                        post.viewer_repost.clear();
+                        post.repost_count = std::max(0, post.repost_count - 1);
+                        render_thread_stats_only(rewrite_app, hit);
+                        const auto action = rewrite_unrepost_post(rewrite_app.bootstrap.session, old_uri);
+                        apply_updated_session(rewrite_app, action.session, action.session_updated);
+                        if (action.ok) {
+                        } else {
+                            post.viewer_repost = old_uri;
+                            post.repost_count++;
+                            std::fprintf(stderr, "rewrite action: thread unrepost failed: %s\n", action.error_message.c_str());
+                        }
+                    }
+                    render_thread_stats_only(rewrite_app, hit);
+                    break;
+                }
+
             }
             continue;
         }

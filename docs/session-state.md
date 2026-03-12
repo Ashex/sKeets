@@ -86,11 +86,7 @@ requests instead of forcing a relogin.
 2. Async-loaded avatars and embeds repaint cleanly without objectionable full-screen artifacts
 3. Thread layouts remain stable when larger images load after initial render
 4. The cached JPEG coercion path remains robust across a wider mix of Bluesky CDN image URLs
-
-### Known open issues from device testing
-
-1. Feed repost/unrepost is implemented and verified, but thread view still only handles like/unlike taps. The thread UI renders a repost label, yet there is no thread-side input handler wired to `rewrite_repost_post()` / `rewrite_unrepost_post()`.
-2. Long thread views with more replies than fit on one screen have a layout/rendering bug where content appears to wrap and re-enter at the top of the screen instead of staying clipped or paged correctly. This needs investigation in the thread layout/pagination logic before richer thread interaction work.
+5. Newly landed thread fixes still need on-device validation: thread-side repost/unrepost taps are now wired, and long threads now use a right-side scrollbar with pre-measured clipping instead of bottom paging controls or drawing past the bottom edge
 
 ---
 
@@ -132,6 +128,8 @@ The main entry point for the rewrite app. Changes this session:
 - **CDN compatibility fix**: Rewrites Bluesky CDN image URLs to request `@jpeg` so the current decoder path can render avatars and embeds on-device.
 - **Thread media rendering**: The thread view now renders image embeds as well as feed cards, rather than dropping media after navigation.
 - **Async redraw handling**: Pumps Qt events in the main loop and triggers a repaint when `image_cache_redraw_needed()` signals that a download completed.
+- **Thread scrollbar and overflow fix**: Thread rendering now pre-measures each visible post, stops before drawing beyond the bottom edge, and uses a right-side scrollbar as the navigation surface for longer reply chains.
+- **Thread repost handling**: Thread stat hit targets now include repost/unrepost actions, matching the feed interaction surface.
 
 ### `src/util/image_cache.cpp` / `src/util/image.cpp`
 - The shared image cache now logs concise fetch/decode state, retries transient failures, reopens raw disk-cache files correctly, and normalizes Bluesky CDN image URLs to `@jpeg` before hashing, fetch, and cache storage.
@@ -242,7 +240,7 @@ Remaining polish:
 
 - Feed like/unlike and repost/unrepost use optimistic updates with rollback on failure
 - Thread view has tappable like targets
-- Thread view still does not wire repost/unrepost taps even though it renders a repost label
+- Thread view now has code-level repost/unrepost tap handling as well; this still needs device validation
 - Stats labels are word-based and more readable: `<Like>`, `Reply`, `<Repost>`
 - Post stat updates use localized partial refreshes instead of full-screen redraws
 - Active-state styling is clearer via flipped-caret labels while preserving stable hit-target widths
@@ -250,8 +248,8 @@ Remaining polish:
 ### 3. Next candidate milestone
 - Expand embed handling beyond the first image and simple placeholder-level quote/media rendering
 - Improve quote, external-card, and record-with-media rendering in both feed and thread views
-- Fix thread-view overflow/rendering so long reply chains do not wrap back to the top of the screen
-- Add thread-side repost/unrepost handling to match the feed interaction surface
+- Validate the new right-side thread scrollbar and thread repost behavior on-device
+- Defer a settings option for left-side scrollbar placement to a later phase if the current right-side default works well enough
 - Consider replacing the current feed-side reply filter with a richer policy once thread view is in place
 
 ---
