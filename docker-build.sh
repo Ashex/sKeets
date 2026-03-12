@@ -9,6 +9,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="skeets-cross"
 BUILD_DIR="${SCRIPT_DIR}/build-kobo"
+HOST_UID=1000
+HOST_GID=1000
+NINJA_PACKAGE_TARGET="${NINJA_PACKAGE_TARGET:-kobo-package}"
 
 echo "==> Building Docker cross-compilation image …"
 docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile.cross" "${SCRIPT_DIR}"
@@ -28,12 +31,13 @@ if [[ -z "${KOBO_SYSROOT:-}" && -f "${ROOTFS_IMG}" ]]; then
         docker run --rm --privileged \
             -v "${BUILD_DIR}:/work" \
             "${IMAGE_NAME}" \
-            bash -c '
+            bash -c "
                 mkdir -p /mnt/rootfs
                 mount -o loop,ro /work/rootfs.ext4 /mnt/rootfs
                 cp -a /mnt/rootfs/. /work/sysroot/
                 umount /mnt/rootfs
-            '
+                chown -R ${HOST_UID}:${HOST_GID} /work/sysroot
+            "
         rm -f "${BUILD_DIR}/rootfs.ext4"
         echo "==> Sysroot extracted to ${EXTRACTED_SYSROOT}"
     else
@@ -56,7 +60,9 @@ if [[ -n "${KOBO_SYSROOT:-}" ]]; then
 fi
 
 echo "==> Cross-compiling sKeets for Kobo …"
+echo "==> Packaging target: ${NINJA_PACKAGE_TARGET}"
 docker run --rm \
+    --user "${HOST_UID}:${HOST_GID}" \
     -v "${SCRIPT_DIR}:/src:ro" \
     -v "${BUILD_DIR}:/build" \
     "${SYSROOT_VOLUME[@]+"${SYSROOT_VOLUME[@]}"}" \
@@ -70,11 +76,10 @@ docker run --rm \
             -DCMAKE_PREFIX_PATH=/opt/qt6-armhf \
             -DQT_HOST_PATH=/opt/qt6-host \
             -GNinja \
-        && ninja -j$(nproc) \
-        && ninja kobo-package
+        && ninja -j$(nproc) '"${NINJA_PACKAGE_TARGET}"'
     '
 
 echo ""
 echo "Done!"
-echo "  Binary:  ${BUILD_DIR}/sKeets"
-echo "  Package: ${BUILD_DIR}/sKeets-koboroot.tgz"
+echo "  Binary:  ${BUILD_DIR}/bin/sKeets"
+echo "  Package: ${BUILD_DIR}/KoboRoot.tgz"

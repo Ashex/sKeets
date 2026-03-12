@@ -23,8 +23,9 @@ public:
     using ErrorCb       = std::function<void(const std::string& error)>;
     using SessionCb     = std::function<void(const Session&)>;
     using FeedCb        = std::function<void(const Feed&)>;
+    using FeedSourcesCb = std::function<void(const std::vector<FeedSource>&)>;
     using PostCb        = std::function<void(const Post&)>;
-    using PostCreatedCb = std::function<void(const std::string& uri, const std::string& cid)>;
+    using LikeCb        = std::function<void(const std::string& like_uri)>;
 
     explicit AtprotoClient(const std::string& serviceHost = DEFAULT_SERVICE_HOST,
                            QObject* parent = nullptr);
@@ -40,18 +41,41 @@ public:
     void resumeSession(const Session& session,
                        const SuccessCb& successCb, const ErrorCb& errorCb);
 
+    void restoreSession(const Session& session,
+                        const SessionCb& successCb, const ErrorCb& errorCb);
+
     void getTimeline(int limit, const std::optional<std::string>& cursor,
                      const FeedCb& successCb, const ErrorCb& errorCb);
+
+    void getCustomFeed(const std::string& feedUri,
+                       int limit,
+                       const std::optional<std::string>& cursor,
+                       const FeedCb& successCb,
+                       const ErrorCb& errorCb);
+
+    void getListFeed(const std::string& listUri,
+                     int limit,
+                     const std::optional<std::string>& cursor,
+                     const FeedCb& successCb,
+                     const ErrorCb& errorCb);
+
+    void getPinnedFeeds(const FeedSourcesCb& successCb,
+                        const ErrorCb& errorCb);
 
     void getPostThread(const std::string& uri,
                        const PostCb& successCb, const ErrorCb& errorCb);
 
-    void createPost(const std::string& text,
-                    const std::optional<std::string>& reply_parent_uri,
-                    const std::optional<std::string>& reply_parent_cid,
-                    const std::optional<std::string>& reply_root_uri,
-                    const std::optional<std::string>& reply_root_cid,
-                    const PostCreatedCb& successCb, const ErrorCb& errorCb);
+    void likePost(const std::string& uri, const std::string& cid,
+                  const LikeCb& successCb, const ErrorCb& errorCb);
+
+    void unlikePost(const std::string& like_uri,
+                    const SuccessCb& successCb, const ErrorCb& errorCb);
+
+    void repostPost(const std::string& uri, const std::string& cid,
+                    const LikeCb& successCb, const ErrorCb& errorCb);
+
+    void unrepostPost(const std::string& repost_uri,
+                      const SuccessCb& successCb, const ErrorCb& errorCb);
 
     bool hasSession() const;
 

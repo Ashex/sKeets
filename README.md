@@ -4,42 +4,67 @@ A [Bluesky](https://bsky.app) (ATProto) social client for the **Kobo Clara Colou
 
 ## Features
 
-- Login with Bluesky handle/email and app password
-- Scrollable home timeline feed
-- Post thread / comments view
-- Compose new posts and replies
+- Login via `login.txt` (see Getting Started below)
+- Scrollable home timeline feed with swipe gestures
+- Post thread / comments view with recursive reply display
 - Optional profile image and post image display (off by default)
-- Quote post rendering with visual indent
+- Quote post and external link rendering
+- Repost attribution display
 - Settings persistence via INI config file
 - Optimised for 1448×1072 e-ink display with MXCFB partial refresh
+
+## Getting Started
+
+### Authentication
+
+sKeets uses a `login.txt` file for initial authentication:
+
+1. Connect your Kobo device via USB
+2. Create the file `.adds/sKeets/login.txt` with the following content:
+   ```
+   handle=yourhandle.bsky.social
+   password=your-app-password
+   ```
+   Optional fields:
+   ```
+   pds_url=https://bsky.social
+   appview=https://api.bsky.app
+   ```
+3. Get an App Password from bsky.app → Settings → App Passwords
+4. Eject USB and restart sKeets
+
+After successful login, the `login.txt` file is automatically deleted and your session is saved to `config.ini`. On subsequent launches, sKeets uses the saved session tokens and refreshes them automatically before they expire.
 
 ## Project Structure
 
 ```
-apps/sKeets/
+sKeets/
 ├── CMakeLists.txt              Build system (C++23, Qt6, CMake 3.16+)
+├── run.sh                      Main Kobo launcher
+├── launch/                     NickelMenu-friendly launcher wrappers
+├── scripts/wifi/               Device Wi-Fi helper scripts
 ├── toolchain/
 │   └── arm-kobo-linux-gnueabihf.cmake  ARM cross-compilation toolchain
 ├── src/
-│   ├── main.cpp                  Entry point
-│   ├── app.h / app.cpp           App state machine & event loop
+│   ├── kobo/                   Main app entry points and feed/thread logic
+│   │   ├── main.cpp
+│   │   ├── bootstrap.h/cpp
+│   │   ├── actions.h/cpp
+│   │   ├── feed.h/cpp
+│   │   ├── thread.h/cpp
+│   │   ├── diag_main.cpp
+│   │   └── tool_main.cpp
+│   ├── platform/               Kobo hardware abstractions
+│   │   ├── device.h/cpp
+│   │   ├── framebuffer.h/cpp
+│   │   ├── input.h/cpp
+│   │   ├── network.h/cpp
+│   │   └── power.h/cpp
 │   ├── atproto/                ATProto / Bluesky API layer
-│   │   ├── atproto.h           Shared C++ data structures (Bsky namespace)
-│   │   ├── atproto_client.h/cpp  ATProto SDK wrapper (mfnboer/atproto)
-│   ├── ui/                     UI / rendering layer
-│   │   ├── fb.h/c              Framebuffer + MXCFB e-ink refresh
-│   │   ├── font.h/c            Embedded 8×16 bitmap font
-│   │   ├── input.h/c           Linux evdev touch & key input
-│   │   ├── views.h             Shared view enum & layout constants
-│   │   ├── login_view.h/c
-│   │   ├── feed_view.h/c
-│   │   ├── thread_view.h/c
-│   │   ├── compose_view.h/c
-│   │   └── settings_view.h/c
-│   └── util/
-│       ├── str.h/c             String utilities
-│       ├── config.h/c          INI-style config persistence
-│       └── image.h/c           Image download & decode (stb_image)
+│   ├── ui/                     Shared framebuffer/font helpers
+│   │   ├── fb.h/cpp
+│   │   └── font.h/cpp
+│   └── util/                   Config, image, path, and string utilities
 ```
 
 ## Prerequisites
@@ -66,12 +91,42 @@ A pre-built sysroot can be obtained from the
 
 ## Building
 
+### Docker build (recommended)
+
+Use `docker-build.sh` for a repeatable cross-compilation inside Docker. Build
+artifacts land in `build-kobo/`. To remove root-owned files left behind by
+Docker bind mounts, use `sudo rm -rf build-kobo`.
+
+```sh
+make build
+# Produces: build-kobo/KoboRoot.tgz
+
+./docker-build.sh
+# Produces: build-kobo/KoboRoot.tgz
+```
+
+The package currently boots a diagnostics entrypoint by default via
+`/mnt/onboard/.adds/sKeets/run.sh`. It also ships app-owned
+Wi-Fi lifecycle scripts under `/mnt/onboard/.adds/sKeets/scripts/wifi/`.
+Use `/mnt/onboard/.adds/sKeets/run.sh app` to launch the first
+app shell after Nickel is stopped.
+Use `/mnt/onboard/.adds/sKeets/run.sh fb-diag` to validate the
+framebuffer and refresh path with Nickel stopped.
+The package also installs these launcher helpers:
+- `/mnt/onboard/.adds/sKeets/launch-app.sh`
+- `/mnt/onboard/.adds/sKeets/launch-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-fb-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-input-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-power-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-network-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-phase2-diag.sh`
+
 ### Native (for development / testing on ARM Linux)
 
 ```sh
 mkdir build && cd build
-cmake ..
-make -j$(nproc)
+cmake .. -GNinja
+ninja -j$(nproc)
 ```
 
 ### Cross-compile for Kobo Clara Colour
@@ -80,34 +135,59 @@ make -j$(nproc)
 mkdir build-arm && cd build-arm
 cmake .. \
   -DCMAKE_TOOLCHAIN_FILE=../toolchain/arm-kobo-linux-gnueabihf.cmake \
-  -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
+  -DCMAKE_BUILD_TYPE=Release \
+  -GNinja
+ninja -j$(nproc)
 ```
 
 ### Create a KoboRoot package
 
 ```sh
-make kobo-package
-# Produces: build-arm/sKeets-koboroot.tgz
+ninja kobo-package
+# Produces: build-arm/KoboRoot.tgz
 ```
 
 ## Installation
 
-1. Copy `sKeets-koboroot.tgz` to the root of the Kobo's SD card (via USB).
-2. Safely eject the Kobo. The firmware will extract `KoboRoot.tgz` automatically on next boot.
+1. Copy `KoboRoot.tgz` to `/mnt/onboard/.kobo/KoboRoot.tgz` on the mounted Kobo storage (via USB).
+2. Safely eject the Kobo. The firmware will extract `KoboRoot.tgz` automatically on the next reboot.
 3. The binary lands at `/mnt/onboard/.adds/sKeets/sKeets`.
 4. Add a launcher entry via [NickelMenu](https://github.com/pgaskin/NickelMenu) or [KFMon](https://github.com/NiLuJe/kfmon).
 
-### NickelMenu entry (`/mnt/onboard/.adds/nm/sKeets`)
+### NickelMenu entries (`/mnt/onboard/.adds/nm/sKeets`)
 
 ```
-menu_item :main  :sKeets  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/run.sh
+menu_item :main  :sKeets sKeets      :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-app.sh
+menu_item :main  :sKeets Diag     :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-diag.sh
+menu_item :main  :sKeets FB Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-fb-diag.sh
+menu_item :main  :sKeets Input Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-input-diag.sh
+menu_item :main  :sKeets Power Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-power-diag.sh
+menu_item :main  :sKeets Network Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-network-diag.sh
+menu_item :main  :sKeets Phase2 Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-phase2-diag.sh
 ```
 
-The `run.sh` wrapper kills Nickel and its companion processes so sKeets can
+The packaged `run.sh` wrapper kills Nickel and its companion processes so sKeets can
 take over the framebuffer, feeds the hardware watchdog, and reboots the device
-on exit to bring Nickel back. The `:quiet` flag suppresses the PID notification
-popup. Logs are written to `/mnt/onboard/.adds/sKeets/sKeets.log`.
+on exit to bring Nickel back. The `launch-*.sh` helpers are the intended menu
+entrypoints. The `:quiet` flag suppresses the PID notification popup. Logs are
+written to `/mnt/onboard/.adds/sKeets/sKeets.log`.
+
+`sKeets App` stops Nickel, opens the framebuffer and input
+paths, reads local credentials from `/mnt/onboard/.adds/sKeets/login.txt`,
+persists local session state in `/mnt/onboard/.adds/sKeets/config.ini`,
+renders the bootstrap/auth shell, and lets you exit cleanly via the on-screen
+Exit button or the hardware power key.
+`sKeets Diag` only runs the environment and package diagnostics.
+`sKeets FB Diag` stops Nickel first, opens the framebuffer path,
+draws a simple grayscale test pattern, and logs refresh capability details.
+`sKeets Input Diag` stops Nickel first, grabs the selected input devices,
+logs the touch device selection, and listens briefly for raw touch transitions.
+`sKeets Power Diag` keeps Nickel running and reports battery state,
+charging state, standby support, and whether suspend is currently safe.
+`sKeets Network Diag` keeps Nickel running and reports radio presence,
+link state, assigned addresses, default-route availability, DNS resolution, and overall online state.
+`sKeets Phase2 Diag` stops Nickel once and runs the full Phase 2 diagnostic pass
+across framebuffer, input, power, and network in a single launch.
 
 ### KFMon entry (with app icon)
 
@@ -120,7 +200,7 @@ cover image in your library. Place a PNG on the Kobo and create a config file:
 ```ini
 [watch]
 filename = /mnt/onboard/sKeets.png
-action = /mnt/onboard/.adds/sKeets/sKeets
+action = /mnt/onboard/.adds/sKeets/launch-app.sh
 label = sKeets
 hidden = false
 ```
@@ -145,28 +225,34 @@ images_enabled=false
 All fields except `images_enabled` are written automatically by the login flow
 (see below). Tokens are stored in plain text. Use a dedicated
 [app password](https://bsky.app/settings/app-passwords) rather than your main
-account password.
+account password. Initial sign-in currently uses `login.txt`; `config.ini` is
+generated and updated by the app after a successful login.
+
+For development and future plugin migration work, the storage root can be
+overridden with the `SKEETS_DATA_DIR` environment variable. If unset, the app
+defaults to `/mnt/onboard/.adds/sKeets`.
 
 ### Quick Setup (pre-fill from computer)
 
 Typing on the Kobo's touch keyboard is slow. You can skip it entirely by
-pre-filling your credentials from a computer:
+pre-filling your credentials from a computer with `login.txt`:
 
 1. Connect the Kobo via USB and open the mounted drive.
-2. Create or edit `.adds/sKeets/config.ini` with a text editor:
+2. Create or edit `.adds/sKeets/login.txt` with a text editor:
 
    ```ini
    handle=you.bsky.social
-   app_password=xxxx-xxxx-xxxx-xxxx
+   password=xxxx-xxxx-xxxx-xxxx
    pds_url=
+   appview=https://api.bsky.app
    ```
 
    Leave `pds_url` blank for Bluesky accounts. Set it only for a self-hosted or
-   third-party PDS.
+   third-party PDS. `appview` is optional and can usually be left at the
+   default.
 3. Safely eject the Kobo and launch sKeets.
 4. The app reads the pre-filled credentials, logs in automatically, and
-   **removes `app_password` from the file** — it is never kept on disk after
-   the first launch.
+   **removes `login.txt` after a successful read**.
 
 If the auto-login fails (wrong password, network error, etc.) the login screen
 is shown with the handle already filled in so you only need to re-enter the
@@ -217,6 +303,15 @@ main.c
 The ATProto layer is synchronous (blocking HTTP). On slow networks or large
 feeds this may cause brief pauses; a future improvement would be to offload
 network calls to a background thread.
+
+## Nickel Plugin Port
+
+A real Nickel plugin port is not a drop-in build change. The public Kobo plugin
+examples target QWidget plugins on Qt Embedded 4.6, while sKeets currently uses
+Qt6. The backend now resolves config and cache paths at runtime so storage can
+be preserved during a future port, but the UI and build stack still need a
+separate Nickel-specific implementation. See `docs/plugin-port.md` for the
+constraints and migration plan.
 
 ## License
 

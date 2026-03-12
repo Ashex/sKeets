@@ -10,6 +10,8 @@
 
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QString>
 
 namespace Bsky {
@@ -22,6 +24,30 @@ static Author convertAuthor(const ATProto::AppBskyActor::ProfileViewBasic::Share
     au.display_name = a->mDisplayName.value_or(QString{}).toStdString();
     au.avatar_url   = a->mAvatar.value_or(QString{}).toStdString();
     return au;
+}
+
+static std::shared_ptr<Post> convertQuotedRecord(const ATProto::AppBskyEmbed::RecordView::SharedPtr& rv) {
+    if (!rv) return nullptr;
+    if (rv->mRecordType != ATProto::RecordType::APP_BSKY_EMBED_RECORD_VIEW_RECORD) {
+        return nullptr;
+    }
+
+    auto* vrr = std::get_if<ATProto::AppBskyEmbed::RecordViewRecord::SharedPtr>(&rv->mRecord);
+    if (!vrr || !*vrr) {
+        return nullptr;
+    }
+
+    auto qp = std::make_shared<Post>();
+    qp->uri = (*vrr)->mUri.toStdString();
+    qp->cid = (*vrr)->mCid.toStdString();
+    qp->author = convertAuthor((*vrr)->mAuthor);
+    if ((*vrr)->mValueType == ATProto::RecordType::APP_BSKY_FEED_POST) {
+        auto* vpost = std::get_if<ATProto::AppBskyFeed::Record::Post::SharedPtr>(&(*vrr)->mValue);
+        if (vpost && *vpost) {
+            qp->text = (*vpost)->mText.toStdString();
+        }
+    }
+    return qp;
 }
 
 static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv) {
@@ -49,32 +75,43 @@ static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv)
     p.reply_count  = pv->mReplyCount;
     p.repost_count = pv->mRepostCount;
 
+    if (pv->mViewer) {
+        if (pv->mViewer->mLike)   p.viewer_like   = pv->mViewer->mLike->toStdString();
+        if (pv->mViewer->mRepost) p.viewer_repost = pv->mViewer->mRepost->toStdString();
+    }
+
+    for (const auto& label : pv->mLabels) {
+        if (!label || label->mNeg) {
+            continue;
+        }
+        p.moderation_labels.push_back(label->mVal.toStdString());
+    }
+
     if (pv->mEmbed) {
         if (pv->mEmbed->mType == ATProto::AppBskyEmbed::EmbedViewType::IMAGES_VIEW) {
             p.embed_type = EmbedType::Image;
             auto* iv = std::get_if<ATProto::AppBskyEmbed::ImagesView::SharedPtr>(&pv->mEmbed->mEmbed);
             if (iv && *iv) {
-                for (auto& img : (*iv)->mImages)
+                for (auto& img : (*iv)->mImages) {
                     p.image_urls.push_back(img->mThumb.toStdString());
+                    p.image_alts.push_back(img->mAlt.toStdString());
+                }
+            }
+        } else if (pv->mEmbed->mType == ATProto::AppBskyEmbed::EmbedViewType::VIDEO_VIEW) {
+            p.embed_type = EmbedType::Video;
+            auto* vv = std::get_if<ATProto::AppBskyEmbed::VideoView::SharedPtr>(&pv->mEmbed->mEmbed);
+            if (vv && *vv) {
+                p.media_preview_url = (*vv)->mThumbnail.value_or(QString{}).toStdString();
+                p.media_alt_text = (*vv)->mAlt.value_or(QString{}).toStdString();
+                const bool is_gif = (*vv)->mPresentation &&
+                    *(*vv)->mPresentation == ATProto::AppBskyEmbed::VideoPresentation::GIF;
+                p.media_label = is_gif ? "Animated media" : "Video";
             }
         } else if (pv->mEmbed->mType == ATProto::AppBskyEmbed::EmbedViewType::RECORD_VIEW) {
             p.embed_type = EmbedType::Quote;
             auto* rv = std::get_if<ATProto::AppBskyEmbed::RecordView::SharedPtr>(&pv->mEmbed->mEmbed);
             if (rv && *rv) {
-                if ((*rv)->mRecordType == ATProto::RecordType::APP_BSKY_EMBED_RECORD_VIEW_RECORD) {
-                    auto* vrr = std::get_if<ATProto::AppBskyEmbed::RecordViewRecord::SharedPtr>(&(*rv)->mRecord);
-                    if (vrr && *vrr) {
-                        auto qp = std::make_shared<Post>();
-                        qp->uri    = (*vrr)->mUri.toStdString();
-                        qp->cid    = (*vrr)->mCid.toStdString();
-                        qp->author = convertAuthor((*vrr)->mAuthor);
-                        if ((*vrr)->mValueType == ATProto::RecordType::APP_BSKY_FEED_POST) {
-                            auto* vpost = std::get_if<ATProto::AppBskyFeed::Record::Post::SharedPtr>(&(*vrr)->mValue);
-                            if (vpost && *vpost) qp->text = (*vpost)->mText.toStdString();
-                        }
-                        p.quoted_post = std::move(qp);
-                    }
-                }
+                p.quoted_post = convertQuotedRecord(*rv);
             }
         } else if (pv->mEmbed->mType == ATProto::AppBskyEmbed::EmbedViewType::EXTERNAL_VIEW) {
             p.embed_type = EmbedType::External;
@@ -89,17 +126,91 @@ static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv)
             p.embed_type = EmbedType::RecordWithMedia;
             auto* rmv = std::get_if<ATProto::AppBskyEmbed::RecordWithMediaView::SharedPtr>(&pv->mEmbed->mEmbed);
             if (rmv && *rmv) {
+                p.quoted_post = convertQuotedRecord((*rmv)->mRecord);
                 if ((*rmv)->mMediaType == ATProto::AppBskyEmbed::EmbedViewType::IMAGES_VIEW) {
                     auto* iv2 = std::get_if<ATProto::AppBskyEmbed::ImagesView::SharedPtr>(&(*rmv)->mMedia);
                     if (iv2 && *iv2) {
-                        for (auto& img : (*iv2)->mImages)
+                        for (auto& img : (*iv2)->mImages) {
                             p.image_urls.push_back(img->mThumb.toStdString());
+                            p.image_alts.push_back(img->mAlt.toStdString());
+                        }
+                    }
+                } else if ((*rmv)->mMediaType == ATProto::AppBskyEmbed::EmbedViewType::VIDEO_VIEW) {
+                    auto* vv2 = std::get_if<ATProto::AppBskyEmbed::VideoView::SharedPtr>(&(*rmv)->mMedia);
+                    if (vv2 && *vv2) {
+                        p.media_preview_url = (*vv2)->mThumbnail.value_or(QString{}).toStdString();
+                        p.media_alt_text = (*vv2)->mAlt.value_or(QString{}).toStdString();
+                        const bool is_gif = (*vv2)->mPresentation &&
+                            *(*vv2)->mPresentation == ATProto::AppBskyEmbed::VideoPresentation::GIF;
+                        p.media_label = is_gif ? "Animated media" : "Video";
+                    }
+                } else if ((*rmv)->mMediaType == ATProto::AppBskyEmbed::EmbedViewType::EXTERNAL_VIEW) {
+                    auto* ev2 = std::get_if<ATProto::AppBskyEmbed::ExternalView::SharedPtr>(&(*rmv)->mMedia);
+                    if (ev2 && *ev2 && (*ev2)->mExternal) {
+                        p.ext_uri = (*ev2)->mExternal->mUri.toStdString();
+                        p.ext_title = (*ev2)->mExternal->mTitle.toStdString();
+                        p.ext_description = (*ev2)->mExternal->mDescription.toStdString();
+                        p.ext_thumb_url = (*ev2)->mExternal->mThumb.value_or(QString{}).toStdString();
                     }
                 }
             }
         }
     }
     return p;
+}
+
+static Session convertSession(const ATProto::ComATProtoServer::Session* session,
+                              const std::string& fallback_host,
+                              const std::string& appview_url,
+                              const Session* fallback_session = nullptr) {
+    Session out;
+    if (fallback_session) {
+        out = *fallback_session;
+    }
+    out.appview_url = appview_url;
+    if (!session) {
+        return out;
+    }
+
+    out.access_jwt = session->mAccessJwt.toStdString();
+    out.refresh_jwt = session->mRefreshJwt.toStdString();
+    out.did = session->mDid.toStdString();
+    out.handle = session->mHandle.toStdString();
+
+    auto pds = session->getPDS();
+    if (pds) {
+        out.pds_url = pds->toStdString();
+    }
+    if (out.pds_url.empty()) {
+        out.pds_url = fallback_host;
+    }
+
+    return out;
+}
+
+static Feed convertOutputFeed(const ATProto::AppBskyFeed::OutputFeed::SharedPtr& output) {
+    Feed feed;
+    if (!output) {
+        return feed;
+    }
+
+    feed.cursor = output->mCursor.value_or(QString{}).toStdString();
+    for (auto& item : output->mFeed) {
+        if (!item || !item->mPost) {
+            continue;
+        }
+
+        Post post = convertPostView(item->mPost);
+        if (item->mReason) {
+            auto* repost = std::get_if<ATProto::AppBskyFeed::ReasonRepost::SharedPtr>(&*item->mReason);
+            if (repost && *repost && (*repost)->mBy) {
+                post.reposted_by = (*repost)->mBy->mHandle.toStdString();
+            }
+        }
+        feed.items.push_back(std::move(post));
+    }
+
+    return feed;
 }
 
 AtprotoClient::AtprotoClient(const std::string& serviceHost, QObject* parent)
@@ -122,6 +233,45 @@ void AtprotoClient::changeHost(const std::string& newHost) {
 
 void AtprotoClient::createSession(const std::string& identifier, const std::string& password,
                                    const SessionCb& successCb, const ErrorCb& errorCb) {
+    if (!mHost.empty() && mHost != DEFAULT_SERVICE_HOST) {
+        auto xrpc = std::make_unique<Xrpc::Client>(QString::fromStdString(mHost));
+        QEventLoop loop;
+        QJsonObject root;
+        root.insert("identifier", QString::fromStdString(identifier));
+        root.insert("password", QString::fromStdString(password));
+
+        xrpc->post("com.atproto.server.createSession", QJsonDocument(root), {},
+            [this, &loop, successCb](ATProto::ComATProtoServer::Session::SharedPtr session) {
+                if (!session) {
+                    if (successCb) successCb(Session{});
+                    loop.quit();
+                    return;
+                }
+
+                Session sess = convertSession(session.get(), mHost, {});
+
+                if (sess.pds_url != mHost)
+                    changeHost(sess.pds_url);
+
+                mClient->setSession(std::move(session));
+                successCb(sess);
+                loop.quit();
+            },
+            [&loop, errorCb](const QString& err, const QJsonDocument& json) {
+                QString msg = err;
+                if (json.isObject()) {
+                    const QJsonObject obj = json.object();
+                    const QString serverMsg = obj.value("message").toString();
+                    if (!serverMsg.isEmpty())
+                        msg = serverMsg;
+                }
+                errorCb(msg.toStdString());
+                loop.quit();
+            });
+        loop.exec();
+        return;
+    }
+
     QEventLoop loop;
     mClient->createSession(
         QString::fromStdString(identifier),
@@ -129,19 +279,10 @@ void AtprotoClient::createSession(const std::string& identifier, const std::stri
         std::nullopt, // authFactorToken (2FA)
         [this, &loop, successCb]() {
             auto* s = mClient->getSession();
-            Session sess;
-            sess.access_jwt   = s->mAccessJwt.toStdString();
-            sess.refresh_jwt  = s->mRefreshJwt.toStdString();
-            sess.did          = s->mDid.toStdString();
-            sess.handle       = s->mHandle.toStdString();
-
-            auto pds = s->getPDS();
-            if (pds) {
-                sess.pds_url = pds->toStdString();
+            Session sess = convertSession(s, mHost, {});
+            if (!sess.pds_url.empty() && sess.pds_url != mHost) {
                 changeHost(sess.pds_url);
             }
-            if (sess.pds_url.empty())
-                sess.pds_url = mHost;
 
             successCb(sess);
             loop.quit();
@@ -171,6 +312,32 @@ void AtprotoClient::resumeSession(const Session& session,
     loop.exec();
 }
 
+void AtprotoClient::restoreSession(const Session& session,
+                                   const SessionCb& successCb, const ErrorCb& errorCb) {
+    auto sdkSession = std::make_shared<ATProto::ComATProtoServer::Session>();
+    sdkSession->mAccessJwt = QString::fromStdString(session.access_jwt);
+    sdkSession->mRefreshJwt = QString::fromStdString(session.refresh_jwt);
+    sdkSession->mDid = QString::fromStdString(session.did);
+    sdkSession->mHandle = QString::fromStdString(session.handle);
+
+    QEventLoop loop;
+    mClient->resumeAndRefreshSession(*sdkSession,
+        [this, &loop, &session, successCb]() {
+            Session restored = convertSession(mClient->getSession(), mHost, session.appview_url, &session);
+            if (successCb) {
+                successCb(restored);
+            }
+            loop.quit();
+        },
+        [&loop, errorCb](const QString& err, const QString& msg) {
+            if (errorCb) {
+                errorCb((err + ": " + msg).toStdString());
+            }
+            loop.quit();
+        });
+    loop.exec();
+}
+
 void AtprotoClient::getTimeline(int limit, const std::optional<std::string>& cursor,
                                  const FeedCb& successCb, const ErrorCb& errorCb) {
     std::optional<QString> sdkCursor;
@@ -179,15 +346,7 @@ void AtprotoClient::getTimeline(int limit, const std::optional<std::string>& cur
     QEventLoop loop;
     mClient->getTimeline(limit, sdkCursor,
         [&loop, successCb](ATProto::AppBskyFeed::OutputFeed::SharedPtr output) {
-            Feed feed;
-            if (output) {
-                feed.cursor = output->mCursor.value_or(QString{}).toStdString();
-                for (auto& item : output->mFeed) {
-                    if (!item || !item->mPost) continue;
-                    feed.items.push_back(convertPostView(item->mPost));
-                }
-            }
-            successCb(feed);
+            successCb(convertOutputFeed(output));
             loop.quit();
         },
         [&loop, errorCb](const QString& err, const QString& msg) {
@@ -195,6 +354,150 @@ void AtprotoClient::getTimeline(int limit, const std::optional<std::string>& cur
             loop.quit();
         });
     loop.exec();
+}
+
+void AtprotoClient::getCustomFeed(const std::string& feedUri,
+                                  int limit,
+                                  const std::optional<std::string>& cursor,
+                                  const FeedCb& successCb,
+                                  const ErrorCb& errorCb) {
+    std::optional<QString> sdkCursor;
+    if (cursor) sdkCursor = QString::fromStdString(*cursor);
+
+    QEventLoop loop;
+    mClient->getFeed(QString::fromStdString(feedUri),
+                     limit,
+                     sdkCursor,
+                     {},
+                     [&loop, successCb](ATProto::AppBskyFeed::OutputFeed::SharedPtr output) {
+                         successCb(convertOutputFeed(output));
+                         loop.quit();
+                     },
+                     [&loop, errorCb](const QString& err, const QString& msg) {
+                         errorCb((err + ": " + msg).toStdString());
+                         loop.quit();
+                     });
+    loop.exec();
+}
+
+void AtprotoClient::getListFeed(const std::string& listUri,
+                                int limit,
+                                const std::optional<std::string>& cursor,
+                                const FeedCb& successCb,
+                                const ErrorCb& errorCb) {
+    std::optional<QString> sdkCursor;
+    if (cursor) sdkCursor = QString::fromStdString(*cursor);
+
+    QEventLoop loop;
+    mClient->getListFeed(QString::fromStdString(listUri),
+                         limit,
+                         sdkCursor,
+                         {},
+                         [&loop, successCb](ATProto::AppBskyFeed::OutputFeed::SharedPtr output) {
+                             successCb(convertOutputFeed(output));
+                             loop.quit();
+                         },
+                         [&loop, errorCb](const QString& err, const QString& msg) {
+                             errorCb((err + ": " + msg).toStdString());
+                             loop.quit();
+                         });
+    loop.exec();
+}
+
+void AtprotoClient::getPinnedFeeds(const FeedSourcesCb& successCb,
+                                   const ErrorCb& errorCb) {
+    QEventLoop loop;
+    mClient->getPreferences(
+        [this, &loop, successCb](ATProto::UserPreferences prefs) {
+            std::vector<FeedSource> feeds;
+            feeds.push_back({FeedSourceKind::timeline, {}, "Followers", "Default home timeline", true});
+
+            std::vector<QString> generatorUris;
+            std::vector<size_t> generatorIndices;
+            const auto& savedFeeds = prefs.getSavedFeedsPrefV2().mItems;
+            for (const auto& item : savedFeeds) {
+                if (!item || !item->mPinned) {
+                    continue;
+                }
+
+                if (item->mType == ATProto::AppBskyActor::SavedFeedType::TIMELINE) {
+                    continue;
+                }
+
+                FeedSource source;
+                source.uri = item->mValue.toStdString();
+                source.pinned = true;
+
+                if (item->mType == ATProto::AppBskyActor::SavedFeedType::FEED) {
+                    source.kind = FeedSourceKind::generator;
+                    source.display_name = "Pinned feed";
+                    source.subtitle = source.uri;
+                    generatorIndices.push_back(feeds.size());
+                    generatorUris.push_back(item->mValue);
+                } else if (item->mType == ATProto::AppBskyActor::SavedFeedType::LIST) {
+                    source.kind = FeedSourceKind::list;
+                    source.display_name = "Pinned list";
+                    source.subtitle = source.uri;
+                } else {
+                    continue;
+                }
+
+                feeds.push_back(std::move(source));
+            }
+
+            if (generatorUris.empty()) {
+                successCb(feeds);
+                loop.quit();
+                return;
+            }
+
+            mClient->getFeedGenerators(
+                generatorUris,
+                [&loop, successCb, feeds = std::move(feeds), generatorIndices](ATProto::AppBskyFeed::GetFeedGeneratorsOutput::SharedPtr output) mutable {
+                    if (output) {
+                        const size_t count = std::min(output->mFeeds.size(), generatorIndices.size());
+                        for (size_t index = 0; index < count; ++index) {
+                            const auto& view = output->mFeeds[index];
+                            if (!view) {
+                                continue;
+                            }
+                            FeedSource& source = feeds[generatorIndices[index]];
+                            source.display_name = view->mDisplayName.toStdString();
+                            if (view->mCreator) {
+                                const std::string handle = view->mCreator->mHandle.toStdString();
+                                source.subtitle = handle.empty() ? source.uri : ("@" + handle);
+                            } else {
+                                source.subtitle = source.uri;
+                            }
+                        }
+                    }
+                    successCb(feeds);
+                    loop.quit();
+                },
+                [&loop, successCb, feeds = std::move(feeds)](const QString&, const QString&) mutable {
+                    successCb(feeds);
+                    loop.quit();
+                });
+        },
+        [&loop, errorCb](const QString& err, const QString& msg) {
+            errorCb((err + ": " + msg).toStdString());
+            loop.quit();
+        });
+    loop.exec();
+}
+
+static void flattenReplies(const ATProto::AppBskyFeed::ThreadViewPost::SharedPtr& tvp,
+                           Post& post, int depth) {
+    if (!tvp || depth > 10) return;
+    for (auto& reply : tvp->mReplies) {
+        if (!reply) continue;
+        if (reply->mType != ATProto::AppBskyFeed::PostElementType::THREAD_VIEW_POST) continue;
+        auto* rtvp = std::get_if<ATProto::AppBskyFeed::ThreadViewPost::SharedPtr>(&reply->mPost);
+        if (!rtvp || !*rtvp || !(*rtvp)->mPost) continue;
+        auto child = std::make_shared<Post>(convertPostView((*rtvp)->mPost));
+        flattenReplies(*rtvp, *child, depth + 1);
+        post.replies.push_back(std::move(child));
+    }
 }
 
 void AtprotoClient::getPostThread(const std::string& uri,
@@ -208,14 +511,7 @@ void AtprotoClient::getPostThread(const std::string& uri,
                 auto* tvp = std::get_if<ATProto::AppBskyFeed::ThreadViewPost::SharedPtr>(&thread->mThread->mPost);
                 if (tvp && *tvp && (*tvp)->mPost) {
                     Post root = convertPostView((*tvp)->mPost);
-                    for (auto& reply : (*tvp)->mReplies) {
-                        if (!reply) continue;
-                        if (reply->mType == ATProto::AppBskyFeed::PostElementType::THREAD_VIEW_POST) {
-                            auto* rtvp = std::get_if<ATProto::AppBskyFeed::ThreadViewPost::SharedPtr>(&reply->mPost);
-                            if (rtvp && *rtvp && (*rtvp)->mPost)
-                                root.replies.push_back(std::make_shared<Post>(convertPostView((*rtvp)->mPost)));
-                        }
-                    }
+                    flattenReplies(*tvp, root, 0);
                     successCb(root);
                     loop.quit();
                     return;
@@ -231,45 +527,68 @@ void AtprotoClient::getPostThread(const std::string& uri,
     loop.exec();
 }
 
-void AtprotoClient::createPost(const std::string& text,
-                                const std::optional<std::string>& reply_parent_uri,
-                                const std::optional<std::string>& reply_parent_cid,
-                                const std::optional<std::string>& reply_root_uri,
-                                const std::optional<std::string>& reply_root_cid,
-                                const PostCreatedCb& successCb, const ErrorCb& errorCb) {
+bool AtprotoClient::hasSession() const {
+    return mClient && mClient->getSession() != nullptr;
+}
+
+void AtprotoClient::likePost(const std::string& uri, const std::string& cid,
+                              const LikeCb& successCb, const ErrorCb& errorCb) {
     ATProto::PostMaster pm(*mClient);
-
-    ATProto::AppBskyFeed::PostReplyRef::SharedPtr replyRef;
-    if (reply_parent_uri && reply_parent_cid && reply_root_uri && reply_root_cid) {
-        replyRef = ATProto::PostMaster::createReplyRef(
-            QString::fromStdString(*reply_parent_uri),
-            QString::fromStdString(*reply_parent_cid),
-            QString::fromStdString(*reply_root_uri),
-            QString::fromStdString(*reply_root_cid));
-    }
-
     QEventLoop loop;
-    pm.createPost(
-        QString::fromStdString(text),
-        DEFAULT_POST_LANGUAGE,
-        replyRef,
-        {},
-        [&pm, &loop, successCb, errorCb](ATProto::AppBskyFeed::Record::Post::SharedPtr post) {
-            pm.post(*post,
-                [&loop, successCb](const QString& uri, const QString& cid) {
-                    successCb(uri.toStdString(), cid.toStdString());
-                    loop.quit();
-                },
-                [&loop, errorCb](const QString& err, const QString& msg) {
-                    errorCb((err + ": " + msg).toStdString());
-                    loop.quit();
-                });
+    pm.like(QString::fromStdString(uri), QString::fromStdString(cid),
+        QString(), QString(),
+        [&loop, successCb](const QString& like_uri, const QString&) {
+            successCb(like_uri.toStdString());
+            loop.quit();
+        },
+        [&loop, errorCb](const QString& err, const QString& msg) {
+            errorCb((err + ": " + msg).toStdString());
+            loop.quit();
         });
     loop.exec();
 }
 
-bool AtprotoClient::hasSession() const {
-    return mClient && mClient->getSession() != nullptr;
+void AtprotoClient::unlikePost(const std::string& like_uri,
+                                const SuccessCb& successCb, const ErrorCb& errorCb) {
+    ATProto::PostMaster pm(*mClient);
+    QEventLoop loop;
+    pm.undo(QString::fromStdString(like_uri),
+        [&loop, successCb]() { successCb(); loop.quit(); },
+        [&loop, errorCb](const QString& err, const QString& msg) {
+            errorCb((err + ": " + msg).toStdString());
+            loop.quit();
+        });
+    loop.exec();
+}
+
+void AtprotoClient::repostPost(const std::string& uri, const std::string& cid,
+                                const LikeCb& successCb, const ErrorCb& errorCb) {
+    ATProto::PostMaster pm(*mClient);
+    QEventLoop loop;
+    pm.repost(QString::fromStdString(uri), QString::fromStdString(cid),
+        QString(), QString(),
+        [&loop, successCb](const QString& repost_uri, const QString&) {
+            successCb(repost_uri.toStdString());
+            loop.quit();
+        },
+        [&loop, errorCb](const QString& err, const QString& msg) {
+            errorCb((err + ": " + msg).toStdString());
+            loop.quit();
+        });
+    loop.exec();
+}
+
+void AtprotoClient::unrepostPost(const std::string& repost_uri,
+                                  const SuccessCb& successCb, const ErrorCb& errorCb) {
+    ATProto::PostMaster pm(*mClient);
+    QEventLoop loop;
+    pm.undo(QString::fromStdString(repost_uri),
+        [&loop, successCb]() { successCb(); loop.quit(); },
+        [&loop, errorCb](const QString& err, const QString& msg) {
+            errorCb((err + ": " + msg).toStdString());
+            loop.quit();
+        });
+    loop.exec();
 }
 
 } // namespace Bsky

@@ -130,6 +130,11 @@ RUN dpkg --add-architecture armhf \
         zlib1g-dev:armhf \
     && rm -rf /var/lib/apt/lists/*
 
+# Rebuild the CA bundle from the individual .pem files in /etc/ssl/certs.
+# Ubuntu 24.04's update-ca-certificates silently omits some certs
+# (including ISRG Root X1/X2) from the concatenated bundle.
+RUN cat /etc/ssl/certs/*.pem > /etc/ssl/certs/ca-certificates.crt
+
 # Qt6 6.5.2: host tools (native) + armhf target libraries
 COPY --from=qt-host-builder /opt/qt6-host /opt/qt6-host
 COPY --from=qt-target-builder /opt/qt6-armhf /opt/qt6-armhf

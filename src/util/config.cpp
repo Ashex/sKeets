@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_MAX_ENTRIES 64
+#define CONFIG_MAX_ENTRIES 128
 
 typedef struct {
     char key[CONFIG_MAX_KEY];

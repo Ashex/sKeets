@@ -23,6 +23,7 @@
  *   - scale_w / scale_h: maximum dimensions for pre-scaling on insert.
  *     Pass 0,0 to store at original resolution. */
 const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h);
+const image_t *image_cache_lookup_avatar(const char *url, int scale_w, int scale_h);
 
 /* Returns true (and clears the flag) when at least one new image has
  * become ready since the last call. */
@@ -30,5 +31,6 @@ bool image_cache_redraw_needed();
 
 /* Discard all in-flight requests and cached images. */
 void image_cache_clear();
+void image_cache_delete_disk(bool include_embeds, bool include_avatars);
 
 #endif /* SKEETS_IMAGE_CACHE_H */

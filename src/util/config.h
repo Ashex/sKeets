@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define CONFIG_PATH "/mnt/onboard/.adds/sKeets/config.ini"
 #define CONFIG_MAX_KEY   64
 #define CONFIG_MAX_VALUE 2048
 

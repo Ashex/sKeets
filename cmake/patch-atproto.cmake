@@ -32,6 +32,18 @@ file(WRITE CMakeLists.txt "${_top}")
 # ── 1. Patch lib/CMakeLists.txt ──────────────────────────────────────────────
 file(READ lib/CMakeLists.txt _content)
 
+string(REPLACE
+    "find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Core Network)"
+    "find_package(Qt6 REQUIRED COMPONENTS Core Network Qml)"
+    _content "${_content}"
+)
+
+string(REPLACE
+    "find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2 Core Network)"
+    "find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network Qml)"
+    _content "${_content}"
+)
+
 # 1a. Insert "VERSION 1.0" right after the module target name
 string(REPLACE
     "qt_add_qml_module(libatproto\n    URI atproto.lib"
@@ -57,6 +69,18 @@ string(REPLACE
 string(REPLACE
     "set(COVERAGE_LIB -lgcov)"
     "# set(COVERAGE_LIB -lgcov)  # disabled for cross-compilation"
+    _content "${_content}"
+)
+
+string(REPLACE
+    "target_link_libraries(libatproto PRIVATE\n    Qt6::Quick\n    Qt6::QuickControls2\n    Qt6::Core\n    Qt6::Network\n    ${COVERAGE_LIB}\n)"
+    "target_link_libraries(libatproto PRIVATE\n    Qt6::Core\n    Qt6::Network\n    Qt6::Qml\n    ${COVERAGE_LIB}\n)"
+    _content "${_content}"
+)
+
+string(REPLACE
+    "target_link_libraries(libatproto PRIVATE\n    Qt6::Quick\n    Qt6::QuickControls2\n    Qt6::Core\n    Qt6::Network\n)"
+    "target_link_libraries(libatproto PRIVATE\n    Qt6::Core\n    Qt6::Network\n    Qt6::Qml\n)"
     _content "${_content}"
 )
 

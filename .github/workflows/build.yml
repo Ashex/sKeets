@@ -34,19 +34,19 @@ jobs:
             -GNinja
 
       - name: Build
-        run: ninja -C build -j$(nproc)
+        run: ninja -C build -j$(nproc) sKeets sKeets_diag sKeets_tool
 
       - name: Package
         run: ninja -C build kobo-package
 
       - name: Verify output
         run: |
-          ls -lh build/sKeets build/sKeets-koboroot.tgz
+          ls -lh build/bin/sKeets build/KoboRoot.tgz
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: sKeets-kobo
           path: |
-            build/sKeets
-            build/sKeets-koboroot.tgz
+            build/bin/sKeets
+            build/KoboRoot.tgz
