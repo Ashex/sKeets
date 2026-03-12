@@ -21,8 +21,14 @@ struct skeets_feed_result_t {
     bool session_updated = false;
 };
 
-/// Fetch the home timeline for an authenticated session.
+/// Fetch a timeline, custom feed, or pinned list for an authenticated session.
 /// Creates a fresh AtprotoClient internally (synchronous, blocks via QEventLoop).
 skeets_feed_result_t skeets_fetch_feed(const Bsky::Session& session,
-                                          int limit = 30,
-                                          const std::string& cursor = {});
+                                       const Bsky::FeedSource& source = {},
+                                       int limit = 30,
+                                       const std::string& cursor = {});
+
+std::vector<Bsky::FeedSource> skeets_fetch_pinned_feeds(const Bsky::Session& session,
+                                                        Bsky::Session* updated_session = nullptr,
+                                                        bool* session_updated = nullptr,
+                                                        std::string* error_message = nullptr);

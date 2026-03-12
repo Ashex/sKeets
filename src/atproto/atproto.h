@@ -46,6 +46,20 @@ struct Feed {
     std::string       cursor;
 };
 
+enum class FeedSourceKind {
+    timeline,
+    generator,
+    list,
+};
+
+struct FeedSource {
+    FeedSourceKind kind = FeedSourceKind::timeline;
+    std::string uri;
+    std::string display_name;
+    std::string subtitle;
+    bool pinned = false;
+};
+
 struct Session {
     std::string access_jwt;
     std::string refresh_jwt;

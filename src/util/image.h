@@ -14,12 +14,18 @@ typedef struct {
     int      height;
 } image_t;
 
+typedef enum {
+    IMAGE_CACHE_KIND_EMBED = 0,
+    IMAGE_CACHE_KIND_AVATAR = 1,
+} image_cache_kind_t;
+
 /*
  * Download an image from url and decode it.
  * Returns 0 on success and fills *out.
  * The pixel buffer is heap-allocated; call image_free() when done.
  */
 int image_load_url(const char *url, image_t *out);
+int image_load_url_with_kind(const char *url, image_cache_kind_t kind, image_t *out);
 
 /*
  * Decode a local file path.
@@ -39,6 +45,7 @@ void image_free(image_t *img);
 
 /* Build the cache file path for a URL (URL hash-based). */
 void image_cache_path(const char *url, char *out_path, int out_size);
+void image_cache_path_with_kind(const char *url, image_cache_kind_t kind, char *out_path, int out_size);
 
 /* Decode raw RGBA bytes from a QByteArray (JPEG/PNG/etc.).
  * Returns 0 on success, fills *out. Caller must image_free(). */
@@ -46,9 +53,11 @@ int image_decode_memory(const uint8_t *data, int len, image_t *out);
 
 /* Write image to disk cache for the given URL. */
 void image_write_disk_cache(const char *url, const image_t *img);
+void image_write_disk_cache_with_kind(const char *url, image_cache_kind_t kind, const image_t *img);
 
 /* Scan disk cache and delete files (oldest first) to keep total size under
  * max_bytes.  Pass 0 to delete all cached files. */
 void image_evict_disk_cache(size_t max_bytes);
+void image_clear_disk_cache(bool include_embeds, bool include_avatars);
 
 #endif /* SKEETS_IMAGE_H */

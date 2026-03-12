@@ -80,9 +80,17 @@ static void image_write_cache(const char *path, const image_t *img) {
 
 /* ── public API ───────────────────────────────────────────────────── */
 
-void image_cache_path(const char *url, char *out_path, int out_size) {
+static const char *image_cache_prefix(image_cache_kind_t kind) {
+    return kind == IMAGE_CACHE_KIND_AVATAR ? "avatar" : "embed";
+}
+
+void image_cache_path_with_kind(const char *url, image_cache_kind_t kind, char *out_path, int out_size) {
     unsigned long h = str_hash(url);
-    snprintf(out_path, out_size, "%s/v2-%lx.img", skeets_cache_dir(), h);
+    snprintf(out_path, out_size, "%s/%s-%lx.img", skeets_cache_dir(), image_cache_prefix(kind), h);
+}
+
+void image_cache_path(const char *url, char *out_path, int out_size) {
+    image_cache_path_with_kind(url, IMAGE_CACHE_KIND_EMBED, out_path, out_size);
 }
 
 int image_load_file(const char *path, image_t *out) {
@@ -90,9 +98,13 @@ int image_load_file(const char *path, image_t *out) {
 }
 
 int image_load_url(const char *url, image_t *out) {
+    return image_load_url_with_kind(url, IMAGE_CACHE_KIND_EMBED, out);
+}
+
+int image_load_url_with_kind(const char *url, image_cache_kind_t kind, image_t *out) {
     /* Check cache first */
     char cache_path[512];
-    image_cache_path(url, cache_path, sizeof(cache_path));
+    image_cache_path_with_kind(url, kind, cache_path, sizeof(cache_path));
 
     struct stat st;
     if (stat(cache_path, &st) == 0 && st.st_size > 0) {
@@ -204,10 +216,37 @@ int image_decode_memory(const uint8_t *data, int len, image_t *out) {
 }
 
 void image_write_disk_cache(const char *url, const image_t *img) {
+    image_write_disk_cache_with_kind(url, IMAGE_CACHE_KIND_EMBED, img);
+}
+
+void image_write_disk_cache_with_kind(const char *url, image_cache_kind_t kind, const image_t *img) {
     if (!url || !img || !img->pixels) return;
     char path[512];
-    image_cache_path(url, path, sizeof(path));
+    image_cache_path_with_kind(url, kind, path, sizeof(path));
     image_write_cache(path, img);
+}
+
+void image_clear_disk_cache(bool include_embeds, bool include_avatars) {
+    const char *cache_dir = skeets_cache_dir();
+    DIR *d = opendir(cache_dir);
+    if (!d) return;
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.') continue;
+
+        const bool is_avatar = strncmp(ent->d_name, "avatar-", 7) == 0;
+        const bool is_embed = strncmp(ent->d_name, "embed-", 6) == 0 || strncmp(ent->d_name, "v2-", 3) == 0;
+        if ((is_avatar && !include_avatars) || (is_embed && !include_embeds) || (!is_avatar && !is_embed)) {
+            continue;
+        }
+
+        char path[512];
+        snprintf(path, sizeof(path), "%s/%s", cache_dir, ent->d_name);
+        remove(path);
+    }
+
+    closedir(d);
 }
 
 void image_evict_disk_cache(size_t max_bytes) {

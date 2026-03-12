@@ -26,6 +26,7 @@ struct cache_entry_t {
     image_t     img{};          /* valid when state == Ready */
     int         scale_w      = 0;
     int         scale_h      = 0;
+    image_cache_kind_t kind  = IMAGE_CACHE_KIND_EMBED;
     long long   last_accessed = 0; /* ms timestamp for LRU eviction */
     std::string url;               /* full URL for hash-collision guard */
 };
@@ -73,8 +74,8 @@ static std::string summarize_url(const char *url) {
     return text.substr(0, 93) + "...";
 }
 
-static std::string build_memory_cache_key(const std::string &url, int scale_w, int scale_h) {
-    return url + "|" + std::to_string(scale_w) + "x" + std::to_string(scale_h);
+static std::string build_memory_cache_key(const std::string &url, image_cache_kind_t kind, int scale_w, int scale_h) {
+    return std::to_string(static_cast<int>(kind)) + "|" + url + "|" + std::to_string(scale_w) + "x" + std::to_string(scale_h);
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
@@ -111,11 +112,11 @@ static QNetworkAccessManager *get_nam() {
 
 /* ── Public API ───────────────────────────────────────────────────── */
 
-const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
+static const image_t *image_cache_lookup_internal(const char *url, image_cache_kind_t kind, int scale_w, int scale_h) {
     if (!url || !*url) return nullptr;
 
     const std::string request_url = normalize_image_request_url(url);
-    const std::string key = build_memory_cache_key(request_url, scale_w, scale_h);
+    const std::string key = build_memory_cache_key(request_url, kind, scale_w, scale_h);
 
     auto it = s_cache.find(key);
     if (it != s_cache.end()) {
@@ -144,12 +145,13 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
     entry.state         = CacheState::Loading;
     entry.scale_w       = scale_w;
     entry.scale_h       = scale_h;
+    entry.kind          = kind;
     entry.url           = request_url;
     entry.last_accessed = cache_now_ms();
 
     /* Check disk cache first. */
     char cache_path[512];
-    image_cache_path(request_url.c_str(), cache_path, sizeof(cache_path));
+    image_cache_path_with_kind(request_url.c_str(), kind, cache_path, sizeof(cache_path));
 
     image_t cached_img{};
     if (image_load_file(cache_path, &cached_img) == 0) {
@@ -182,7 +184,7 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
 
     /* Capture key + scale params + url for the callback. */
     std::string url_str(request_url);
-    QObject::connect(reply, &QNetworkReply::finished, [reply, key, scale_w, scale_h, url_str]() {
+    QObject::connect(reply, &QNetworkReply::finished, [reply, key, kind, scale_w, scale_h, url_str]() {
         reply->deleteLater();
 
         auto cit = s_cache.find(key);
@@ -222,7 +224,7 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
         }
 
         /* Persist the original decoded image so later requests can scale up. */
-        image_write_disk_cache(url_str.c_str(), &img);
+        image_write_disk_cache_with_kind(url_str.c_str(), kind, &img);
 
         /* Pre-scale the in-memory variant to the requested dimensions. */
         if (scale_w > 0 && scale_h > 0)
@@ -242,6 +244,14 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
     return nullptr;
 }
 
+const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
+    return image_cache_lookup_internal(url, IMAGE_CACHE_KIND_EMBED, scale_w, scale_h);
+}
+
+const image_t *image_cache_lookup_avatar(const char *url, int scale_w, int scale_h) {
+    return image_cache_lookup_internal(url, IMAGE_CACHE_KIND_AVATAR, scale_w, scale_h);
+}
+
 bool image_cache_redraw_needed() {
     bool val = s_redraw_needed;
     s_redraw_needed = false;
@@ -257,4 +267,8 @@ void image_cache_clear() {
     }
     s_cache.clear();
     s_redraw_needed = false;
+}
+
+void image_cache_delete_disk(bool include_embeds, bool include_avatars) {
+    image_clear_disk_cache(include_embeds, include_avatars);
 }

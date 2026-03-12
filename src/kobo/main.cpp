@@ -79,6 +79,7 @@ constexpr const char* kEmojiBack = "⬅️";
 constexpr const char* kButtonPrev = "Prev";
 constexpr const char* kButtonNext = "Next";
 constexpr const char* kButtonRefresh = "Refresh";
+constexpr const char* kButtonFeeds = "Feeds";
 constexpr const char* kEmojiSettings = "⚙️";
 constexpr const char* kEmojiExit = "🚪";
 constexpr const char* kEmojiOpen = "🔎";
@@ -92,6 +93,7 @@ constexpr const char* kButtonSignOut = "Log Out";
 enum class skeets_view_mode_t {
     dashboard,
     feed,
+    feed_list,
     thread,
     settings,
     diagnostics,
@@ -164,6 +166,7 @@ struct skeets_app_t {
     image_t prev_icon{};
     image_t next_icon{};
     image_t refresh_icon{};
+    image_t feed_icon{};
     image_t exit_icon{};
     image_t settings_icon{};
     image_t diagnostics_icon{};
@@ -176,14 +179,20 @@ struct skeets_app_t {
     skeets_button_t exit_button;
     skeets_button_t diagnostics_back_button;
     skeets_button_t diagnostics_refresh_button;
+    skeets_button_t diagnostics_clear_cache_button;
 
     // Feed view state
     skeets_view_mode_t view_mode = skeets_view_mode_t::dashboard;
     skeets_feed_result_t feed_result;
+    Bsky::FeedSource active_feed_source{Bsky::FeedSourceKind::timeline, {}, "Followers", "Default home timeline", true};
+    std::vector<Bsky::FeedSource> available_feeds;
     int feed_page_start = 0;      // Index of first visible post
     int feed_page_count = 0;      // Number of posts that fit on last render
     std::vector<int> feed_page_history;
     std::vector<skeets_post_hit_t> visible_post_hits;
+    std::vector<skeets_button_t> feed_list_rows;
+    skeets_button_t feed_list_button;
+    skeets_button_t feed_list_back_button;
     skeets_button_t feed_back_button;
     skeets_button_t feed_refresh_button;
     skeets_button_t feed_next_button;
@@ -349,6 +358,14 @@ bool draw_scaled_image(skeets_app_t& app,
     fb_blit_rgba(&app.text_fb, draw_x, draw_y, scaled.width, scaled.height, scaled.pixels);
     image_free(&scaled);
     return true;
+}
+
+bool feed_source_matches(const Bsky::FeedSource& left, const Bsky::FeedSource& right) {
+    return left.kind == right.kind && left.uri == right.uri;
+}
+
+std::string feed_source_name(const Bsky::FeedSource& source) {
+    return source.display_name.empty() ? std::string("Followers") : source.display_name;
 }
 
 int line_height(skeets_text_role_t role) {
@@ -647,7 +664,7 @@ void queue_feed_image_requests(const skeets_app_t& app) {
     for (int index = 0; index < count; ++index) {
         const Bsky::Post& post = app.feed_result.feed.items[index];
         if (app.profile_images_enabled && !post.author.avatar_url.empty()) {
-            image_cache_lookup(post.author.avatar_url.c_str(), kFeedAvatarSize, kFeedAvatarSize);
+            image_cache_lookup_avatar(post.author.avatar_url.c_str(), kFeedAvatarSize, kFeedAvatarSize);
         }
         if (!app.embed_images_enabled) {
             continue;
@@ -1036,6 +1053,10 @@ void load_brand_assets(skeets_app_t& app) {
                        skeets_asset_path("refresh.png"),
                        kButtonIconMaxSize,
                        kButtonIconMaxSize);
+        load_local_image_asset(app.feed_icon,
+                       skeets_asset_path("feed.png"),
+                       kButtonIconMaxSize,
+                       kButtonIconMaxSize);
         load_local_image_asset(app.exit_icon,
                                skeets_asset_path("exit.png"),
                                kButtonIconMaxSize,
@@ -1068,6 +1089,7 @@ void free_brand_assets(skeets_app_t& app) {
         image_free(&app.prev_icon);
         image_free(&app.next_icon);
         image_free(&app.refresh_icon);
+        image_free(&app.feed_icon);
         image_free(&app.exit_icon);
         image_free(&app.settings_icon);
         image_free(&app.diagnostics_icon);
@@ -1080,6 +1102,7 @@ void free_brand_assets(skeets_app_t& app) {
             if (label == kButtonPrev && app.prev_icon.pixels) return &app.prev_icon;
             if (label == kButtonNext && app.next_icon.pixels) return &app.next_icon;
             if (label == kButtonRefresh && app.refresh_icon.pixels) return &app.refresh_icon;
+            if (label == kButtonFeeds && app.feed_icon.pixels) return &app.feed_icon;
         if (label == kEmojiExit && app.exit_icon.pixels) return &app.exit_icon;
             if (label == kButtonSignOut && app.exit_icon.pixels) return &app.exit_icon;
         if (label == kEmojiSettings && app.settings_icon.pixels) return &app.settings_icon;
@@ -1264,6 +1287,15 @@ void refresh_runtime_state(skeets_app_t& app) {
     app.network = skeets_probe_network();
 }
 
+void clear_all_cached_images() {
+    image_cache_clear();
+    image_cache_delete_disk(true, true);
+}
+
+void clear_embed_cache_on_exit() {
+    image_cache_delete_disk(true, false);
+}
+
 void refresh_bootstrap_state(skeets_app_t& app) {
     app.bootstrap = skeets_run_bootstrap();
     app.status_line = app.bootstrap.headline;
@@ -1319,8 +1351,11 @@ void clear_saved_session(skeets_app_t& app) {
     app.thread_page_start = 0;
     app.thread_page_count = 0;
     app.visible_post_hits.clear();
+    app.feed_list_rows.clear();
     app.thread_post_hits.clear();
     app.selected_post_uri.clear();
+    app.available_feeds.clear();
+    app.active_feed_source = {Bsky::FeedSourceKind::timeline, {}, "Followers", "Default home timeline", true};
 }
 
 void persist_session(skeets_app_t& app, const Bsky::Session& session) {
@@ -1343,6 +1378,33 @@ void apply_updated_session(skeets_app_t& app, const Bsky::Session& session, bool
         return;
     }
     persist_session(app, session);
+}
+
+void load_feed_sources(skeets_app_t& app) {
+    Bsky::Session updated_session;
+    bool session_updated = false;
+    std::string error_message;
+    app.available_feeds = skeets_fetch_pinned_feeds(app.bootstrap.session,
+                                                    &updated_session,
+                                                    &session_updated,
+                                                    &error_message);
+    apply_updated_session(app, updated_session, session_updated);
+    if (app.available_feeds.empty()) {
+        app.available_feeds.push_back({Bsky::FeedSourceKind::timeline, {}, "Followers", "Default home timeline", true});
+    }
+    if (!error_message.empty()) {
+        app.status_line = "Feed list load failed";
+        app.input_line = error_message;
+    }
+}
+
+void open_feed_list(skeets_app_t& app) {
+    load_feed_sources(app);
+    app.view_mode = skeets_view_mode_t::feed_list;
+    if (app.status_line != "Feed list load failed") {
+        app.status_line = "Feed list";
+        app.input_line = "Select a pinned feed or choose Followers to return to the default home timeline.";
+    }
 }
 
 void open_settings(skeets_app_t& app, skeets_view_mode_t return_view) {
@@ -1398,14 +1460,14 @@ std::string hidden_post_message(const skeets_app_t& app, const Bsky::Post& post)
 
 void load_feed(skeets_app_t& app) {
     if (!app.bootstrap.authenticated) return;
-    app.status_line = "Loading timeline...";
-    app.feed_result = skeets_fetch_feed(app.bootstrap.session);
+    app.status_line = "Loading " + feed_source_name(app.active_feed_source) + "...";
+    app.feed_result = skeets_fetch_feed(app.bootstrap.session, app.active_feed_source);
     apply_updated_session(app, app.feed_result.session, app.feed_result.session_updated);
     app.feed_page_start = 0;
     app.feed_page_count = 0;
     app.feed_page_history.clear();
     if (app.feed_result.state == skeets_feed_state_t::loaded) {
-        app.status_line = std::to_string(app.feed_result.post_count) + " posts loaded";
+        app.status_line = feed_source_name(app.active_feed_source) + ": " + std::to_string(app.feed_result.post_count) + " posts loaded";
         app.input_line = "Tap a post area for details, or use the buttons below";
     } else {
         app.status_line = "Feed load failed";
@@ -1438,7 +1500,7 @@ bool advance_feed_page(skeets_app_t& app) {
     }
 
     if (!app.feed_result.feed.cursor.empty()) {
-        auto more = skeets_fetch_feed(app.bootstrap.session, 30, app.feed_result.feed.cursor);
+        auto more = skeets_fetch_feed(app.bootstrap.session, app.active_feed_source, 30, app.feed_result.feed.cursor);
         apply_updated_session(app, more.session, more.session_updated);
         if (more.state == skeets_feed_state_t::loaded) {
             app.feed_page_history.push_back(app.feed_page_start);
@@ -1846,11 +1908,18 @@ void render_diagnostics_screen(skeets_app_t& app, bool full_refresh) {
                                      width - (kOuterMargin * 2),
                                      status_height};
     app.diagnostics_back_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, kEmojiBack};
+        const int diagnostics_button_gap = kCardGap;
+        const int diagnostics_button_width = (width - (kOuterMargin * 2) - diagnostics_button_gap) / 2;
     app.diagnostics_refresh_button = {{kOuterMargin,
                                        height - button_height - kOuterMargin,
-                                       width - (kOuterMargin * 2),
+                                                                             diagnostics_button_width,
                                        button_height},
                                       kButtonRefresh};
+        app.diagnostics_clear_cache_button = {{app.diagnostics_refresh_button.rect.x + diagnostics_button_width + diagnostics_button_gap,
+                                                                                     app.diagnostics_refresh_button.rect.y,
+                                                                                     diagnostics_button_width,
+                                                                                     button_height},
+                                                                                    "Clear Cache"};
 
     skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
     const skeets_rect_t header_rect{0, 0, width, header_height};
@@ -1882,6 +1951,7 @@ void render_diagnostics_screen(skeets_app_t& app, bool full_refresh) {
                       kColorStatus);
 
     draw_button(app, app.diagnostics_refresh_button, kColorButtonPrimary);
+    draw_button(app, app.diagnostics_clear_cache_button, kColorButtonSecondary);
 
     std::string error_message;
     const skeets_rect_t screen_rect = full_screen_rect(app);
@@ -1924,6 +1994,10 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
         {kOuterMargin + (btn_width + btn_gap) * 2, btn_y, btn_width, button_height},
         kButtonNext
     };
+    app.feed_list_button = {
+        {kOuterMargin, 10, 176, header_height - 20},
+        kButtonFeeds
+    };
     app.feed_settings_button = {
         {width - kOuterMargin - 176, 10, 176, header_height - 20},
         kEmojiSettings
@@ -1934,6 +2008,7 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
     // Header
     const skeets_rect_t header_rect{0, 0, width, header_height};
     skeets_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    draw_button(app, app.feed_list_button, kColorButtonSecondary);
     draw_button(app, app.feed_settings_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
@@ -2001,7 +2076,7 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
             if (app.profile_images_enabled) {
                 const int avatar_x = kOuterMargin;
                 if (!post.author.avatar_url.empty()) {
-                    const image_t* avatar = image_cache_lookup(post.author.avatar_url.c_str(),
+                    const image_t* avatar = image_cache_lookup_avatar(post.author.avatar_url.c_str(),
                                                                kFeedAvatarSize,
                                                                kFeedAvatarSize);
                     if (avatar) {
@@ -2123,6 +2198,7 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
                                 "-" + std::to_string(end_idx) +
                                 " of " + std::to_string(total);
         if (!app.feed_result.feed.cursor.empty()) page_info += "+";
+        page_info = feed_source_name(app.active_feed_source) + " | " + page_info;
         int info_y = btn_y - app.text_fb.font_h - 8;
         draw_centered_text(app, width / 2, info_y, page_info, kColorMeta, COLOR_WHITE, skeets_text_role_t::meta);
     }
@@ -2142,6 +2218,77 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
                                      true,
                                      &error_message)) {
         std::fprintf(stderr, "rewrite app: feed refresh failed: %s\n", error_message.c_str());
+    }
+}
+
+void render_feed_list_screen(skeets_app_t& app, bool full_refresh) {
+    const int width = app.framebuffer.info.screen_width;
+    const int height = app.framebuffer.info.screen_height;
+    const int header_height = std::max(96, height / 11);
+    const int row_height = std::max(116, height / 10);
+    const int row_gap = 16;
+    const int content_width = width - (kOuterMargin * 2);
+    const int first_row_y = header_height + kOuterMargin;
+
+    app.feed_list_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
+    app.feed_list_rows.clear();
+
+    skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+    const skeets_rect_t header_rect{0, 0, width, header_height};
+    skeets_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    draw_button(app, app.feed_list_back_button, kColorButtonSecondary);
+    draw_header_brand(app, header_rect);
+
+    if (app.available_feeds.empty()) {
+        draw_wrapped_text(app,
+                          kOuterMargin,
+                          first_row_y,
+                          content_width,
+                          "No pinned feeds were found. Followers remains the default feed.",
+                          skeets_text_role_t::body,
+                          COLOR_BLACK,
+                          COLOR_WHITE);
+    } else {
+        for (size_t index = 0; index < app.available_feeds.size(); ++index) {
+            const int row_y = first_row_y + static_cast<int>(index) * (row_height + row_gap);
+            if (row_y + row_height > height - kOuterMargin) {
+                break;
+            }
+
+            const Bsky::FeedSource& source = app.available_feeds[index];
+            const bool selected = feed_source_matches(source, app.active_feed_source);
+            const skeets_button_t row{{kOuterMargin, row_y, content_width, row_height}, feed_source_name(source)};
+            app.feed_list_rows.push_back(row);
+
+            const std::uint8_t fill = selected ? kColorStatus : kColorCard;
+            skeets_framebuffer_fill_rect(app.framebuffer, row.rect, fill);
+            draw_border(app, row.rect, selected ? kColorCardBorder : kColorPostBorder, 2);
+            draw_text(app,
+                      row.rect.x + kCardPadding,
+                      row.rect.y + 14,
+                      feed_source_name(source),
+                      skeets_text_role_t::settings_label,
+                      COLOR_BLACK,
+                      fill);
+            draw_wrapped_text(app,
+                              row.rect.x + kCardPadding,
+                              row.rect.y + 14 + line_height(skeets_text_role_t::settings_label) + 6,
+                              row.rect.width - (kCardPadding * 2),
+                              source.subtitle.empty() ? std::string("Pinned feed") : source.subtitle,
+                              skeets_text_role_t::settings_detail,
+                              kColorMeta,
+                              fill);
+        }
+    }
+
+    std::string error_message;
+    const skeets_rect_t screen_rect = full_screen_rect(app);
+    if (!skeets_framebuffer_refresh(app.framebuffer,
+                                     ui_refresh_mode(app, full_refresh),
+                                     screen_rect,
+                                     true,
+                                     &error_message)) {
+        std::fprintf(stderr, "rewrite app: feed-list refresh failed: %s\n", error_message.c_str());
     }
 }
 
@@ -2239,7 +2386,7 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
             const int author_y = cursor_y;
             if (app.profile_images_enabled) {
                 if (!post->author.avatar_url.empty()) {
-                    const image_t* avatar = image_cache_lookup(post->author.avatar_url.c_str(),
+                    const image_t* avatar = image_cache_lookup_avatar(post->author.avatar_url.c_str(),
                                                                kThreadAvatarSize,
                                                                kThreadAvatarSize);
                     if (avatar) {
@@ -2594,6 +2741,10 @@ void render_active_view(skeets_app_t& app, bool full_refresh) {
         render_feed_screen(app, full_refresh);
         return;
     }
+    if (app.view_mode == skeets_view_mode_t::feed_list) {
+        render_feed_list_screen(app, full_refresh);
+        return;
+    }
     if (app.view_mode == skeets_view_mode_t::thread) {
         render_thread_screen(app, full_refresh);
         return;
@@ -2784,6 +2935,12 @@ int main(int argc, char* argv[]) {
 
         // --- Feed view touch handling ---
         if (skeets_app.view_mode == skeets_view_mode_t::feed) {
+            if (contains_point(skeets_app.feed_list_button.rect, event.x, event.y)) {
+                open_feed_list(skeets_app);
+                render_feed_list_screen(skeets_app, true);
+                continue;
+            }
+
             if (contains_point(skeets_app.feed_settings_button.rect, event.x, event.y)) {
                 open_settings(skeets_app, skeets_view_mode_t::feed);
                 render_settings_screen(skeets_app, true);
@@ -2901,6 +3058,31 @@ int main(int argc, char* argv[]) {
             }
 
             // Tap anywhere else in feed — no action for now
+            continue;
+        }
+
+        if (skeets_app.view_mode == skeets_view_mode_t::feed_list) {
+            if (contains_point(skeets_app.feed_list_back_button.rect, event.x, event.y)) {
+                skeets_app.view_mode = skeets_view_mode_t::feed;
+                render_feed_screen(skeets_app, true);
+                continue;
+            }
+
+            for (size_t index = 0; index < skeets_app.feed_list_rows.size() && index < skeets_app.available_feeds.size(); ++index) {
+                if (!contains_point(skeets_app.feed_list_rows[index].rect, event.x, event.y)) {
+                    continue;
+                }
+
+                skeets_app.active_feed_source = skeets_app.available_feeds[index];
+                skeets_app.view_mode = skeets_view_mode_t::feed;
+                render_loading_screen(skeets_app,
+                                      "Loading feed",
+                                      "Switching to " + feed_source_name(skeets_app.active_feed_source) + ".",
+                                      true);
+                load_feed(skeets_app);
+                render_feed_screen(skeets_app, true);
+                break;
+            }
             continue;
         }
 
@@ -3142,6 +3324,14 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
+            if (contains_point(skeets_app.diagnostics_clear_cache_button.rect, event.x, event.y)) {
+                clear_all_cached_images();
+                skeets_app.status_line = "Image cache cleared";
+                skeets_app.input_line = "All cached avatars and embeds were deleted from disk.";
+                render_diagnostics_screen(skeets_app, true);
+                continue;
+            }
+
             continue;
         }
 
@@ -3181,6 +3371,7 @@ int main(int argc, char* argv[]) {
     }
 
     skeets_input_close(skeets_app.input);
+    clear_embed_cache_on_exit();
     free_brand_assets(skeets_app);
     skeets_framebuffer_close(skeets_app.framebuffer);
     return 0;

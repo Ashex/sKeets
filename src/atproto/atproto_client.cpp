@@ -188,6 +188,31 @@ static Session convertSession(const ATProto::ComATProtoServer::Session* session,
     return out;
 }
 
+static Feed convertOutputFeed(const ATProto::AppBskyFeed::OutputFeed::SharedPtr& output) {
+    Feed feed;
+    if (!output) {
+        return feed;
+    }
+
+    feed.cursor = output->mCursor.value_or(QString{}).toStdString();
+    for (auto& item : output->mFeed) {
+        if (!item || !item->mPost) {
+            continue;
+        }
+
+        Post post = convertPostView(item->mPost);
+        if (item->mReason) {
+            auto* repost = std::get_if<ATProto::AppBskyFeed::ReasonRepost::SharedPtr>(&*item->mReason);
+            if (repost && *repost && (*repost)->mBy) {
+                post.reposted_by = (*repost)->mBy->mHandle.toStdString();
+            }
+        }
+        feed.items.push_back(std::move(post));
+    }
+
+    return feed;
+}
+
 AtprotoClient::AtprotoClient(const std::string& serviceHost, QObject* parent)
     : QObject(parent), mHost(serviceHost.empty() ? DEFAULT_SERVICE_HOST : serviceHost) {
     auto xrpc = std::make_unique<Xrpc::Client>(QString::fromStdString(mHost));
@@ -321,22 +346,138 @@ void AtprotoClient::getTimeline(int limit, const std::optional<std::string>& cur
     QEventLoop loop;
     mClient->getTimeline(limit, sdkCursor,
         [&loop, successCb](ATProto::AppBskyFeed::OutputFeed::SharedPtr output) {
-            Feed feed;
-            if (output) {
-                feed.cursor = output->mCursor.value_or(QString{}).toStdString();
-                for (auto& item : output->mFeed) {
-                    if (!item || !item->mPost) continue;
-                    Post p = convertPostView(item->mPost);
-                    if (item->mReason) {
-                        auto* rr = std::get_if<ATProto::AppBskyFeed::ReasonRepost::SharedPtr>(&*item->mReason);
-                        if (rr && *rr && (*rr)->mBy)
-                            p.reposted_by = (*rr)->mBy->mHandle.toStdString();
-                    }
-                    feed.items.push_back(p);
-                }
-            }
-            successCb(feed);
+            successCb(convertOutputFeed(output));
             loop.quit();
+        },
+        [&loop, errorCb](const QString& err, const QString& msg) {
+            errorCb((err + ": " + msg).toStdString());
+            loop.quit();
+        });
+    loop.exec();
+}
+
+void AtprotoClient::getCustomFeed(const std::string& feedUri,
+                                  int limit,
+                                  const std::optional<std::string>& cursor,
+                                  const FeedCb& successCb,
+                                  const ErrorCb& errorCb) {
+    std::optional<QString> sdkCursor;
+    if (cursor) sdkCursor = QString::fromStdString(*cursor);
+
+    QEventLoop loop;
+    mClient->getFeed(QString::fromStdString(feedUri),
+                     limit,
+                     sdkCursor,
+                     {},
+                     [&loop, successCb](ATProto::AppBskyFeed::OutputFeed::SharedPtr output) {
+                         successCb(convertOutputFeed(output));
+                         loop.quit();
+                     },
+                     [&loop, errorCb](const QString& err, const QString& msg) {
+                         errorCb((err + ": " + msg).toStdString());
+                         loop.quit();
+                     });
+    loop.exec();
+}
+
+void AtprotoClient::getListFeed(const std::string& listUri,
+                                int limit,
+                                const std::optional<std::string>& cursor,
+                                const FeedCb& successCb,
+                                const ErrorCb& errorCb) {
+    std::optional<QString> sdkCursor;
+    if (cursor) sdkCursor = QString::fromStdString(*cursor);
+
+    QEventLoop loop;
+    mClient->getListFeed(QString::fromStdString(listUri),
+                         limit,
+                         sdkCursor,
+                         {},
+                         [&loop, successCb](ATProto::AppBskyFeed::OutputFeed::SharedPtr output) {
+                             successCb(convertOutputFeed(output));
+                             loop.quit();
+                         },
+                         [&loop, errorCb](const QString& err, const QString& msg) {
+                             errorCb((err + ": " + msg).toStdString());
+                             loop.quit();
+                         });
+    loop.exec();
+}
+
+void AtprotoClient::getPinnedFeeds(const FeedSourcesCb& successCb,
+                                   const ErrorCb& errorCb) {
+    QEventLoop loop;
+    mClient->getPreferences(
+        [this, &loop, successCb](ATProto::UserPreferences prefs) {
+            std::vector<FeedSource> feeds;
+            feeds.push_back({FeedSourceKind::timeline, {}, "Followers", "Default home timeline", true});
+
+            std::vector<QString> generatorUris;
+            std::vector<size_t> generatorIndices;
+            const auto& savedFeeds = prefs.getSavedFeedsPrefV2().mItems;
+            for (const auto& item : savedFeeds) {
+                if (!item || !item->mPinned) {
+                    continue;
+                }
+
+                if (item->mType == ATProto::AppBskyActor::SavedFeedType::TIMELINE) {
+                    continue;
+                }
+
+                FeedSource source;
+                source.uri = item->mValue.toStdString();
+                source.pinned = true;
+
+                if (item->mType == ATProto::AppBskyActor::SavedFeedType::FEED) {
+                    source.kind = FeedSourceKind::generator;
+                    source.display_name = "Pinned feed";
+                    source.subtitle = source.uri;
+                    generatorIndices.push_back(feeds.size());
+                    generatorUris.push_back(item->mValue);
+                } else if (item->mType == ATProto::AppBskyActor::SavedFeedType::LIST) {
+                    source.kind = FeedSourceKind::list;
+                    source.display_name = "Pinned list";
+                    source.subtitle = source.uri;
+                } else {
+                    continue;
+                }
+
+                feeds.push_back(std::move(source));
+            }
+
+            if (generatorUris.empty()) {
+                successCb(feeds);
+                loop.quit();
+                return;
+            }
+
+            mClient->getFeedGenerators(
+                generatorUris,
+                [&loop, successCb, feeds = std::move(feeds), generatorIndices](ATProto::AppBskyFeed::GetFeedGeneratorsOutput::SharedPtr output) mutable {
+                    if (output) {
+                        const size_t count = std::min(output->mFeeds.size(), generatorIndices.size());
+                        for (size_t index = 0; index < count; ++index) {
+                            const auto& view = output->mFeeds[index];
+                            if (!view) {
+                                continue;
+                            }
+                            FeedSource& source = feeds[generatorIndices[index]];
+                            source.display_name = view->mDisplayName.toStdString();
+                            if (view->mCreator) {
+                                const std::string handle = view->mCreator->mHandle.toStdString();
+                                source.subtitle = handle.empty() ? source.uri : ("@" + handle);
+                            } else {
+                                source.subtitle = source.uri;
+                            }
+                        }
+                    }
+                    successCb(feeds);
+                    loop.quit();
+                },
+                [&loop, successCb, feeds = std::move(feeds)](const QString&, const QString&) mutable {
+                    successCb(feeds);
+                    loop.quit();
+                });
         },
         [&loop, errorCb](const QString& err, const QString& msg) {
             errorCb((err + ": " + msg).toStdString());
