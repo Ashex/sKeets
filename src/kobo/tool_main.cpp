@@ -1,4 +1,4 @@
-#include "rewrite/platform/device.h"
+#include "platform/device.h"
 
 #include <fcntl.h>
 #include <sys/ioctl.h>

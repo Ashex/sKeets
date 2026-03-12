@@ -1,4 +1,4 @@
-#include "rewrite/platform/network.h"
+#include "platform/network.h"
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>

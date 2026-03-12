@@ -1,4 +1,4 @@
-#include "rewrite/thread.h"
+#include "kobo/thread.h"
 
 #include "atproto/atproto_client.h"
 

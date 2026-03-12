@@ -95,21 +95,21 @@ artifacts land in `build-kobo/`. To remove root-owned files left behind by
 Docker bind mounts, use `sudo rm -rf build-kobo`.
 
 ```sh
-./docker-build.sh
+make build
 # Produces: build-kobo/KoboRoot.tgz
 
-NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh
+./docker-build.sh
 # Produces: build-kobo/KoboRoot.tgz
 ```
 
-The rewrite package currently boots a diagnostics entrypoint by default via
-`/mnt/onboard/.adds/sKeets/run.sh`. It also ships rewrite-owned
+The package currently boots a diagnostics entrypoint by default via
+`/mnt/onboard/.adds/sKeets/run.sh`. It also ships app-owned
 Wi-Fi lifecycle scripts under `/mnt/onboard/.adds/sKeets/scripts/wifi/`.
 Use `/mnt/onboard/.adds/sKeets/run.sh app` to launch the first
-rewrite app shell after Nickel is stopped.
+app shell after Nickel is stopped.
 Use `/mnt/onboard/.adds/sKeets/run.sh fb-diag` to validate the
-rewrite framebuffer and refresh path with Nickel stopped.
-For NickelMenu, the rewrite package also installs:
+framebuffer and refresh path with Nickel stopped.
+The package also installs these launcher helpers:
 - `/mnt/onboard/.adds/sKeets/launch-app.sh`
 - `/mnt/onboard/.adds/sKeets/launch-diag.sh`
 - `/mnt/onboard/.adds/sKeets/launch-fb-diag.sh`
@@ -142,9 +142,6 @@ ninja -j$(nproc)
 ```sh
 ninja kobo-package
 # Produces: build-arm/KoboRoot.tgz
-
-ninja kobo-package-rewrite
-# Produces: build-arm/KoboRoot.tgz
 ```
 
 ## Installation
@@ -154,18 +151,7 @@ ninja kobo-package-rewrite
 3. The binary lands at `/mnt/onboard/.adds/sKeets/sKeets`.
 4. Add a launcher entry via [NickelMenu](https://github.com/pgaskin/NickelMenu) or [KFMon](https://github.com/NiLuJe/kfmon).
 
-### NickelMenu entry (`/mnt/onboard/.adds/nm/sKeets`)
-
-```
-menu_item :main  :sKeets  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/run.sh
-```
-
-The `run.sh` wrapper kills Nickel and its companion processes so sKeets can
-take over the framebuffer, feeds the hardware watchdog, and reboots the device
-on exit to bring Nickel back. The `:quiet` flag suppresses the PID notification
-popup. Logs are written to `/mnt/onboard/.adds/sKeets/sKeets.log`.
-
-### Rewrite NickelMenu entries (`/mnt/onboard/.adds/nm/sKeets`)
+### NickelMenu entries (`/mnt/onboard/.adds/nm/sKeets`)
 
 ```
 menu_item :main  :sKeets sKeets      :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-app.sh
@@ -177,15 +163,21 @@ menu_item :main  :sKeets Network Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKe
 menu_item :main  :sKeets Phase2 Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-phase2-diag.sh
 ```
 
-`sKeets App` stops Nickel, opens the rewrite framebuffer and input
+The packaged `run.sh` wrapper kills Nickel and its companion processes so sKeets can
+take over the framebuffer, feeds the hardware watchdog, and reboots the device
+on exit to bring Nickel back. The `launch-*.sh` helpers are the intended menu
+entrypoints. The `:quiet` flag suppresses the PID notification popup. Logs are
+written to `/mnt/onboard/.adds/sKeets/sKeets.log`.
+
+`sKeets App` stops Nickel, opens the framebuffer and input
 paths, reads local credentials from `/mnt/onboard/.adds/sKeets/login.txt`,
 persists local session state in `/mnt/onboard/.adds/sKeets/config.ini`,
 renders the bootstrap/auth shell, and lets you exit cleanly via the on-screen
 Exit button or the hardware power key.
 `sKeets Diag` only runs the environment and package diagnostics.
-`sKeets FB Diag` stops Nickel first, opens the rewrite framebuffer path,
+`sKeets FB Diag` stops Nickel first, opens the framebuffer path,
 draws a simple grayscale test pattern, and logs refresh capability details.
-`sKeets Input Diag` stops Nickel first, grabs rewrite-selected input devices,
+`sKeets Input Diag` stops Nickel first, grabs the selected input devices,
 logs the touch device selection, and listens briefly for raw touch transitions.
 `sKeets Power Diag` keeps Nickel running and reports battery state,
 charging state, standby support, and whether suspend is currently safe.
@@ -205,7 +197,7 @@ cover image in your library. Place a PNG on the Kobo and create a config file:
 ```ini
 [watch]
 filename = /mnt/onboard/sKeets.png
-action = /mnt/onboard/.adds/sKeets/run.sh
+action = /mnt/onboard/.adds/sKeets/launch-app.sh
 label = sKeets
 hidden = false
 ```

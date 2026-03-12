@@ -1,4 +1,4 @@
-#include "rewrite/bootstrap.h"
+#include "kobo/bootstrap.h"
 
 #include "atproto/atproto_client.h"
 #include "util/config.h"
@@ -12,7 +12,6 @@
 namespace {
 
 constexpr const char* kDefaultAppView = "https://api.bsky.app";
-constexpr const char* kLegacyConfigPath = "/mnt/onboard/.adds/sKeets/config.ini";
 
 bool looks_like_transient_network_error(const std::string& error_message) {
     return error_message.find("Host ") != std::string::npos ||
@@ -73,25 +72,6 @@ bool file_exists(const char* path) {
 Bsky::Session load_saved_session() {
     Bsky::Session session;
     config_t* config = config_open(skeets_config_path());
-    if (!config) return session;
-
-    session.handle = config_get_str(config, "handle", "");
-    session.access_jwt = config_get_str(config, "access_jwt", "");
-    session.refresh_jwt = config_get_str(config, "refresh_jwt", "");
-    session.did = config_get_str(config, "did", "");
-    session.pds_url = config_get_str(config, "pds_url", "");
-    session.appview_url = config_get_str(config,
-                                         "appview_url",
-                                         config_get_str(config, "appview", kDefaultAppView));
-    config_free(config);
-    return session;
-}
-
-Bsky::Session load_saved_session_from_path(const char* path) {
-    Bsky::Session session;
-    if (!path || !*path) return session;
-
-    config_t* config = config_open(path);
     if (!config) return session;
 
     session.handle = config_get_str(config, "handle", "");
@@ -168,14 +148,6 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
     }
 
     Bsky::Session saved_session = load_saved_session();
-    bool used_legacy_saved_session = false;
-    if (!has_saved_session(saved_session)) {
-        Bsky::Session legacy_session = load_saved_session_from_path(kLegacyConfigPath);
-        if (has_saved_session(legacy_session)) {
-            saved_session = std::move(legacy_session);
-            used_legacy_saved_session = true;
-        }
-    }
 
     Bsky::Session restored_session;
     std::string saved_session_error;
@@ -185,10 +157,8 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
             rewrite_bootstrap_result_t result;
             result.state = rewrite_bootstrap_state_t::session_restored;
             result.session = restored_session;
-            result.headline = used_legacy_saved_session ? "Legacy session imported" : "Saved session restored";
-            result.detail = used_legacy_saved_session
-                ? "Imported the existing sKeets session into the rewrite app. Loading the home timeline."
-                : "Authentication is valid. Loading the home timeline.";
+            result.headline = "Saved session restored";
+            result.detail = "Authentication is valid. Loading the home timeline.";
             result.authenticated = true;
             result.used_saved_session = true;
             return result;

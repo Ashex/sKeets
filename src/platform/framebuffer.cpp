@@ -1,4 +1,4 @@
-#include "rewrite/platform/framebuffer.h"
+#include "platform/framebuffer.h"
 
 #include <fbink.h>
 

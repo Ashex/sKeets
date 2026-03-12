@@ -1,4 +1,4 @@
-#include "rewrite/actions.h"
+#include "kobo/actions.h"
 
 #include "atproto/atproto_client.h"
 

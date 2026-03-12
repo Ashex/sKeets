@@ -76,18 +76,10 @@ docker run --rm \
             -DCMAKE_PREFIX_PATH=/opt/qt6-armhf \
             -DQT_HOST_PATH=/opt/qt6-host \
             -GNinja \
-        && ninja -j$(nproc) \
-        && ninja '"${NINJA_PACKAGE_TARGET}"'
+        && ninja -j$(nproc) '"${NINJA_PACKAGE_TARGET}"'
     '
 
 echo ""
 echo "Done!"
-echo "  Binary:  ${BUILD_DIR}/sKeets"
-case "${NINJA_PACKAGE_TARGET}" in
-    kobo-package-rewrite)
-        echo "  Package: ${BUILD_DIR}/KoboRoot.tgz"
-        ;;
-    *)
-        echo "  Package: ${BUILD_DIR}/KoboRoot.tgz"
-        ;;
-esac
+echo "  Binary:  ${BUILD_DIR}/bin/sKeets"
+echo "  Package: ${BUILD_DIR}/KoboRoot.tgz"

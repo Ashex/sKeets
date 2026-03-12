@@ -1,4 +1,4 @@
-# sKeets Rewrite — Session State & Plan
+# sKeets — Session State & Plan
 
 > Written for IDE restart continuity. Last updated: 2026-03-12.
 > Memory files: `/memories/repo/kobo-skeets-notes.md`, `/memories/repo/skeets-codebase-overview.md`, `/memories/repo/kobo-tls-fixes.md`
@@ -26,7 +26,7 @@ a relogin.
 
 - **build_timestamp**: `2026-03-12` (latest successful package at the confirmed wrapped-text clipping-fix checkpoint)
 - **Package**: `build-kobo/KoboRoot.tgz`
-- **Build command**: `NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh`
+- **Build command**: `./docker-build.sh`
 
 ### Device under test
 
@@ -60,7 +60,7 @@ a relogin.
 
 ### What is now verified on-device
 
-1. `login.txt` is read from `/mnt/onboard/.adds/sKeets-rewrite/login.txt`
+1. `login.txt` is read from `/mnt/onboard/.adds/sKeets/login.txt`
 2. `createSession()` succeeds against a self-hosted PDS (nihilist.cloud)
 3. Session tokens saved to `config.ini` (handle, access_jwt, refresh_jwt, did, pds_url, appview_url)
 4. `login.txt` securely deleted after reading (whether login succeeds or fails)
@@ -126,8 +126,8 @@ Detailed in `/memories/repo/kobo-tls-fixes.md`. Summary:
 
 ## Files Modified This Session
 
-### `src/rewrite/app_main.cpp`
-The main entry point for the rewrite app. Changes this session:
+### `src/kobo/main.cpp`
+The main entry point for the current Kobo app. Changes this session:
 - **dlopen OpenSSL preload**: Force-loads bundled OpenSSL 3.x with `RTLD_NOW | RTLD_GLOBAL` before Qt init. The earlier verbose probe spam was removed; only the preload result remains logged.
 - **CA cert loading** (lines ~420-445): After QCoreApplication init, loads bundled CA certs from `<rewrite_dir>/ssl/certs/ca-certificates.crt` via `QSslCertificate::fromDevice()` and sets as default SSL config.
 - **Localized stat refresh helpers**: Feed and thread action handlers redraw only the relevant stats row and trigger a partial or grayscale-partial framebuffer refresh for that rectangle.
@@ -155,27 +155,27 @@ The main entry point for the rewrite app. Changes this session:
 ### `CMakeLists.txt`
 - The rewrite target now compiles and links the shared `src/ui/fb.cpp`, `src/util/image.cpp`, and `src/util/image_cache.cpp` sources, and links the `stb_image` interface dependency so the rewrite can reuse the legacy image pipeline.
 
-### `src/rewrite/bootstrap.cpp`
+### `src/kobo/bootstrap.cpp`
 The auth bootstrap logic. Changes this session:
 - **saved-session retry path**: Retries transient DNS failures before declaring resume failure and preserves the saved-session error state instead of falling back to "waiting for login.txt"
 - **refresh-token restore path**: Uses the SDK's resume-and-refresh flow so `ExpiredToken` on `getSession` rotates the saved JWTs instead of failing authentication
 - **Include added**: `<fstream>`
 
-### `src/rewrite/feed.cpp`
-The rewrite feed loader. Changes this session:
+### `src/kobo/feed.cpp`
+The feed loader. Changes this session:
 - Fetches the timeline through `session.appview_url` instead of the PDS
 - Restores saved sessions with retry handling for transient DNS failures and refresh-token fallback for expired access JWTs
 - Filters plain reply posts out of the home feed (unless the item is a repost)
 - Uses a fresh AppView client directly to avoid heap corruption in `AtprotoClient::changeHost()`
 
-### `src/rewrite/actions.cpp`
-The rewrite action helper. Changes this session:
+### `src/kobo/actions.cpp`
+The action helper. Changes this session:
 - Performs like/unlike and repost/unrepost mutations against the PDS host
 - Reuses the saved-session retry pattern before mutating records and persists refreshed JWTs when the restore path rotates them
 - Keeps AppView reads and PDS writes separate to avoid host-switch instability
 
-### `run-rewrite.sh`
-The rewrite launcher. Changes this session:
+### `run.sh`
+The main launcher. Changes this session:
 - Auto-enables `SKEETS_REWRITE_TOUCH_MIRROR_X=1` for Kobo Clara Colour (`spaColour`) using the `snow` touch protocol
 - Logs `Touch mirror X/Y` to make touch transform verification visible on-device
 
@@ -184,29 +184,33 @@ Library packaging for KoboRoot archive. Changes this session:
 - Replaced all `file(CREATE_LINK ... SYMBOLIC)` with `file(COPY_FILE ... ONLY_IF_DIFFERENT)` for libssl.so and libcrypto.so in both `DEST_LIB_DIR` and `DEST_APP_DIR/lib`
 
 ### `CMakeLists.txt`
-- `sKeets_rewrite` target now links `dl` (for dlopen/dlsym)
+- The main `sKeets` target now links `dl` (for dlopen/dlsym)
 
 ### `Dockerfile.cross`
 - Added `RUN cat /etc/ssl/certs/*.pem > /etc/ssl/certs/ca-certificates.crt` to rebuild CA bundle (this turned out to be unnecessary — the bundle was already complete, but it's harmless)
 
 ---
 
-## Rewrite Architecture (current)
+## Current Architecture
 
-The rewrite is **not** modifying the v1 source tree. It lives in `src/rewrite/` with its own file structure:
+The active Kobo app now lives in dedicated `src/kobo/` and `src/platform/` directories:
 
 ```
-src/rewrite/
-├── app_main.cpp              Entry point + OpenSSL preload + CA loading + UI event loop
+src/kobo/
+├── main.cpp                  Entry point + OpenSSL preload + CA loading + UI event loop
 ├── bootstrap.h/cpp           Auth flow: login.txt → createSession / config.ini → resumeSession
 ├── tool_main.cpp             Diagnostic tool entry point
 ├── diag_main.cpp             Hardware diagnostics entry point
-└── platform/
-    ├── device.h/cpp          Device detection (model, codename, platform, touch protocol)
-    ├── framebuffer.h/cpp     FBInk-based framebuffer abstraction
-    ├── input.h/cpp           Touch input via evdev (supports snow protocol for Clara Colour)
-    ├── network.h/cpp         Network state probing (carrier, DNS, addresses)
-    └── power.h/cpp           Battery/charging state probing
+├── actions.h/cpp             Like/repost mutations and session refresh helpers
+├── feed.h/cpp                Timeline loading and pagination helpers
+└── thread.h/cpp              Thread loading helpers
+
+src/platform/
+├── device.h/cpp              Device detection (model, codename, platform, touch protocol)
+├── framebuffer.h/cpp         FBInk-based framebuffer abstraction
+├── input.h/cpp               Touch input via evdev (supports snow protocol for Clara Colour)
+├── network.h/cpp             Network state probing (carrier, DNS, addresses)
+└── power.h/cpp               Battery/charging state probing
 ```
 
 ### Key types in the rewrite
@@ -220,10 +224,10 @@ src/rewrite/
 
 ### Build targets
 
-- `sKeets` — v1 app (original)
-- `sKeets_rewrite` — v2 rewrite app (auth bootstrap shell)
-- `sKeets_diag` — Hardware diagnostic tool
-- `kobo-package-rewrite` — Packages rewrite app + libs + fonts into KoboRoot.tgz
+- `sKeets` — main Kobo app binary emitted by the rewrite target
+- `sKeets-diag` — hardware diagnostic binary
+- `sKeets-tool` — rewrite support tool binary
+- `kobo-package` — packages the active app + libs + assets into KoboRoot.tgz
 
 ### External dependencies
 
@@ -307,22 +311,22 @@ client.createSession(handle, password,
 ## Docker Build & Deploy Workflow
 
 ```bash
-# Build KoboRoot.tgz for the rewrite target
-NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh
+# Build KoboRoot.tgz for the main package
+./docker-build.sh
 
 # The output is at build-kobo/KoboRoot.tgz
 # Copy to Kobo's .kobo/ directory for auto-extraction on disconnect:
 cp build-kobo/KoboRoot.tgz /media/$USER/KOBOeReader/.kobo/KoboRoot.tgz
 
 # Or manually extract to test directory:
-# The package extracts to /mnt/onboard/.adds/sKeets-rewrite/
+# The package extracts to /mnt/onboard/.adds/sKeets/
 ```
 
 ### Environment variables on device
 
-Set in `run-rewrite.sh` (launched via NickelMenu):
+Set in the packaged launcher scripts:
 - `SKEETS_DATA_DIR` — data directory path
-- `SKEETS_REWRITE_DIR` — rewrite app directory (default: `/mnt/onboard/.adds/sKeets-rewrite`)
+- `SKEETS_REWRITE_DIR` — app directory (default: `/mnt/onboard/.adds/sKeets`)
 - `SKEETS_REWRITE_TOUCH_PROTOCOL=snow` — for Clara Colour touch input
 - `LD_LIBRARY_PATH` — includes bundled lib directory
 - `QT_QPA_PLATFORM=offscreen` — Qt platform plugin for headless rendering

@@ -1,4 +1,4 @@
-#include "rewrite/feed.h"
+#include "kobo/feed.h"
 
 #include "atproto/atproto_client.h"
 

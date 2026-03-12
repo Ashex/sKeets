@@ -1,4 +1,4 @@
-#include "rewrite/platform/input.h"
+#include "platform/input.h"
 
 #include <algorithm>
 #include <array>

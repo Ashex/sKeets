@@ -1,4 +1,4 @@
-#include "rewrite/platform/power.h"
+#include "platform/power.h"
 
 #include <algorithm>
 #include <cctype>

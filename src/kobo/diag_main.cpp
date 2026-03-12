@@ -1,7 +1,7 @@
-#include "rewrite/platform/framebuffer.h"
-#include "rewrite/platform/input.h"
-#include "rewrite/platform/network.h"
-#include "rewrite/platform/power.h"
+#include "platform/framebuffer.h"
+#include "platform/input.h"
+#include "platform/network.h"
+#include "platform/power.h"
 
 #include <QCoreApplication>
 #include <QDir>
