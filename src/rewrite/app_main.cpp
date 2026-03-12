@@ -7,6 +7,9 @@
 #include "rewrite/platform/input.h"
 #include "rewrite/platform/network.h"
 #include "rewrite/platform/power.h"
+#include "util/config.h"
+#include "util/image_cache.h"
+#include "util/paths.h"
 #include "ui/fb.h"
 #include "ui/font.h"
 #include "util/str.h"
@@ -45,6 +48,10 @@ constexpr int kOuterMargin = 28;
 constexpr int kCardGap = 20;
 constexpr int kCardPadding = 18;
 constexpr int kPostSeparator = 12;
+constexpr int kFeedAvatarSize = 40;
+constexpr int kThreadAvatarSize = 36;
+constexpr int kAvatarGap = 12;
+constexpr int kFeedEmbedMaxHeight = 112;
 constexpr std::uint8_t kColorPostBorder = 0xC0;
 constexpr std::uint8_t kColorAuthor = 0x10;
 constexpr std::uint8_t kColorMeta = 0x60;
@@ -54,18 +61,25 @@ enum class rewrite_view_mode_t {
     dashboard,
     feed,
     thread,
+    settings,
 };
 
 struct rewrite_post_hit_t {
     rewrite_rect_t rect;
     rewrite_rect_t like_rect;
     rewrite_rect_t repost_rect;
+    rewrite_rect_t stats_rect;
+    int stats_x = 0;
+    int stats_y = 0;
     int post_index = -1;
 };
 
 struct rewrite_thread_post_hit_t {
     rewrite_rect_t rect;
     rewrite_rect_t like_rect;
+    rewrite_rect_t stats_rect;
+    int stats_x = 0;
+    int stats_y = 0;
     Bsky::Post* post = nullptr;
 };
 
@@ -98,12 +112,23 @@ struct rewrite_app_t {
     rewrite_button_t feed_back_button;
     rewrite_button_t feed_refresh_button;
     rewrite_button_t feed_next_button;
+    rewrite_button_t feed_settings_button;
 
     // Thread view state
     rewrite_thread_result_t thread_result;
     std::string selected_post_uri;
     std::vector<rewrite_thread_post_hit_t> thread_post_hits;
     rewrite_button_t thread_back_button;
+    rewrite_button_t thread_settings_button;
+
+    // Settings view state
+    bool profile_images_enabled = true;
+    bool embed_images_enabled = false;
+    rewrite_view_mode_t settings_return_view = rewrite_view_mode_t::feed;
+    rewrite_button_t settings_back_button;
+    rewrite_button_t settings_profile_button;
+    rewrite_button_t settings_embed_button;
+    rewrite_button_t settings_sign_out_button;
 };
 
 void handle_signal(int) {
@@ -277,6 +302,58 @@ void refresh_bootstrap_state(rewrite_app_t& app) {
     app.input_line = app.bootstrap.detail;
 }
 
+void load_settings(rewrite_app_t& app) {
+    config_t* config = config_open(skeets_config_path());
+    if (!config) {
+        return;
+    }
+    app.profile_images_enabled = config_get_bool(config, "profile_images_enabled", true);
+    app.embed_images_enabled = config_get_bool(config, "embed_images_enabled", false);
+    config_free(config);
+}
+
+void save_settings(const rewrite_app_t& app) {
+    config_t* config = config_open(skeets_config_path());
+    if (!config) {
+        return;
+    }
+    config_set_bool(config, "profile_images_enabled", app.profile_images_enabled);
+    config_set_bool(config, "embed_images_enabled", app.embed_images_enabled);
+    config_save(config);
+    config_free(config);
+}
+
+void clear_saved_session(rewrite_app_t& app) {
+    config_t* config = config_open(skeets_config_path());
+    if (config) {
+        config_set_str(config, "handle", "");
+        config_set_str(config, "access_jwt", "");
+        config_set_str(config, "refresh_jwt", "");
+        config_set_str(config, "did", "");
+        config_set_str(config, "pds_url", "");
+        config_set_str(config, "appview_url", "");
+        config_save(config);
+        config_free(config);
+    }
+
+    app.bootstrap = rewrite_bootstrap_result_t{};
+    app.feed_result = rewrite_feed_result_t{};
+    app.thread_result = rewrite_thread_result_t{};
+    app.feed_page_start = 0;
+    app.feed_page_count = 0;
+    app.feed_page_history.clear();
+    app.visible_post_hits.clear();
+    app.thread_post_hits.clear();
+    app.selected_post_uri.clear();
+}
+
+void open_settings(rewrite_app_t& app, rewrite_view_mode_t return_view) {
+    app.settings_return_view = return_view;
+    app.view_mode = rewrite_view_mode_t::settings;
+    app.status_line = "Settings";
+    app.input_line = "Toggle image preferences or sign out";
+}
+
 void load_feed(rewrite_app_t& app) {
     if (!app.bootstrap.authenticated) return;
     app.status_line = "Loading timeline...";
@@ -315,31 +392,98 @@ void flatten_thread_posts(const Bsky::Post& post,
 }
 
 std::string feed_like_label(const Bsky::Post& post) {
-    return "<Like> " + std::to_string(post.like_count);
+    return std::string(post.viewer_like.empty() ? "<Like> " : ">Like< ") + std::to_string(post.like_count);
 }
 
 std::string feed_reply_label(const Bsky::Post& post) {
-    return "Reply " + std::to_string(post.reply_count);
+    return "<Reply> " + std::to_string(post.reply_count);
 }
 
 std::string feed_repost_label(const Bsky::Post& post) {
-    return "<Repost> " + std::to_string(post.repost_count);
+    return std::string(post.viewer_repost.empty() ? "<Repost> " : ">Repost< ") + std::to_string(post.repost_count);
 }
 
 std::string thread_like_label(const Bsky::Post& post) {
-    return "<Like> " + std::to_string(post.like_count);
+    return std::string(post.viewer_like.empty() ? "<Like> " : ">Like< ") + std::to_string(post.like_count);
 }
 
 std::string thread_reply_label(const Bsky::Post& post) {
-    return "Reply " + std::to_string(post.reply_count);
+    return "<Reply> " + std::to_string(post.reply_count);
 }
 
 std::string thread_repost_label(const Bsky::Post& post) {
-    return "Repost " + std::to_string(post.repost_count);
+    return "<Repost> " + std::to_string(post.repost_count);
 }
 
 rewrite_rect_t make_stat_hit_rect(int x, int y, int width, int height) {
     return rewrite_rect_t{x, std::max(0, y - 6), width, height + 12};
+}
+
+rewrite_rect_t expand_rect(const rewrite_rect_t& rect, int pad, int max_w, int max_h) {
+    rewrite_rect_t out = rect;
+    out.x = std::max(0, out.x - pad);
+    out.y = std::max(0, out.y - pad);
+    out.width = std::min(max_w - out.x, out.width + pad * 2);
+    out.height = std::min(max_h - out.y, out.height + pad * 2);
+    return out;
+}
+
+rewrite_refresh_mode_t stats_refresh_mode(const rewrite_app_t& app) {
+    return app.framebuffer.info.supports_grayscale_partial_refresh
+        ? rewrite_refresh_mode_t::grayscale_partial
+        : rewrite_refresh_mode_t::partial;
+}
+
+void refresh_region(rewrite_app_t& app, const rewrite_rect_t& rect) {
+    std::string error_message;
+    if (!rewrite_framebuffer_refresh(app.framebuffer,
+                                     stats_refresh_mode(app),
+                                     rect,
+                                     true,
+                                     &error_message)) {
+        std::fprintf(stderr, "rewrite app: partial refresh failed: %s\n", error_message.c_str());
+    }
+}
+
+void render_feed_stats_only(rewrite_app_t& app, const rewrite_post_hit_t& hit) {
+    if (hit.post_index < 0 || hit.post_index >= static_cast<int>(app.feed_result.feed.items.size())) {
+        return;
+    }
+    const Bsky::Post& post = app.feed_result.feed.items[hit.post_index];
+    const std::string stats = feed_like_label(post) + "  " + feed_reply_label(post) + "  " + feed_repost_label(post);
+    rewrite_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
+    font_draw_string(&app.text_fb,
+                     hit.stats_x,
+                     hit.stats_y,
+                     stats.c_str(),
+                     kColorMeta,
+                     COLOR_WHITE);
+    refresh_region(app,
+                   expand_rect(hit.stats_rect,
+                               6,
+                               app.framebuffer.info.screen_width,
+                               app.framebuffer.info.screen_height));
+}
+
+void render_thread_stats_only(rewrite_app_t& app, const rewrite_thread_post_hit_t& hit) {
+    if (!hit.post) {
+        return;
+    }
+    const std::string stats = thread_like_label(*hit.post) + "  " +
+                              thread_reply_label(*hit.post) + "  " +
+                              thread_repost_label(*hit.post);
+    rewrite_framebuffer_fill_rect(app.framebuffer, hit.stats_rect, COLOR_WHITE);
+    font_draw_string(&app.text_fb,
+                     hit.stats_x,
+                     hit.stats_y,
+                     stats.c_str(),
+                     kColorMeta,
+                     COLOR_WHITE);
+    refresh_region(app,
+                   expand_rect(hit.stats_rect,
+                               6,
+                               app.framebuffer.info.screen_width,
+                               app.framebuffer.info.screen_height));
 }
 
 std::vector<std::string> auth_lines(const rewrite_app_t& app) {
@@ -464,6 +608,9 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
     const int content_top = header_height;
     const int content_bottom = height - button_height - kOuterMargin;
     const int content_width = width - (kOuterMargin * 2);
+    const int avatar_block_width = app.profile_images_enabled ? (kFeedAvatarSize + kAvatarGap) : 0;
+    const int text_left = kOuterMargin + avatar_block_width;
+    const int post_text_width = std::max(160, content_width - avatar_block_width);
     const int line_spacing = 4;
 
     // Layout bottom buttons: [< Prev] [Refresh] [Next >]
@@ -483,12 +630,17 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
         {kOuterMargin + (btn_width + btn_gap) * 2, btn_y, btn_width, button_height},
         "Next >"
     };
+    app.feed_settings_button = {
+        {width - kOuterMargin - 176, 10, 176, header_height - 20},
+        "Settings"
+    };
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
     // Header
     const rewrite_rect_t header_rect{0, 0, width, header_height};
     rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    draw_button(app, app.feed_settings_button, kColorButtonSecondary);
     draw_centered_text(app, width / 2, (header_height - app.text_fb.font_h) / 2,
                        "sKeets - Home Timeline", COLOR_WHITE, kColorHeader);
 
@@ -515,8 +667,11 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             if (!post.reposted_by.empty()) {
                 needed += app.text_fb.font_h + 2;
             }
-            needed += app.text_fb.font_h + 4; // author line
-            needed += font_measure_wrapped(content_width - 8, post.text.c_str(), line_spacing);
+            needed += std::max(app.text_fb.font_h + 4, app.profile_images_enabled ? kFeedAvatarSize + 4 : 0); // author/avatar row
+            needed += font_measure_wrapped(post_text_width - 8, post.text.c_str(), line_spacing);
+            if (post.embed_type == Bsky::EmbedType::Image && app.embed_images_enabled && !post.image_urls.empty()) {
+                needed += kFeedEmbedMaxHeight + 8;
+            }
             needed += app.text_fb.font_h + kPostSeparator + 8; // stats + separator
 
             // Skip this post if it would overflow (except the first one — always show at least 1)
@@ -525,7 +680,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             // Repost attribution
             if (!post.reposted_by.empty()) {
                 std::string repost_line = sanitize_bitmap_text(">> Reposted by @" + post.reposted_by);
-                font_draw_string(&app.text_fb, kOuterMargin, cursor_y,
+                font_draw_string(&app.text_fb, text_left, cursor_y,
                                  repost_line.c_str(), kColorRepost, COLOR_WHITE);
                 cursor_y += app.text_fb.font_h + 2;
             }
@@ -539,50 +694,105 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             char time_buf[64];
             str_format_time(time_buf, sizeof(time_buf), static_cast<long>(post.indexed_at));
 
-            font_draw_string(&app.text_fb, kOuterMargin, cursor_y,
+            const int author_y = cursor_y;
+            if (app.profile_images_enabled) {
+                const int avatar_x = kOuterMargin;
+                if (!post.author.avatar_url.empty()) {
+                    const image_t* avatar = image_cache_lookup(post.author.avatar_url.c_str(),
+                                                               kFeedAvatarSize,
+                                                               kFeedAvatarSize);
+                    if (avatar) {
+                        fb_blit_rgba(&app.text_fb,
+                                     avatar_x,
+                                     author_y,
+                                     avatar->width,
+                                     avatar->height,
+                                     avatar->pixels);
+                    } else {
+                        fb_fill_rect(&app.text_fb,
+                                     avatar_x,
+                                     author_y,
+                                     kFeedAvatarSize,
+                                     kFeedAvatarSize,
+                                     COLOR_LGRAY);
+                    }
+                } else {
+                    fb_fill_rect(&app.text_fb,
+                                 avatar_x,
+                                 author_y,
+                                 kFeedAvatarSize,
+                                 kFeedAvatarSize,
+                                 COLOR_LGRAY);
+                }
+            }
+
+            font_draw_string(&app.text_fb, text_left, cursor_y,
                              author.c_str(), kColorAuthor, COLOR_WHITE);
             // Draw timestamp right-aligned
             {
                 int time_w = font_measure_string(time_buf);
                 int time_x = width - kOuterMargin - time_w;
-                if (time_x > kOuterMargin + font_measure_string(author.c_str()) + 8) {
+                if (time_x > text_left + font_measure_string(author.c_str()) + 8) {
                     font_draw_string(&app.text_fb, time_x, cursor_y,
                                      time_buf, kColorMeta, COLOR_WHITE);
                 }
             }
-            cursor_y += app.text_fb.font_h + 4;
+            cursor_y += std::max(app.text_fb.font_h + 4,
+                                 app.profile_images_enabled ? kFeedAvatarSize + 4 : 0);
 
             // Post text
             if (!post.text.empty()) {
                 const std::string post_text = sanitize_bitmap_text(post.text);
                 cursor_y = font_draw_wrapped(&app.text_fb,
-                                             kOuterMargin + 4, cursor_y,
-                                             content_width - 8,
+                                             text_left + 4, cursor_y,
+                                             post_text_width - 8,
                                              post_text.c_str(),
                                              COLOR_BLACK, COLOR_WHITE,
                                              line_spacing);
                 cursor_y += 4;
             }
 
-            // Embed indicator (text-only for now)
-            if (post.embed_type == Bsky::EmbedType::Image) {
-                font_draw_string(&app.text_fb, kOuterMargin + 4, cursor_y,
-                                 "[Image]", kColorMeta, COLOR_WHITE);
-                cursor_y += app.text_fb.font_h + 2;
+            if (post.embed_type == Bsky::EmbedType::Image && app.embed_images_enabled && !post.image_urls.empty()) {
+                const image_t* embed = image_cache_lookup(post.image_urls[0].c_str(),
+                                                          post_text_width,
+                                                          kFeedEmbedMaxHeight);
+                if (embed) {
+                    fb_blit_rgba(&app.text_fb,
+                                 text_left + 4,
+                                 cursor_y,
+                                 embed->width,
+                                 embed->height,
+                                 embed->pixels);
+                    cursor_y += embed->height + 8;
+                } else {
+                    fb_fill_rect(&app.text_fb,
+                                 text_left + 4,
+                                 cursor_y,
+                                 post_text_width - 8,
+                                 kFeedEmbedMaxHeight,
+                                 COLOR_LGRAY);
+                    font_draw_string(&app.text_fb,
+                                     text_left + 12,
+                                     cursor_y + (kFeedEmbedMaxHeight - app.text_fb.font_h) / 2,
+                                     "[image loading]",
+                                     kColorMeta,
+                                     COLOR_LGRAY);
+                    cursor_y += kFeedEmbedMaxHeight + 8;
+                }
             } else if (post.embed_type == Bsky::EmbedType::External) {
                 std::string link = sanitize_bitmap_text("[Link: " + post.ext_title + "]");
-                font_draw_string(&app.text_fb, kOuterMargin + 4, cursor_y,
+                font_draw_string(&app.text_fb, text_left + 4, cursor_y,
                                  link.c_str(), kColorMeta, COLOR_WHITE);
                 cursor_y += app.text_fb.font_h + 2;
             } else if (post.embed_type == Bsky::EmbedType::Quote && post.quoted_post) {
                 std::string quote = sanitize_bitmap_text("[Quote: @" + post.quoted_post->author.handle + "]");
-                font_draw_string(&app.text_fb, kOuterMargin + 4, cursor_y,
+                font_draw_string(&app.text_fb, text_left + 4, cursor_y,
                                  quote.c_str(), kColorMeta, COLOR_WHITE);
                 cursor_y += app.text_fb.font_h + 2;
             }
 
             // Stats line
-            const int stats_x = kOuterMargin + 4;
+            const int stats_x = text_left + 4;
             const int stats_y = cursor_y;
             const std::string like_label = feed_like_label(post);
             const std::string reply_label = feed_reply_label(post);
@@ -608,6 +818,9 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                 rewrite_rect_t{kOuterMargin, post_top, content_width, cursor_y - post_top},
                 make_stat_hit_rect(stats_x, stats_y, like_width, app.text_fb.font_h),
                 make_stat_hit_rect(repost_x, stats_y, repost_width, app.text_fb.font_h),
+                make_stat_hit_rect(stats_x, stats_y, font_measure_string(stats.c_str()) + 12, app.text_fb.font_h),
+                stats_x,
+                stats_y,
                 i,
             });
 
@@ -652,6 +865,7 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     const int line_spacing = 4;
 
     app.thread_back_button = {{kOuterMargin, 10, 160, header_height - 20}, "< Back"};
+    app.thread_settings_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, "Settings"};
     app.thread_post_hits.clear();
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
@@ -659,6 +873,7 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     const rewrite_rect_t header_rect{0, 0, width, header_height};
     rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
     draw_button(app, app.thread_back_button, kColorButtonSecondary);
+    draw_button(app, app.thread_settings_button, kColorButtonSecondary);
     draw_centered_text(app, width / 2, (header_height - app.text_fb.font_h) / 2,
                        "Thread", COLOR_WHITE, kColorHeader);
 
@@ -682,8 +897,11 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
             Bsky::Post* post = const_cast<Bsky::Post*>(node.first);
             const int depth = node.second;
             const int indent = depth * 28;
+            const int avatar_block_width = app.profile_images_enabled ? (kThreadAvatarSize + 8) : 0;
             const int x = kOuterMargin + indent;
+            const int text_x = x + avatar_block_width;
             const int width_for_post = std::max(120, content_width - indent);
+            const int text_width_for_post = std::max(120, width_for_post - avatar_block_width);
             const int post_top = cursor_y;
 
             if (depth > 0) {
@@ -696,25 +914,107 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
                 ? "@" + post->author.handle
                 : post->author.display_name + "  @" + post->author.handle;
             author = sanitize_bitmap_text(author);
-            font_draw_string(&app.text_fb, x, cursor_y, author.c_str(), kColorAuthor, COLOR_WHITE);
-            cursor_y += app.text_fb.font_h + 4;
+
+            const int author_y = cursor_y;
+            if (app.profile_images_enabled) {
+                if (!post->author.avatar_url.empty()) {
+                    const image_t* avatar = image_cache_lookup(post->author.avatar_url.c_str(),
+                                                               kThreadAvatarSize,
+                                                               kThreadAvatarSize);
+                    if (avatar) {
+                        fb_blit_rgba(&app.text_fb,
+                                     x,
+                                     author_y,
+                                     avatar->width,
+                                     avatar->height,
+                                     avatar->pixels);
+                    } else {
+                        fb_fill_rect(&app.text_fb,
+                                     x,
+                                     author_y,
+                                     kThreadAvatarSize,
+                                     kThreadAvatarSize,
+                                     COLOR_LGRAY);
+                    }
+                } else {
+                    fb_fill_rect(&app.text_fb,
+                                 x,
+                                 author_y,
+                                 kThreadAvatarSize,
+                                 kThreadAvatarSize,
+                                 COLOR_LGRAY);
+                }
+            }
+
+            font_draw_string(&app.text_fb, text_x, cursor_y, author.c_str(), kColorAuthor, COLOR_WHITE);
+            cursor_y += std::max(app.text_fb.font_h + 4,
+                                 app.profile_images_enabled ? kThreadAvatarSize + 4 : 0);
 
             const std::string text = sanitize_bitmap_text(post->text);
             cursor_y = font_draw_wrapped(&app.text_fb,
-                                         x,
+                                         text_x,
                                          cursor_y,
-                                         width_for_post,
+                                         text_width_for_post,
                                          text.c_str(),
                                          COLOR_BLACK,
                                          COLOR_WHITE,
                                          line_spacing);
             cursor_y += 4;
 
+            if (post->embed_type == Bsky::EmbedType::Image &&
+                app.embed_images_enabled &&
+                !post->image_urls.empty()) {
+                const image_t* embed = image_cache_lookup(post->image_urls[0].c_str(),
+                                                          text_width_for_post,
+                                                          kFeedEmbedMaxHeight);
+                if (embed) {
+                    fb_blit_rgba(&app.text_fb,
+                                 text_x,
+                                 cursor_y,
+                                 embed->width,
+                                 embed->height,
+                                 embed->pixels);
+                    cursor_y += embed->height + 8;
+                } else {
+                    fb_fill_rect(&app.text_fb,
+                                 text_x,
+                                 cursor_y,
+                                 text_width_for_post,
+                                 kFeedEmbedMaxHeight,
+                                 COLOR_LGRAY);
+                    font_draw_string(&app.text_fb,
+                                     text_x + 8,
+                                     cursor_y + (kFeedEmbedMaxHeight - app.text_fb.font_h) / 2,
+                                     "[image loading]",
+                                     kColorMeta,
+                                     COLOR_LGRAY);
+                    cursor_y += kFeedEmbedMaxHeight + 8;
+                }
+            } else if (post->embed_type == Bsky::EmbedType::External) {
+                const std::string link = sanitize_bitmap_text("[Link: " + post->ext_title + "]");
+                font_draw_string(&app.text_fb,
+                                 text_x,
+                                 cursor_y,
+                                 link.c_str(),
+                                 kColorMeta,
+                                 COLOR_WHITE);
+                cursor_y += app.text_fb.font_h + 2;
+            } else if (post->embed_type == Bsky::EmbedType::Quote && post->quoted_post) {
+                const std::string quote = sanitize_bitmap_text("[Quote: @" + post->quoted_post->author.handle + "]");
+                font_draw_string(&app.text_fb,
+                                 text_x,
+                                 cursor_y,
+                                 quote.c_str(),
+                                 kColorMeta,
+                                 COLOR_WHITE);
+                cursor_y += app.text_fb.font_h + 2;
+            }
+
             const std::string like_label = thread_like_label(*post);
             const std::string reply_label = thread_reply_label(*post);
             const std::string repost_label = thread_repost_label(*post);
             const std::string stats = like_label + "  " + reply_label + "  " + repost_label;
-            font_draw_string(&app.text_fb, x, cursor_y, stats.c_str(), kColorMeta, COLOR_WHITE);
+            font_draw_string(&app.text_fb, text_x, cursor_y, stats.c_str(), kColorMeta, COLOR_WHITE);
             const int stats_y = cursor_y;
             const int like_width = std::max(72, font_measure_string(like_label.c_str()) + 16);
             cursor_y += app.text_fb.font_h + 8;
@@ -724,7 +1024,10 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
                                           kColorPostBorder);
             app.thread_post_hits.push_back({
                 rewrite_rect_t{x, post_top, width_for_post, cursor_y - post_top + 1},
-                make_stat_hit_rect(x, stats_y, like_width, app.text_fb.font_h),
+                make_stat_hit_rect(text_x, stats_y, like_width, app.text_fb.font_h),
+                make_stat_hit_rect(text_x, stats_y, font_measure_string(stats.c_str()) + 12, app.text_fb.font_h),
+                text_x,
+                stats_y,
                 post,
             });
             cursor_y += 12;
@@ -743,6 +1046,104 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
                                      true,
                                      &error_message)) {
         std::fprintf(stderr, "rewrite app: thread refresh failed: %s\n", error_message.c_str());
+    }
+}
+
+void draw_toggle_chip(rewrite_app_t& app, const rewrite_rect_t& rect, bool enabled) {
+    const std::uint8_t fill = enabled ? kColorButtonPrimary : 0xC8;
+    rewrite_framebuffer_fill_rect(app.framebuffer, rect, fill);
+    draw_border(app, rect, COLOR_BLACK, 2);
+    draw_centered_text(app,
+                       rect.x + rect.width / 2,
+                       rect.y + (rect.height - app.text_fb.font_h) / 2,
+                       enabled ? "ON" : "OFF",
+                       enabled ? COLOR_WHITE : COLOR_BLACK,
+                       fill);
+}
+
+void draw_settings_row(rewrite_app_t& app,
+                       const rewrite_button_t& row,
+                       const std::string& label,
+                       const std::string& detail,
+                       bool enabled) {
+    rewrite_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
+    draw_border(app, row.rect, kColorPostBorder, 2);
+
+    const int text_x = row.rect.x + kCardPadding;
+    const int text_y = row.rect.y + 12;
+    font_draw_string(&app.text_fb, text_x, text_y, label.c_str(), COLOR_BLACK, kColorCard);
+    font_draw_wrapped(&app.text_fb,
+                      text_x,
+                      text_y + app.text_fb.font_h + 6,
+                      row.rect.width - 180,
+                      detail.c_str(),
+                      kColorMeta,
+                      kColorCard,
+                      4);
+
+    const rewrite_rect_t toggle_rect{row.rect.x + row.rect.width - 116,
+                                     row.rect.y + (row.rect.height - 46) / 2,
+                                     92,
+                                     46};
+    draw_toggle_chip(app, toggle_rect, enabled);
+}
+
+void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
+    const int width = app.framebuffer.info.screen_width;
+    const int height = app.framebuffer.info.screen_height;
+    const int header_height = std::max(72, height / 14);
+    const int row_height = std::max(104, height / 10);
+    const int row_gap = 16;
+    const int content_width = width - (kOuterMargin * 2);
+    const int first_row_y = header_height + kOuterMargin;
+
+    app.settings_back_button = {{kOuterMargin, 10, 160, header_height - 20}, "< Back"};
+    app.settings_profile_button = {{kOuterMargin, first_row_y, content_width, row_height}, "Profile Images"};
+    app.settings_embed_button = {{kOuterMargin, first_row_y + row_height + row_gap, content_width, row_height}, "Embed Images"};
+    app.settings_sign_out_button = {{kOuterMargin,
+                                     height - kOuterMargin - std::max(90, height / 12),
+                                     content_width,
+                                     std::max(90, height / 12)},
+                                    "Sign Out"};
+
+    rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
+
+    const rewrite_rect_t header_rect{0, 0, width, header_height};
+    rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    draw_button(app, app.settings_back_button, kColorButtonSecondary);
+    draw_centered_text(app, width / 2, (header_height - app.text_fb.font_h) / 2,
+                       "Settings", COLOR_WHITE, kColorHeader);
+
+    draw_settings_row(app,
+                      app.settings_profile_button,
+                      "Profile Images",
+                      "Load avatar images when image rendering is available.",
+                      app.profile_images_enabled);
+    draw_settings_row(app,
+                      app.settings_embed_button,
+                      "Embed Images",
+                      "Show post image placeholders and enable image loading later.",
+                      app.embed_images_enabled);
+
+    font_draw_wrapped(&app.text_fb,
+                      kOuterMargin,
+                      app.settings_embed_button.rect.y + app.settings_embed_button.rect.height + 20,
+                      content_width,
+                      "The rewrite is still text-first. These toggles are now persisted and will gate richer image rendering as it lands.",
+                      kColorMeta,
+                      COLOR_WHITE,
+                      4);
+
+    draw_button(app, app.settings_sign_out_button, kColorButtonPrimary);
+
+    std::string error_message;
+    const rewrite_rect_t screen_rect = full_screen_rect(app);
+    if (!rewrite_framebuffer_refresh(app.framebuffer,
+                                     ui_refresh_mode(app, full_refresh),
+                                     screen_rect,
+                                     true,
+                                     &error_message)) {
+        std::fprintf(stderr, "rewrite app: settings refresh failed: %s\n", error_message.c_str());
     }
 }
 
@@ -789,6 +1190,10 @@ void render_active_view(rewrite_app_t& app, bool full_refresh) {
         render_thread_screen(app, full_refresh);
         return;
     }
+    if (app.view_mode == rewrite_view_mode_t::settings) {
+        render_settings_screen(app, full_refresh);
+        return;
+    }
     render_screen(app, full_refresh);
 }
 
@@ -822,37 +1227,6 @@ int main(int argc, char* argv[]) {
             std::fprintf(stderr, "rewrite openssl: preloaded OpenSSL 3.x from %s\n",
                          lib_dir.c_str());
 
-            // Verify our preloaded libraries have the expected symbols
-            void* sym = dlsym(ssl, "OPENSSL_init_ssl");
-            std::fprintf(stderr, "rewrite openssl: dlsym(ssl_handle, OPENSSL_init_ssl) = %p\n", sym);
-            sym = dlsym(RTLD_DEFAULT, "OPENSSL_init_ssl");
-            std::fprintf(stderr, "rewrite openssl: dlsym(RTLD_DEFAULT, OPENSSL_init_ssl) = %p\n", sym);
-
-            // Check what the dynamic linker finds for each name Qt might try
-            const char* probe_names[] = {"libssl.so.3", "libssl.so", "libcrypto.so.3", "libcrypto.so"};
-            for (const char* name : probe_names) {
-                void* h = dlopen(name, RTLD_NOW | RTLD_NOLOAD);
-                std::fprintf(stderr, "rewrite openssl: dlopen(\"%s\", NOLOAD) = %p\n", name, h);
-                if (!h) {
-                    // Try actual load to see what we'd get
-                    h = dlopen(name, RTLD_NOW);
-                    std::fprintf(stderr, "rewrite openssl: dlopen(\"%s\", NOW) = %p err=%s\n",
-                                 name, h, h ? "ok" : dlerror());
-                    if (h) {
-                        void* ver = dlsym(h, "OpenSSL_version_num");
-                        if (ver) {
-                            auto fn = reinterpret_cast<unsigned long (*)()>(ver);
-                            std::fprintf(stderr, "rewrite openssl: %s version_num=0x%08lx\n",
-                                         name, fn());
-                        } else {
-                            // OpenSSL 1.0.x uses SSLeay instead
-                            void* legacy = dlsym(h, "SSLeay");
-                            std::fprintf(stderr, "rewrite openssl: %s has SSLeay=%p (1.0.x)\n",
-                                         name, legacy);
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -919,6 +1293,7 @@ int main(int argc, char* argv[]) {
 
     refresh_bootstrap_state(rewrite_app);
     refresh_runtime_state(rewrite_app);
+    load_settings(rewrite_app);
 
     // If auth succeeded, auto-load the feed and switch to feed view
     if (rewrite_app.bootstrap.authenticated) {
@@ -936,10 +1311,18 @@ int main(int argc, char* argv[]) {
 
     auto last_probe = std::chrono::steady_clock::now();
     while (!g_stop_requested) {
+        QCoreApplication::processEvents();
+
         rewrite_input_event_t event;
         error_message.clear();
         const bool have_event = rewrite_input_poll(rewrite_app.input, event, 500, &error_message);
         if (!have_event) {
+            if (image_cache_redraw_needed() &&
+                (rewrite_app.view_mode == rewrite_view_mode_t::feed ||
+                 rewrite_app.view_mode == rewrite_view_mode_t::thread)) {
+                render_active_view(rewrite_app, false);
+            }
+
             if (!error_message.empty()) {
                 rewrite_app.status_line = "Input polling error";
                 rewrite_app.input_line = error_message;
@@ -982,6 +1365,12 @@ int main(int argc, char* argv[]) {
 
         // --- Feed view touch handling ---
         if (rewrite_app.view_mode == rewrite_view_mode_t::feed) {
+            if (contains_point(rewrite_app.feed_settings_button.rect, event.x, event.y)) {
+                open_settings(rewrite_app, rewrite_view_mode_t::feed);
+                render_settings_screen(rewrite_app, true);
+                continue;
+            }
+
             if (contains_point(rewrite_app.feed_back_button.rect, event.x, event.y)) {
                 if (!rewrite_app.feed_page_history.empty()) {
                     rewrite_app.feed_page_start = rewrite_app.feed_page_history.back();
@@ -1040,64 +1429,60 @@ int main(int argc, char* argv[]) {
                 if (contains_point(hit.like_rect, event.x, event.y)) {
                     if (post.viewer_like.empty()) {
                         post.like_count++;
-                        render_feed_screen(rewrite_app, true);
+                        post.viewer_like = "pending-like";
+                        render_feed_stats_only(rewrite_app, hit);
                         const auto action = rewrite_like_post(rewrite_app.bootstrap.session, post.uri, post.cid);
                         if (action.ok) {
                             post.viewer_like = action.record_uri;
-                            rewrite_app.status_line = "Post liked";
                         } else {
+                            post.viewer_like.clear();
                             post.like_count--;
-                            rewrite_app.status_line = "Like failed";
-                            rewrite_app.input_line = action.error_message;
+                            std::fprintf(stderr, "rewrite action: like failed: %s\n", action.error_message.c_str());
                         }
                     } else {
                         const std::string old_uri = post.viewer_like;
                         post.viewer_like.clear();
                         post.like_count = std::max(0, post.like_count - 1);
-                        render_feed_screen(rewrite_app, true);
+                        render_feed_stats_only(rewrite_app, hit);
                         const auto action = rewrite_unlike_post(rewrite_app.bootstrap.session, old_uri);
                         if (action.ok) {
-                            rewrite_app.status_line = "Like removed";
                         } else {
                             post.viewer_like = old_uri;
                             post.like_count++;
-                            rewrite_app.status_line = "Unlike failed";
-                            rewrite_app.input_line = action.error_message;
+                            std::fprintf(stderr, "rewrite action: unlike failed: %s\n", action.error_message.c_str());
                         }
                     }
-                    render_feed_screen(rewrite_app, true);
+                    render_feed_stats_only(rewrite_app, hit);
                     break;
                 }
 
                 if (contains_point(hit.repost_rect, event.x, event.y)) {
                     if (post.viewer_repost.empty()) {
                         post.repost_count++;
-                        render_feed_screen(rewrite_app, true);
+                        post.viewer_repost = "pending-repost";
+                        render_feed_stats_only(rewrite_app, hit);
                         const auto action = rewrite_repost_post(rewrite_app.bootstrap.session, post.uri, post.cid);
                         if (action.ok) {
                             post.viewer_repost = action.record_uri;
-                            rewrite_app.status_line = "Post reposted";
                         } else {
+                            post.viewer_repost.clear();
                             post.repost_count--;
-                            rewrite_app.status_line = "Repost failed";
-                            rewrite_app.input_line = action.error_message;
+                            std::fprintf(stderr, "rewrite action: repost failed: %s\n", action.error_message.c_str());
                         }
                     } else {
                         const std::string old_uri = post.viewer_repost;
                         post.viewer_repost.clear();
                         post.repost_count = std::max(0, post.repost_count - 1);
-                        render_feed_screen(rewrite_app, true);
+                        render_feed_stats_only(rewrite_app, hit);
                         const auto action = rewrite_unrepost_post(rewrite_app.bootstrap.session, old_uri);
                         if (action.ok) {
-                            rewrite_app.status_line = "Repost removed";
                         } else {
                             post.viewer_repost = old_uri;
                             post.repost_count++;
-                            rewrite_app.status_line = "Undo repost failed";
-                            rewrite_app.input_line = action.error_message;
+                            std::fprintf(stderr, "rewrite action: unrepost failed: %s\n", action.error_message.c_str());
                         }
                     }
-                    render_feed_screen(rewrite_app, true);
+                    render_feed_stats_only(rewrite_app, hit);
                     break;
                 }
 
@@ -1118,6 +1503,12 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
+            if (contains_point(rewrite_app.thread_settings_button.rect, event.x, event.y)) {
+                open_settings(rewrite_app, rewrite_view_mode_t::thread);
+                render_settings_screen(rewrite_app, true);
+                continue;
+            }
+
             for (const auto& hit : rewrite_app.thread_post_hits) {
                 if (!hit.post || !contains_point(hit.like_rect, event.x, event.y)) {
                     continue;
@@ -1126,34 +1517,73 @@ int main(int argc, char* argv[]) {
                 Bsky::Post& post = *hit.post;
                 if (post.viewer_like.empty()) {
                     post.like_count++;
-                    render_thread_screen(rewrite_app, true);
+                    post.viewer_like = "pending-like";
+                    render_thread_stats_only(rewrite_app, hit);
                     const auto action = rewrite_like_post(rewrite_app.bootstrap.session, post.uri, post.cid);
                     if (action.ok) {
                         post.viewer_like = action.record_uri;
-                        rewrite_app.status_line = "Post liked";
                     } else {
+                        post.viewer_like.clear();
                         post.like_count--;
-                        rewrite_app.status_line = "Like failed";
-                        rewrite_app.input_line = action.error_message;
+                        std::fprintf(stderr, "rewrite action: thread like failed: %s\n", action.error_message.c_str());
                     }
                 } else {
                     const std::string old_uri = post.viewer_like;
                     post.viewer_like.clear();
                     post.like_count = std::max(0, post.like_count - 1);
-                    render_thread_screen(rewrite_app, true);
+                    render_thread_stats_only(rewrite_app, hit);
                     const auto action = rewrite_unlike_post(rewrite_app.bootstrap.session, old_uri);
                     if (action.ok) {
-                        rewrite_app.status_line = "Like removed";
                     } else {
                         post.viewer_like = old_uri;
                         post.like_count++;
-                        rewrite_app.status_line = "Unlike failed";
-                        rewrite_app.input_line = action.error_message;
+                        std::fprintf(stderr, "rewrite action: thread unlike failed: %s\n", action.error_message.c_str());
                     }
                 }
-                render_thread_screen(rewrite_app, true);
+                render_thread_stats_only(rewrite_app, hit);
                 break;
             }
+            continue;
+        }
+
+        if (rewrite_app.view_mode == rewrite_view_mode_t::settings) {
+            if (contains_point(rewrite_app.settings_back_button.rect, event.x, event.y)) {
+                rewrite_app.view_mode = rewrite_app.settings_return_view;
+                render_active_view(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.settings_profile_button.rect, event.x, event.y)) {
+                rewrite_app.profile_images_enabled = !rewrite_app.profile_images_enabled;
+                save_settings(rewrite_app);
+                rewrite_app.status_line = "Settings updated";
+                rewrite_app.input_line = std::string("Profile images ") +
+                                         (rewrite_app.profile_images_enabled ? "enabled" : "disabled");
+                render_settings_screen(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.settings_embed_button.rect, event.x, event.y)) {
+                rewrite_app.embed_images_enabled = !rewrite_app.embed_images_enabled;
+                save_settings(rewrite_app);
+                rewrite_app.status_line = "Settings updated";
+                rewrite_app.input_line = std::string("Embed images ") +
+                                         (rewrite_app.embed_images_enabled ? "enabled" : "disabled");
+                render_settings_screen(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.settings_sign_out_button.rect, event.x, event.y)) {
+                clear_saved_session(rewrite_app);
+                refresh_bootstrap_state(rewrite_app);
+                refresh_runtime_state(rewrite_app);
+                rewrite_app.view_mode = rewrite_view_mode_t::dashboard;
+                rewrite_app.status_line = "Signed out";
+                rewrite_app.input_line = "Saved session cleared. Use login.txt or Recheck to sign in again.";
+                render_screen(rewrite_app, true);
+                continue;
+            }
+
             continue;
         }
 

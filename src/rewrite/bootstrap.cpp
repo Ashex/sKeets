@@ -187,19 +187,6 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
                  login.pds_url.empty() ? Bsky::DEFAULT_SERVICE_HOST : login.pds_url.c_str(),
                  login.appview_url.c_str());
 
-    // Log DNS resolver state for debugging on-device network issues.
-    {
-        std::ifstream resolv("/etc/resolv.conf");
-        if (resolv) {
-            std::string line;
-            while (std::getline(resolv, line)) {
-                std::fprintf(stderr, "rewrite bootstrap: resolv.conf: %s\n", line.c_str());
-            }
-        } else {
-            std::fprintf(stderr, "rewrite bootstrap: /etc/resolv.conf not readable\n");
-        }
-    }
-
     bool created = false;
     std::string error_message;
     Bsky::Session created_session;

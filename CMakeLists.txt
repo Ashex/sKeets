@@ -199,8 +199,11 @@ add_executable(sKeets_rewrite
     src/rewrite/platform/input.cpp
     src/rewrite/platform/network.cpp
     src/rewrite/platform/power.cpp
+    src/ui/fb.cpp
     src/ui/font.cpp
     src/util/config.cpp
+    src/util/image.cpp
+    src/util/image_cache.cpp
     src/util/paths.cpp
     src/util/str.cpp
 )
@@ -212,6 +215,7 @@ target_include_directories(sKeets_rewrite PRIVATE
 
 target_link_libraries(sKeets_rewrite PRIVATE
     libatproto
+    stb_image
     fbink
     Qt6::Core
     Qt6::Network

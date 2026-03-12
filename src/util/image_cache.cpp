@@ -36,6 +36,41 @@ static QNetworkAccessManager *s_nam = nullptr;
 static bool s_redraw_needed = false;
 
 #define MAX_CACHE_ENTRIES 128
+static constexpr long long kFailedRetryDelayMs = 3000;
+
+static std::string normalize_image_request_url(const char *url) {
+    if (!url || !*url) return {};
+
+    std::string normalized(url);
+    const std::string prefix = "https://cdn.bsky.app/img/";
+    if (normalized.rfind(prefix, 0) != 0) {
+        return normalized;
+    }
+
+    const size_t query_pos = normalized.find_first_of("?#");
+    const std::string suffix = query_pos == std::string::npos
+        ? std::string{}
+        : normalized.substr(query_pos);
+    const std::string base = query_pos == std::string::npos
+        ? normalized
+        : normalized.substr(0, query_pos);
+
+    if (base.ends_with("@jpeg") ||
+        base.ends_with("@jpg") ||
+        base.ends_with("@png") ||
+        base.ends_with("@webp")) {
+        return normalized;
+    }
+
+    return base + "@jpeg" + suffix;
+}
+
+static std::string summarize_url(const char *url) {
+    if (!url) return "(null)";
+    std::string text(url);
+    if (text.size() <= 96) return text;
+    return text.substr(0, 93) + "...";
+}
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
@@ -74,12 +109,13 @@ static QNetworkAccessManager *get_nam() {
 const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
     if (!url || !*url) return nullptr;
 
-    unsigned long key = str_hash(url);
+    const std::string request_url = normalize_image_request_url(url);
+    unsigned long key = str_hash(request_url.c_str());
 
     auto it = s_cache.find(key);
     if (it != s_cache.end()) {
         /* Guard against hash collision: verify the stored URL matches. */
-        if (!it->second.url.empty() && it->second.url != url) {
+        if (!it->second.url.empty() && it->second.url != request_url) {
             /* Collision — evict the conflicting entry and re-fetch. */
             if (it->second.img.pixels) free(it->second.img.pixels);
             s_cache.erase(it);
@@ -88,7 +124,18 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
                 it->second.last_accessed = cache_now_ms();
                 return &it->second.img;
             }
-            return nullptr; /* Loading or Failed */
+
+            if (it->second.state == CacheState::Failed) {
+                const long long now = cache_now_ms();
+                if (now - it->second.last_accessed < kFailedRetryDelayMs) {
+                    return nullptr;
+                }
+                fprintf(stderr, "image cache: retrying failed url=%s\n",
+                        summarize_url(request_url.c_str()).c_str());
+                s_cache.erase(it);
+            } else {
+                return nullptr; /* Loading */
+            }
         }
     }
 
@@ -99,12 +146,12 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
     entry.state         = CacheState::Loading;
     entry.scale_w       = scale_w;
     entry.scale_h       = scale_h;
-    entry.url           = url;
+    entry.url           = request_url;
     entry.last_accessed = cache_now_ms();
 
     /* Check disk cache first. */
     char cache_path[512];
-    image_cache_path(url, cache_path, sizeof(cache_path));
+    image_cache_path(request_url.c_str(), cache_path, sizeof(cache_path));
 
     image_t cached_img{};
     if (image_load_file(cache_path, &cached_img) == 0) {
@@ -114,18 +161,29 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
         entry.state         = CacheState::Ready;
         entry.last_accessed = cache_now_ms();
         s_redraw_needed = true;
+        fprintf(stderr,
+                "image cache: disk hit url=%s size=%dx%d\n",
+            summarize_url(request_url.c_str()).c_str(),
+                cached_img.width,
+                cached_img.height);
         return &entry.img;
     }
 
     /* No disk cache hit — download asynchronously. */
-    QNetworkRequest request(QUrl(QString::fromUtf8(url)));
+        QNetworkRequest request(QUrl(QString::fromUtf8(request_url.c_str())));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    fprintf(stderr,
+            "image cache: fetch start url=%s scale=%dx%d\n",
+            summarize_url(request_url.c_str()).c_str(),
+            scale_w,
+            scale_h);
 
     QNetworkReply *reply = get_nam()->get(request);
 
     /* Capture key + scale params + url for the callback. */
-    std::string url_str(url);
+        std::string url_str(request_url);
     QObject::connect(reply, &QNetworkReply::finished, [reply, key, scale_w, scale_h, url_str]() {
         reply->deleteLater();
 
@@ -134,12 +192,21 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
 
         if (reply->error() != QNetworkReply::NoError) {
             cit->second.state = CacheState::Failed;
+            cit->second.last_accessed = cache_now_ms();
+            fprintf(stderr,
+                    "image cache: fetch failed url=%s error=%s\n",
+                    summarize_url(url_str.c_str()).c_str(),
+                    reply->errorString().toUtf8().constData());
             return;
         }
 
         QByteArray data = reply->readAll();
         if (data.isEmpty()) {
             cit->second.state = CacheState::Failed;
+            cit->second.last_accessed = cache_now_ms();
+            fprintf(stderr,
+                    "image cache: empty response url=%s\n",
+                    summarize_url(url_str.c_str()).c_str());
             return;
         }
 
@@ -148,6 +215,11 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
         if (image_decode_memory(reinterpret_cast<const uint8_t*>(data.constData()),
                                 data.size(), &img) != 0) {
             cit->second.state = CacheState::Failed;
+            cit->second.last_accessed = cache_now_ms();
+            fprintf(stderr,
+                    "image cache: decode failed url=%s bytes=%lld\n",
+                    summarize_url(url_str.c_str()).c_str(),
+                    static_cast<long long>(data.size()));
             return;
         }
 
@@ -162,6 +234,11 @@ const image_t *image_cache_lookup(const char *url, int scale_w, int scale_h) {
         cit->second.state         = CacheState::Ready;
         cit->second.last_accessed = cache_now_ms();
         s_redraw_needed   = true;
+        fprintf(stderr,
+            "image cache: ready url=%s size=%dx%d\n",
+            summarize_url(url_str.c_str()).c_str(),
+            img.width,
+            img.height);
     });
 
     return nullptr;

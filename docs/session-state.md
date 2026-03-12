@@ -1,6 +1,6 @@
 # sKeets Rewrite — Session State & Plan
 
-> Written for IDE restart continuity. Last updated: 2026-03-11.
+> Written for IDE restart continuity. Last updated: 2026-03-12.
 > Memory files: `/memories/repo/kobo-skeets-notes.md`, `/memories/repo/skeets-codebase-overview.md`, `/memories/repo/kobo-tls-fixes.md`
 
 ---
@@ -14,12 +14,15 @@ protocol path. The rewrite is no longer just an auth bootstrap shell: it now
 renders a usable text-first feed view with author, timestamp, body text, image
 placeholders, and stats.
 
-The next milestone is **thread interaction polish and cleanup**. Phase 3
-interaction support is now working in the rewrite.
+The current milestone is **post-image-rendering cleanup and richer embed work**.
+Phase 3 interaction support is working in the rewrite, the settings screen is
+in place, and the latest packaged build now renders avatars and image embeds in
+both the feed and thread views through the shared async image cache when the
+persisted toggles are enabled.
 
 ### Latest verified build
 
-- **build_timestamp**: `2026-03-11T22:40:41Z`
+- **build_timestamp**: `2026-03-11T23:32:59Z`
 - **Package**: `build-kobo/KoboRoot.tgz`
 - **Build command**: `NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh`
 
@@ -47,7 +50,7 @@ interaction support is now working in the rewrite.
 | **Phase 1** | Scaffolding (remove compose/login views, add auth_view) | **PARTIALLY DONE** — rewrite has its own file structure |
 | **Phase 2** | Credential file login (login.txt flow) | **DONE** ✅ |
 | **Phase 3** | Like and repost support | Basic implementation working |
-| **Phase 3.5** | Settings view: dual image toggles | Not started |
+| **Phase 3.5** | Settings view: dual image toggles | Working on-device with image-gated rendering |
 | **Phase 4** | Input improvements (swipe, long-press) | Not started |
 | **Phase 5** | Framebuffer & reliability improvements | Not started |
 | **Phase 5.5** | Bug fixes (JWT refresh, thread recursion, etc.) | Not started |
@@ -66,7 +69,20 @@ interaction support is now working in the rewrite.
 9. Clara Colour touch hit-testing works after enabling `SKEETS_REWRITE_TOUCH_MIRROR_X=1`
 10. Feed like/repost actions work on-device
 11. Thread like action works on-device
-12. Stats labels now render as readable word labels (`<Like>`, `Reply`, `<Repost>`) instead of single-letter abbreviations
+12. Stats labels now render as readable word labels (`<Like>`, `<Reply>`, `<Repost>`) instead of single-letter abbreviations
+13. Active feed/thread actions now use clearer flipped-caret states (`>Like<`, `>Repost<`) without changing hit-target widths
+14. Feed and thread stat updates now redraw only the affected stat row with partial e-ink refreshes
+15. Feed and thread headers open a settings screen with persisted `profile_images_enabled` / `embed_images_enabled` toggles
+16. Feed and thread avatars render on-device through the shared async image cache when profile images are enabled
+17. Feed image embeds render on-device when embed images are enabled
+18. Thread view now renders image embeds when opening a post with media
+19. The Bluesky CDN image path is coerced to `@jpeg`, which avoids WebP decode failures in the current embedded decoder path
+
+### What is still worth validating further
+
+1. Settings toggles persist cleanly across multiple relaunches and sign-out/sign-in cycles
+2. Async-loaded avatars and embeds repaint cleanly without objectionable full-screen artifacts
+3. Thread layouts remain stable when larger images load after initial render
 
 ---
 
@@ -99,13 +115,22 @@ Detailed in `/memories/repo/kobo-tls-fixes.md`. Summary:
 
 ### `src/rewrite/app_main.cpp`
 The main entry point for the rewrite app. Changes this session:
-- **dlopen OpenSSL preload** (lines ~358-415): Force-loads bundled OpenSSL 3.x with `RTLD_NOW | RTLD_GLOBAL` before Qt init. Includes verbose diagnostic probes (dlsym, RTLD_NOLOAD, version_num checks for each lib name Qt might try).
+- **dlopen OpenSSL preload** (lines ~358-390): Force-loads bundled OpenSSL 3.x with `RTLD_NOW | RTLD_GLOBAL` before Qt init. The earlier verbose probe spam was removed; only the preload result remains logged.
 - **CA cert loading** (lines ~420-445): After QCoreApplication init, loads bundled CA certs from `<rewrite_dir>/ssl/certs/ca-certificates.crt` via `QSslCertificate::fromDevice()` and sets as default SSL config.
+- **Localized stat refresh helpers**: Feed and thread action handlers now redraw only the relevant stats row and trigger a partial or grayscale-partial framebuffer refresh for that rectangle.
+- **Clearer active-state labels**: Interactive labels now keep stable widths while showing active state via flipped carets (`>Like<`, `>Repost<`).
+- **Settings view**: Adds a rewrite-native settings screen reachable from feed and thread headers, with persistent `profile_images_enabled` and `embed_images_enabled` toggles plus a sign-out action that clears the saved session.
+- **Avatar/embed rendering**: Reuses the shared async image cache to draw feed/thread avatars and the first feed image embed when the corresponding settings are enabled.
+- **Async redraw handling**: Pumps Qt events in the main loop and triggers a repaint when `image_cache_redraw_needed()` signals that a download completed.
+- **CDN compatibility fix**: Rewrites Bluesky CDN image URLs to request `@jpeg` so the current decoder path can render avatars and embeds on-device.
+- **Thread media rendering**: The thread view now renders image embeds as well as feed cards, rather than dropping media after navigation.
 - **Includes added**: `<QFile>`, `<QSslCertificate>`, `<QSslConfiguration>`, `<dlfcn.h>`, `<fstream>`
+
+### `CMakeLists.txt`
+- The rewrite target now compiles and links the shared `src/ui/fb.cpp`, `src/util/image.cpp`, and `src/util/image_cache.cpp` sources, and links the `stb_image` interface dependency so the rewrite can reuse the legacy image pipeline.
 
 ### `src/rewrite/bootstrap.cpp`
 The auth bootstrap logic. Changes this session:
-- **resolv.conf diagnostic logging** (lines ~170-180): Before createSession, reads and logs `/etc/resolv.conf` to stderr for debugging DNS issues
 - **saved-session retry path**: Retries transient DNS failures before declaring resume failure and preserves the saved-session error state instead of falling back to "waiting for login.txt"
 - **Include added**: `<fstream>`
 
@@ -185,36 +210,35 @@ src/rewrite/
 
 ## Immediate Next Steps
 
-### 1. Phase 3: Like / Repost support
-Status: basic implementation verified on-device.
+### 1. Phase 3.5: Settings view and image preferences
+Status: working on-device.
 
 Implemented result:
-- Feed stats line has tappable like and repost targets
+- Feed and thread headers now expose a `Settings` action
+- The rewrite has a dedicated settings screen with Back and Sign Out actions
+- `profile_images_enabled` defaults to on and `embed_images_enabled` defaults to off, and both values persist in `config.ini`
+- Feed and thread avatars render through the shared async image cache when profile images are enabled
+- The embed-images toggle now controls real image embed rendering in both feed and thread views
+- The rewrite repaints automatically when async image downloads complete
+- Bluesky CDN image URLs are rewritten to `@jpeg` to avoid WebP decode failures in the current decoder path
+
+Remaining polish:
+- Confirm toggles persist across relaunches and sign-out/sign-in cycles
+- Confirm async-loaded avatars and embeds repaint cleanly without full-screen artifacts
+- Consider a cleaner image decode path if WebP support is needed later without CDN coercion
+
+### 2. Phase 3 interaction polish
+
+Status: verified on-device.
+
 - Feed like/unlike and repost/unrepost use optimistic updates with rollback on failure
 - Thread view has tappable like targets
 - Stats labels are word-based and more readable: `<Like>`, `Reply`, `<Repost>`
+- Post stat updates use localized partial refreshes instead of full-screen redraws
+- Active-state styling is clearer via flipped-caret labels while preserving stable hit-target widths
 
-Remaining polish:
-- Use partial refreshes for post stat updates instead of full-screen redraws
-- Improve active-state styling beyond count changes alone
-
-### 2. Thread view bootstrap
-
-Status: basic thread navigation and rendering are now working on-device.
-
-1. Add tap-to-open thread navigation from a feed post
-2. Load the thread via `getPostThread()` and render replies text-first
-3. Reuse the existing reply-flattening logic from `AtprotoClient`
-4. Add a true thread back action distinct from feed pagination
-
-Verified result:
-- Tapping a feed post opens a basic thread view
-- Thread fetches go through AppView and render successfully on-device
-- Thread back navigation returns to feed as expected
-
-### 3. Cleanup (low priority, do after thread/interaction work)
-- Remove verbose dlopen diagnostic probes from `app_main.cpp` (keep the core dlopen preload + CA loading)
-- Remove resolv.conf logging from `bootstrap.cpp`
+### 3. Next candidate milestone
+- Expand embed handling beyond the first image and simple placeholder-level quote/media rendering
 - Consider replacing the current feed-side reply filter with a richer policy once thread view is in place
 
 ---

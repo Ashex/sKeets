@@ -86,10 +86,7 @@ void image_cache_path(const char *url, char *out_path, int out_size) {
 }
 
 int image_load_file(const char *path, image_t *out) {
-    int channels;
-    out->pixels = stbi_load(path, &out->width, &out->height, &channels, 4);
-    if (!out->pixels) return -1;
-    return 0;
+    return image_load_cached(path, out);
 }
 
 int image_load_url(const char *url, image_t *out) {
