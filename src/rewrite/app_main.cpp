@@ -48,15 +48,16 @@ constexpr int kOuterMargin = 28;
 constexpr int kCardGap = 20;
 constexpr int kCardPadding = 18;
 constexpr int kPostSeparator = 12;
-constexpr int kFeedAvatarSize = 40;
-constexpr int kThreadAvatarSize = 36;
+constexpr int kFeedAvatarSize = 80;
+constexpr int kThreadAvatarSize = 72;
 constexpr int kAvatarGap = 12;
-constexpr int kFeedEmbedMaxHeight = 112;
+constexpr int kFeedEmbedMaxHeight = 168;
 constexpr int kQuoteIndent = 24;
 constexpr int kQuoteBorder = 3;
 constexpr int kExternalThumbSize = 72;
 constexpr int kThreadScrollbarWidth = 18;
 constexpr int kThreadScrollbarGap = 12;
+constexpr int kEmbedImageGap = 6;
 constexpr std::uint8_t kColorPostBorder = 0xC0;
 constexpr std::uint8_t kColorAuthor = 0x10;
 constexpr std::uint8_t kColorMeta = 0x60;
@@ -142,6 +143,9 @@ struct rewrite_app_t {
 };
 
 void draw_border(rewrite_app_t& app, const rewrite_rect_t& rect, std::uint8_t color, int thickness = 2);
+void flatten_thread_posts(const Bsky::Post& post,
+                          int depth,
+                          std::vector<std::pair<const Bsky::Post*, int>>& out);
 
 void handle_signal(int) {
     g_stop_requested = 1;
@@ -240,6 +244,133 @@ int measure_external_embed_height(const rewrite_app_t& app, int width, const Bsk
     return std::max(app.text_fb.font_h * 2 + 12, body_height + 8);
 }
 
+int image_embed_tile_height(int width, int image_count) {
+    if (image_count <= 1) {
+        return kFeedEmbedMaxHeight;
+    }
+    const int tile_width = std::max(40, (width - kEmbedImageGap) / 2);
+    return std::min(kFeedEmbedMaxHeight, std::max(84, (tile_width * 9) / 10));
+}
+
+int measure_image_embed_height(int width, int image_count) {
+    if (image_count <= 0) {
+        return 0;
+    }
+    if (image_count == 1) {
+        return kFeedEmbedMaxHeight + 8;
+    }
+    const int visible = std::min(image_count, 4);
+    const int rows = (visible + 1) / 2;
+    const int tile_height = image_embed_tile_height(width, image_count);
+    return (rows * tile_height) + ((rows - 1) * kEmbedImageGap) + 8;
+}
+
+void draw_image_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
+    const int image_count = std::min(static_cast<int>(post.image_urls.size()), 4);
+    if (image_count <= 0) {
+        return;
+    }
+
+    if (image_count == 1) {
+        const image_t* embed = image_cache_lookup(post.image_urls[0].c_str(),
+                                                  width,
+                                                  kFeedEmbedMaxHeight);
+        if (embed) {
+            const int draw_x = x + std::max(0, (width - embed->width) / 2);
+            fb_blit_rgba(&app.text_fb,
+                         draw_x,
+                         y,
+                         embed->width,
+                         embed->height,
+                         embed->pixels);
+            y += embed->height + 8;
+        } else {
+            const int placeholder_width = std::min(width, std::max(width * 4 / 5, 160));
+            const int placeholder_x = x + std::max(0, (width - placeholder_width) / 2);
+            fb_fill_rect(&app.text_fb,
+                         placeholder_x,
+                         y,
+                         placeholder_width,
+                         kFeedEmbedMaxHeight,
+                         COLOR_LGRAY);
+            const char* label = "[image loading]";
+            const int label_x = placeholder_x + std::max(0, (placeholder_width - font_measure_string(label)) / 2);
+            font_draw_string(&app.text_fb,
+                             label_x,
+                             y + (kFeedEmbedMaxHeight - app.text_fb.font_h) / 2,
+                             label,
+                             kColorMeta,
+                             COLOR_LGRAY);
+            y += kFeedEmbedMaxHeight + 8;
+        }
+        return;
+    }
+
+    const int tile_width = std::max(40, (width - kEmbedImageGap) / 2);
+    const int tile_height = image_embed_tile_height(width, image_count);
+    const int grid_cols = std::min(2, image_count);
+    const int grid_width = (grid_cols * tile_width) + ((grid_cols - 1) * kEmbedImageGap);
+    const int grid_x = x + std::max(0, (width - grid_width) / 2);
+    for (int index = 0; index < image_count; ++index) {
+        const int col = index % 2;
+        const int row = index / 2;
+        int tile_x = grid_x + (col * (tile_width + kEmbedImageGap));
+        const int tile_y = y + (row * (tile_height + kEmbedImageGap));
+        if ((image_count % 2) == 1 && index == image_count - 1) {
+            tile_x = x + std::max(0, (width - tile_width) / 2);
+        }
+        const image_t* embed = image_cache_lookup(post.image_urls[index].c_str(),
+                                                  tile_width,
+                                                  tile_height);
+        if (embed) {
+            const int draw_x = tile_x + std::max(0, (tile_width - embed->width) / 2);
+            const int draw_y = tile_y + std::max(0, (tile_height - embed->height) / 2);
+            fb_blit_rgba(&app.text_fb,
+                         draw_x,
+                         draw_y,
+                         embed->width,
+                         embed->height,
+                         embed->pixels);
+        } else {
+            fb_fill_rect(&app.text_fb,
+                         tile_x,
+                         tile_y,
+                         tile_width,
+                         tile_height,
+                         COLOR_LGRAY);
+            const char* label = "[img]";
+            const int label_x = tile_x + std::max(0, (tile_width - font_measure_string(label)) / 2);
+            font_draw_string(&app.text_fb,
+                             label_x,
+                             tile_y + (tile_height - app.text_fb.font_h) / 2,
+                             label,
+                             kColorMeta,
+                             COLOR_LGRAY);
+        }
+    }
+
+    if (static_cast<int>(post.image_urls.size()) > image_count) {
+        const int overlay_x = grid_x + tile_width + kEmbedImageGap;
+        const int overlay_y = y + tile_height + kEmbedImageGap;
+        const int overlay_w = tile_width;
+        const int overlay_h = tile_height;
+        rewrite_framebuffer_fill_rect(app.framebuffer,
+                                      rewrite_rect_t{overlay_x, overlay_y, overlay_w, overlay_h},
+                                      0x80);
+        const std::string more = "+" + std::to_string(static_cast<int>(post.image_urls.size()) - image_count);
+                        const int text_x = overlay_x + std::max(0, (overlay_w - font_measure_string(more.c_str())) / 2);
+                        const int text_y = overlay_y + (overlay_h - app.text_fb.font_h) / 2;
+                        font_draw_string(&app.text_fb,
+                                 text_x,
+                                 text_y,
+                                 more.c_str(),
+                                 COLOR_WHITE,
+                                 0x80);
+    }
+
+    y += measure_image_embed_height(width, image_count);
+}
+
 void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::Post& post, bool embed_images) {
     const int height = measure_external_embed_height(app, width, post, embed_images);
     draw_border(app, rewrite_rect_t{x, y, width, height}, kColorPostBorder, 1);
@@ -295,14 +426,14 @@ void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky
 int measure_embed_block_height(const rewrite_app_t& app, const Bsky::Post& post, int width) {
     switch (post.embed_type) {
         case Bsky::EmbedType::Image:
-            return !post.image_urls.empty() ? kFeedEmbedMaxHeight + 8 : 0;
+            return measure_image_embed_height(width, static_cast<int>(post.image_urls.size()));
         case Bsky::EmbedType::Quote:
             return post.quoted_post ? measure_quote_embed_height(app, width, post.quoted_post.get()) + 8 : 0;
         case Bsky::EmbedType::External:
             return measure_external_embed_height(app, width, post, app.embed_images_enabled) + 8;
         case Bsky::EmbedType::RecordWithMedia: {
             int total = 0;
-            if (!post.image_urls.empty()) total += kFeedEmbedMaxHeight + 8;
+            if (!post.image_urls.empty()) total += measure_image_embed_height(width, static_cast<int>(post.image_urls.size()));
             if (post.quoted_post) total += measure_quote_embed_height(app, width, post.quoted_post.get()) + 8;
             else if (!post.ext_uri.empty()) total += measure_external_embed_height(app, width, post, app.embed_images_enabled) + 8;
             return total;
@@ -316,32 +447,7 @@ void draw_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y,
     if ((post.embed_type == Bsky::EmbedType::Image || post.embed_type == Bsky::EmbedType::RecordWithMedia) &&
         app.embed_images_enabled &&
         !post.image_urls.empty()) {
-        const image_t* embed = image_cache_lookup(post.image_urls[0].c_str(),
-                                                  width,
-                                                  kFeedEmbedMaxHeight);
-        if (embed) {
-            fb_blit_rgba(&app.text_fb,
-                         x,
-                         y,
-                         embed->width,
-                         embed->height,
-                         embed->pixels);
-            y += embed->height + 8;
-        } else {
-            fb_fill_rect(&app.text_fb,
-                         x,
-                         y,
-                         width,
-                         kFeedEmbedMaxHeight,
-                         COLOR_LGRAY);
-            font_draw_string(&app.text_fb,
-                             x + 8,
-                             y + (kFeedEmbedMaxHeight - app.text_fb.font_h) / 2,
-                             "[image loading]",
-                             kColorMeta,
-                             COLOR_LGRAY);
-            y += kFeedEmbedMaxHeight + 8;
-        }
+        draw_image_embed_block(app, post, x, y, width);
     }
 
     if ((post.embed_type == Bsky::EmbedType::Quote || post.embed_type == Bsky::EmbedType::RecordWithMedia) && post.quoted_post) {
@@ -589,6 +695,42 @@ void load_thread(rewrite_app_t& app, const std::string& post_uri) {
         app.status_line = "Thread load failed";
         app.input_line = app.thread_result.error_message;
     }
+}
+
+bool advance_feed_page(rewrite_app_t& app) {
+    const int total = static_cast<int>(app.feed_result.feed.items.size());
+    int next_start = app.feed_page_start + app.feed_page_count;
+    if (next_start < total) {
+        app.feed_page_history.push_back(app.feed_page_start);
+        app.feed_page_start = next_start;
+        return true;
+    }
+
+    if (!app.feed_result.feed.cursor.empty()) {
+        auto more = rewrite_fetch_feed(app.bootstrap.session, 30, app.feed_result.feed.cursor);
+        apply_updated_session(app, more.session, more.session_updated);
+        if (more.state == rewrite_feed_state_t::loaded) {
+            app.feed_page_history.push_back(app.feed_page_start);
+            app.feed_page_start = total;
+            for (auto& p : more.feed.items) {
+                app.feed_result.feed.items.push_back(std::move(p));
+            }
+            app.feed_result.feed.cursor = more.feed.cursor;
+            app.feed_result.post_count = static_cast<int>(app.feed_result.feed.items.size());
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool retreat_feed_page(rewrite_app_t& app) {
+    if (app.feed_page_history.empty()) {
+        return false;
+    }
+    app.feed_page_start = app.feed_page_history.back();
+    app.feed_page_history.pop_back();
+    return true;
 }
 
 void flatten_thread_posts(const Bsky::Post& post,
@@ -1598,28 +1740,12 @@ int main(int argc, char* argv[]) {
             }
 
             if (contains_point(rewrite_app.feed_next_button.rect, event.x, event.y)) {
-                const int total = static_cast<int>(rewrite_app.feed_result.feed.items.size());
-                int next_start = rewrite_app.feed_page_start + rewrite_app.feed_page_count;
-                if (next_start < total) {
-                    rewrite_app.feed_page_history.push_back(rewrite_app.feed_page_start);
-                    rewrite_app.feed_page_start = next_start;
+                if (advance_feed_page(rewrite_app)) {
                     render_feed_screen(rewrite_app, true);
-                } else if (!rewrite_app.feed_result.feed.cursor.empty()) {
-                    // Load more posts from the server
-                    auto more = rewrite_fetch_feed(rewrite_app.bootstrap.session, 30,
-                                                   rewrite_app.feed_result.feed.cursor);
-                    apply_updated_session(rewrite_app, more.session, more.session_updated);
-                    if (more.state == rewrite_feed_state_t::loaded) {
-                        rewrite_app.feed_page_history.push_back(rewrite_app.feed_page_start);
-                        rewrite_app.feed_page_start = total;  // Jump to newly loaded posts
-                        for (auto& p : more.feed.items) {
-                            rewrite_app.feed_result.feed.items.push_back(std::move(p));
-                        }
-                        rewrite_app.feed_result.feed.cursor = more.feed.cursor;
-                        rewrite_app.feed_result.post_count = static_cast<int>(
-                            rewrite_app.feed_result.feed.items.size());
-                    }
-                    render_feed_screen(rewrite_app, true);
+                } else {
+                    rewrite_app.status_line = "Already at oldest loaded feed page";
+                    rewrite_app.input_line = touch_message.str();
+                    render_feed_screen(rewrite_app, false);
                 }
                 continue;
             }
