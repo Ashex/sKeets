@@ -8,7 +8,7 @@
 #include <vector>
 #include <fbink.h>
 
-#define FONT_SIZE_PX 14
+#define FONT_SIZE_PX 28
 
 static int s_fbfd     = -1;
 static int s_screen_w = 1448;

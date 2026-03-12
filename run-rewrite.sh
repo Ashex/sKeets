@@ -2,8 +2,8 @@
 # Rewrite launcher skeleton for sKeets on Kobo.
 # Phase 1 purpose: own package paths, runtime environment, and diagnostics mode.
 
-REWRITE_DIR="/mnt/onboard/.adds/sKeets-rewrite"
-LOG="${REWRITE_DIR}/sKeets-rewrite.log"
+REWRITE_DIR="/mnt/onboard/.adds/sKeets"
+LOG="${REWRITE_DIR}/sKeets.log"
 LIB_DIR="/mnt/onboard/.adds/lib"
 LOADER="${LIB_DIR}/ld-linux-armhf.so.3"
 APP_LIBRARY_PATH="${LIB_DIR}:${REWRITE_DIR}/lib"
@@ -12,9 +12,9 @@ APP_LOCALE_PATH="${REWRITE_DIR}/locale"
 APP_CA_CERT_FILE="${REWRITE_DIR}/ssl/certs/ca-certificates.crt"
 APP_SCRIPT_DIR="${REWRITE_DIR}/scripts"
 REVISION_FILE="${REWRITE_DIR}/package-revision.txt"
-DIAG_BIN="${REWRITE_DIR}/sKeets-rewrite-diag"
-APP_BIN="${REWRITE_DIR}/sKeets-rewrite"
-HELPER_BIN="${REWRITE_DIR}/bin/sKeets-rewrite-tool"
+DIAG_BIN="${REWRITE_DIR}/sKeets-diag"
+APP_BIN="${REWRITE_DIR}/sKeets"
+HELPER_BIN="${REWRITE_DIR}/bin/sKeets-tool"
 INHERITED_LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"
 MODE="${1:-${SKEETS_REWRITE_MODE:-diag}}"
 APP_INTERFACE="${SKEETS_REWRITE_INTERFACE:-eth0}"

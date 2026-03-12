@@ -86,7 +86,6 @@ echo "  Binary:  ${BUILD_DIR}/sKeets"
 case "${NINJA_PACKAGE_TARGET}" in
     kobo-package-rewrite)
         echo "  Package: ${BUILD_DIR}/KoboRoot.tgz"
-        echo "  Alias:   ${BUILD_DIR}/KoboRoot-rewrite.tgz"
         ;;
     *)
         echo "  Package: ${BUILD_DIR}/KoboRoot.tgz"

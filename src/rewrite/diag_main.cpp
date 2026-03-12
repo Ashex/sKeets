@@ -254,7 +254,7 @@ static void log_exists(const char* label, const QString& path) {
 
 int main(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
-    const QString rewriteDir = qEnvironmentVariable("SKEETS_REWRITE_DIR", "/mnt/onboard/.adds/sKeets-rewrite");
+    const QString rewriteDir = qEnvironmentVariable("SKEETS_REWRITE_DIR", "/mnt/onboard/.adds/sKeets");
     const QString scriptDir = rewriteDir + "/scripts/wifi";
 
     std::fprintf(stderr, "rewrite diag: process start\n");

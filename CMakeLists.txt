@@ -166,7 +166,10 @@ add_executable(sKeets_rewrite_diag
     src/rewrite/platform/network.cpp
     src/rewrite/platform/power.cpp
 )
-set_target_properties(sKeets_rewrite_diag PROPERTIES OUTPUT_NAME "sKeets-rewrite-diag")
+set_target_properties(sKeets_rewrite_diag PROPERTIES
+    OUTPUT_NAME "sKeets-diag"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/rewrite-bin"
+)
 
 target_include_directories(sKeets_rewrite_diag PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -181,7 +184,10 @@ add_executable(sKeets_rewrite_tool
     src/rewrite/tool_main.cpp
     src/rewrite/platform/device.cpp
 )
-set_target_properties(sKeets_rewrite_tool PROPERTIES OUTPUT_NAME "sKeets-rewrite-tool")
+set_target_properties(sKeets_rewrite_tool PROPERTIES
+    OUTPUT_NAME "sKeets-tool"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/rewrite-bin/bin"
+)
 
 target_include_directories(sKeets_rewrite_tool PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -207,7 +213,10 @@ add_executable(sKeets_rewrite
     src/util/paths.cpp
     src/util/str.cpp
 )
-set_target_properties(sKeets_rewrite PROPERTIES OUTPUT_NAME "sKeets-rewrite")
+set_target_properties(sKeets_rewrite PROPERTIES
+    OUTPUT_NAME "sKeets"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/rewrite-bin"
+)
 
 target_include_directories(sKeets_rewrite PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -225,7 +234,7 @@ target_link_libraries(sKeets_rewrite PRIVATE
 )
 
 set(KOBO_INSTALL_PREFIX "mnt/onboard/.adds/sKeets")
-set(KOBO_REWRITE_INSTALL_PREFIX "mnt/onboard/.adds/sKeets-rewrite")
+set(KOBO_REWRITE_INSTALL_PREFIX "mnt/onboard/.adds/sKeets")
 file(GLOB SKEETS_REWRITE_WIFI_SCRIPTS
     "${CMAKE_SOURCE_DIR}/rewrite/scripts/wifi/*.sh"
 )
@@ -236,7 +245,7 @@ file(GLOB SKEETS_REWRITE_LAUNCHER_SCRIPTS
 string(TIMESTAMP SKEETS_REWRITE_BUILD_TIMESTAMP "%Y-%m-%dT%H:%M:%SZ" UTC)
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rewrite-package-revision.txt"
-    CONTENT "project=sKeets\nchannel=rewrite\nversion=${PROJECT_VERSION}\nbuild_timestamp=${SKEETS_REWRITE_BUILD_TIMESTAMP}\n"
+    CONTENT "project=sKeets\nchannel=main\nversion=${PROJECT_VERSION}\nbuild_timestamp=${SKEETS_REWRITE_BUILD_TIMESTAMP}\n"
 )
 
 file(GLOB SKEETS_FONT_ASSETS
@@ -249,9 +258,7 @@ file(GLOB SKEETS_FONT_ASSETS
 )
 
 file(GLOB SKEETS_REWRITE_IMAGE_ASSETS
-    "${CMAKE_SOURCE_DIR}/src/img/*.png"
-    "${CMAKE_SOURCE_DIR}/src/img/*.jpg"
-    "${CMAKE_SOURCE_DIR}/src/img/*.jpeg"
+    "${CMAKE_SOURCE_DIR}/src/img/*"
 )
 
 install(TARGETS sKeets RUNTIME DESTINATION ${KOBO_INSTALL_PREFIX} COMPONENT Legacy)
@@ -263,7 +270,7 @@ endif()
 install(TARGETS sKeets_rewrite RUNTIME DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX} COMPONENT Rewrite)
 install(TARGETS sKeets_rewrite_diag RUNTIME DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX} COMPONENT Rewrite)
 install(TARGETS sKeets_rewrite_tool RUNTIME DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX}/bin COMPONENT Rewrite)
-install(PROGRAMS run-rewrite.sh DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX} COMPONENT Rewrite)
+install(PROGRAMS run-rewrite.sh DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX} COMPONENT Rewrite RENAME run.sh)
 if(SKEETS_REWRITE_LAUNCHER_SCRIPTS)
     install(PROGRAMS ${SKEETS_REWRITE_LAUNCHER_SCRIPTS}
         DESTINATION ${KOBO_REWRITE_INSTALL_PREFIX}
@@ -290,6 +297,7 @@ if(SKEETS_REWRITE_IMAGE_ASSETS)
 endif()
 
 add_custom_target(kobo-package
+    COMMAND ${CMAKE_COMMAND} -E rm -rf kobo-pkg
     COMMAND ${CMAKE_COMMAND} --install . --prefix kobo-pkg --component Legacy
     COMMAND ${CMAKE_COMMAND}
             -DDEST_LIB_DIR=${CMAKE_BINARY_DIR}/kobo-pkg/mnt/onboard/.adds/lib
@@ -317,10 +325,11 @@ add_custom_target(kobo-package
 )
 
 add_custom_target(kobo-package-rewrite
+    COMMAND ${CMAKE_COMMAND} -E rm -rf kobo-pkg-rewrite
     COMMAND ${CMAKE_COMMAND} --install . --prefix kobo-pkg-rewrite --component Rewrite
     COMMAND ${CMAKE_COMMAND}
             -DDEST_LIB_DIR=${CMAKE_BINARY_DIR}/kobo-pkg-rewrite/mnt/onboard/.adds/lib
-            -DDEST_APP_DIR=${CMAKE_BINARY_DIR}/kobo-pkg-rewrite/mnt/onboard/.adds/sKeets-rewrite
+            -DDEST_APP_DIR=${CMAKE_BINARY_DIR}/kobo-pkg-rewrite/mnt/onboard/.adds/sKeets
             -DATPROTO_LIB=${CMAKE_BINARY_DIR}/_deps/atproto_sdk-build/lib/liblibatproto.so
             -DQT_LIB_DIR=${SKEETS_QT_LIB_DIR}
             -DQT_TLS_PLUGIN_DIR=${SKEETS_QT_PLUGIN_DIR}/tls
@@ -338,8 +347,7 @@ add_custom_target(kobo-package-rewrite
             -P ${CMAKE_SOURCE_DIR}/cmake/package-runtime-libs.cmake
     COMMAND ${CMAKE_COMMAND} -E rm -rf kobo-pkg-rewrite/bin
     COMMAND tar czf KoboRoot.tgz -C kobo-pkg-rewrite .
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different KoboRoot.tgz KoboRoot-rewrite.tgz
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Packaging rewrite KoboRoot.tgz"
+    COMMENT "Packaging KoboRoot.tgz"
     DEPENDS sKeets_rewrite sKeets_rewrite_diag sKeets_rewrite_tool libatproto
 )

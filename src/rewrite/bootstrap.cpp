@@ -12,6 +12,7 @@
 namespace {
 
 constexpr const char* kDefaultAppView = "https://api.bsky.app";
+constexpr const char* kLegacyConfigPath = "/mnt/onboard/.adds/sKeets/config.ini";
 
 bool looks_like_transient_network_error(const std::string& error_message) {
     return error_message.find("Host ") != std::string::npos ||
@@ -86,6 +87,25 @@ Bsky::Session load_saved_session() {
     return session;
 }
 
+Bsky::Session load_saved_session_from_path(const char* path) {
+    Bsky::Session session;
+    if (!path || !*path) return session;
+
+    config_t* config = config_open(path);
+    if (!config) return session;
+
+    session.handle = config_get_str(config, "handle", "");
+    session.access_jwt = config_get_str(config, "access_jwt", "");
+    session.refresh_jwt = config_get_str(config, "refresh_jwt", "");
+    session.did = config_get_str(config, "did", "");
+    session.pds_url = config_get_str(config, "pds_url", "");
+    session.appview_url = config_get_str(config,
+                                         "appview_url",
+                                         config_get_str(config, "appview", kDefaultAppView));
+    config_free(config);
+    return session;
+}
+
 bool has_saved_session(const Bsky::Session& session) {
     return !session.handle.empty() && !session.access_jwt.empty() && !session.refresh_jwt.empty() && !session.did.empty();
 }
@@ -125,8 +145,8 @@ rewrite_login_txt_t read_login_txt(bool& found_file) {
 rewrite_bootstrap_result_t make_waiting_result() {
     rewrite_bootstrap_result_t result;
     result.state = rewrite_bootstrap_state_t::waiting_for_login;
-    result.headline = "Waiting for rewrite login.txt";
-    result.detail = "Create /mnt/onboard/.adds/sKeets-rewrite/login.txt, then relaunch or tap Recheck.";
+    result.headline = "Waiting for sKeets login.txt";
+    result.detail = "Create /mnt/onboard/.adds/sKeets/login.txt, then relaunch or tap Recheck.";
     return result;
 }
 
@@ -147,7 +167,16 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
         return make_error_result("Failed to create rewrite data directories", false);
     }
 
-    const Bsky::Session saved_session = load_saved_session();
+    Bsky::Session saved_session = load_saved_session();
+    bool used_legacy_saved_session = false;
+    if (!has_saved_session(saved_session)) {
+        Bsky::Session legacy_session = load_saved_session_from_path(kLegacyConfigPath);
+        if (has_saved_session(legacy_session)) {
+            saved_session = std::move(legacy_session);
+            used_legacy_saved_session = true;
+        }
+    }
+
     Bsky::Session restored_session;
     std::string saved_session_error;
     if (has_saved_session(saved_session)) {
@@ -156,8 +185,10 @@ rewrite_bootstrap_result_t rewrite_run_bootstrap() {
             rewrite_bootstrap_result_t result;
             result.state = rewrite_bootstrap_state_t::session_restored;
             result.session = restored_session;
-            result.headline = "Saved session restored";
-            result.detail = "Authentication is valid. Loading the home timeline.";
+            result.headline = used_legacy_saved_session ? "Legacy session imported" : "Saved session restored";
+            result.detail = used_legacy_saved_session
+                ? "Imported the existing sKeets session into the rewrite app. Loading the home timeline."
+                : "Authentication is valid. Loading the home timeline.";
             result.authenticated = true;
             result.used_saved_session = true;
             return result;
@@ -214,13 +245,13 @@ std::vector<std::string> rewrite_bootstrap_lines(const rewrite_bootstrap_result_
             "DID: " + (result.session.did.empty() ? std::string("unknown") : result.session.did),
             "PDS: " + (result.session.pds_url.empty() ? std::string(Bsky::DEFAULT_SERVICE_HOST) : result.session.pds_url),
             "AppView: " + (result.session.appview_url.empty() ? std::string(kDefaultAppView) : result.session.appview_url),
-            "Config: /mnt/onboard/.adds/sKeets-rewrite/config.ini",
+            "Config: /mnt/onboard/.adds/sKeets/config.ini",
         };
     }
 
     std::vector<std::string> lines{
         "1. Connect the Kobo over USB.",
-        "2. Create /mnt/onboard/.adds/sKeets-rewrite/login.txt.",
+        "2. Create /mnt/onboard/.adds/sKeets/login.txt.",
         "3. Add handle=you.bsky.social and password=xxxx-xxxx-xxxx-xxxx.",
         "4. Optional: pds_url=https://pds.example and appview=https://api.bsky.app.",
         "5. Relaunch the rewrite app or tap Recheck.",

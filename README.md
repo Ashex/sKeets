@@ -103,20 +103,20 @@ NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh
 ```
 
 The rewrite package currently boots a diagnostics entrypoint by default via
-`/mnt/onboard/.adds/sKeets-rewrite/run-rewrite.sh`. It also ships rewrite-owned
-Wi-Fi lifecycle scripts under `/mnt/onboard/.adds/sKeets-rewrite/scripts/wifi/`.
-Use `/mnt/onboard/.adds/sKeets-rewrite/run-rewrite.sh app` to launch the first
+`/mnt/onboard/.adds/sKeets/run.sh`. It also ships rewrite-owned
+Wi-Fi lifecycle scripts under `/mnt/onboard/.adds/sKeets/scripts/wifi/`.
+Use `/mnt/onboard/.adds/sKeets/run.sh app` to launch the first
 rewrite app shell after Nickel is stopped.
-Use `/mnt/onboard/.adds/sKeets-rewrite/run-rewrite.sh fb-diag` to validate the
+Use `/mnt/onboard/.adds/sKeets/run.sh fb-diag` to validate the
 rewrite framebuffer and refresh path with Nickel stopped.
 For NickelMenu, the rewrite package also installs:
-- `/mnt/onboard/.adds/sKeets-rewrite/launch-app.sh`
-- `/mnt/onboard/.adds/sKeets-rewrite/launch-diag.sh`
-- `/mnt/onboard/.adds/sKeets-rewrite/launch-fb-diag.sh`
-- `/mnt/onboard/.adds/sKeets-rewrite/launch-input-diag.sh`
-- `/mnt/onboard/.adds/sKeets-rewrite/launch-power-diag.sh`
-- `/mnt/onboard/.adds/sKeets-rewrite/launch-network-diag.sh`
-- `/mnt/onboard/.adds/sKeets-rewrite/launch-phase2-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-app.sh`
+- `/mnt/onboard/.adds/sKeets/launch-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-fb-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-input-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-power-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-network-diag.sh`
+- `/mnt/onboard/.adds/sKeets/launch-phase2-diag.sh`
 
 ### Native (for development / testing on ARM Linux)
 
@@ -165,33 +165,33 @@ take over the framebuffer, feeds the hardware watchdog, and reboots the device
 on exit to bring Nickel back. The `:quiet` flag suppresses the PID notification
 popup. Logs are written to `/mnt/onboard/.adds/sKeets/sKeets.log`.
 
-### Rewrite NickelMenu entries (`/mnt/onboard/.adds/nm/sKeets-rewrite`)
+### Rewrite NickelMenu entries (`/mnt/onboard/.adds/nm/sKeets`)
 
 ```
-menu_item :main  :sKeets Rewrite App      :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-app.sh
-menu_item :main  :sKeets Rewrite Diag     :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-diag.sh
-menu_item :main  :sKeets Rewrite FB Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-fb-diag.sh
-menu_item :main  :sKeets Rewrite Input Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-input-diag.sh
-menu_item :main  :sKeets Rewrite Power Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-power-diag.sh
-menu_item :main  :sKeets Rewrite Network Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-network-diag.sh
-menu_item :main  :sKeets Rewrite Phase2 Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets-rewrite/launch-phase2-diag.sh
+menu_item :main  :sKeets sKeets      :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-app.sh
+menu_item :main  :sKeets Diag     :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-diag.sh
+menu_item :main  :sKeets FB Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-fb-diag.sh
+menu_item :main  :sKeets Input Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-input-diag.sh
+menu_item :main  :sKeets Power Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-power-diag.sh
+menu_item :main  :sKeets Network Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-network-diag.sh
+menu_item :main  :sKeets Phase2 Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-phase2-diag.sh
 ```
 
-`sKeets Rewrite App` stops Nickel, opens the rewrite framebuffer and input
-paths, reads rewrite-local credentials from `/mnt/onboard/.adds/sKeets-rewrite/login.txt`,
-persists rewrite-local session state in `/mnt/onboard/.adds/sKeets-rewrite/config.ini`,
+`sKeets App` stops Nickel, opens the rewrite framebuffer and input
+paths, reads local credentials from `/mnt/onboard/.adds/sKeets/login.txt`,
+persists local session state in `/mnt/onboard/.adds/sKeets/config.ini`,
 renders the bootstrap/auth shell, and lets you exit cleanly via the on-screen
 Exit button or the hardware power key.
-`sKeets Rewrite Diag` only runs the environment and package diagnostics.
-`sKeets Rewrite FB Diag` stops Nickel first, opens the rewrite framebuffer path,
+`sKeets Diag` only runs the environment and package diagnostics.
+`sKeets FB Diag` stops Nickel first, opens the rewrite framebuffer path,
 draws a simple grayscale test pattern, and logs refresh capability details.
-`sKeets Rewrite Input Diag` stops Nickel first, grabs rewrite-selected input devices,
+`sKeets Input Diag` stops Nickel first, grabs rewrite-selected input devices,
 logs the touch device selection, and listens briefly for raw touch transitions.
-`sKeets Rewrite Power Diag` keeps Nickel running and reports battery state,
+`sKeets Power Diag` keeps Nickel running and reports battery state,
 charging state, standby support, and whether suspend is currently safe.
-`sKeets Rewrite Network Diag` keeps Nickel running and reports radio presence,
+`sKeets Network Diag` keeps Nickel running and reports radio presence,
 link state, assigned addresses, default-route availability, DNS resolution, and overall online state.
-`sKeets Rewrite Phase2 Diag` stops Nickel once and runs the full Phase 2 diagnostic pass
+`sKeets Phase2 Diag` stops Nickel once and runs the full Phase 2 diagnostic pass
 across framebuffer, input, power, and network in a single launch.
 
 ### KFMon entry (with app icon)

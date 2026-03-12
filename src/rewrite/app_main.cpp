@@ -39,7 +39,7 @@ namespace {
 
 volatile std::sig_atomic_t g_stop_requested = 0;
 
-constexpr std::uint8_t kColorHeader = 0x18;
+constexpr std::uint8_t kColorHeader = COLOR_WHITE;
 constexpr std::uint8_t kColorCard = 0xEC;
 constexpr std::uint8_t kColorCardBorder = 0x30;
 constexpr std::uint8_t kColorCardTitle = 0x28;
@@ -60,10 +60,10 @@ constexpr int kExternalThumbSize = 72;
 constexpr int kThreadScrollbarWidth = 18;
 constexpr int kThreadScrollbarGap = 12;
 constexpr int kEmbedImageGap = 6;
-constexpr int kHeaderLogoMaxWidth = 220;
-constexpr int kHeaderLogoMaxHeight = 48;
-constexpr int kSplashLogoMaxWidth = 520;
-constexpr int kSplashLogoMaxHeight = 190;
+constexpr int kHeaderLogoMaxWidth = 280;
+constexpr int kHeaderLogoMaxHeight = 64;
+constexpr int kSplashLogoMaxWidth = 760;
+constexpr int kSplashLogoMaxHeight = 280;
 constexpr std::uint8_t kColorPostBorder = 0xC0;
 constexpr std::uint8_t kColorAuthor = 0x10;
 constexpr std::uint8_t kColorMeta = 0x60;
@@ -198,32 +198,32 @@ std::string bool_label(bool value) {
 rewrite_text_style_t text_style(rewrite_text_role_t role) {
     switch (role) {
     case rewrite_text_role_t::author:
-        return {16, FONT_STYLE_MEDIUM, 4};
+        return {32, FONT_STYLE_MEDIUM, 8};
     case rewrite_text_role_t::meta:
-        return {14, FONT_STYLE_LIGHT, 4};
+        return {28, FONT_STYLE_LIGHT, 8};
     case rewrite_text_role_t::button:
-        return {16, FONT_STYLE_MEDIUM, 0};
+        return {32, FONT_STYLE_MEDIUM, 0};
     case rewrite_text_role_t::card_title:
-        return {16, FONT_STYLE_MEDIUM, 4};
+        return {32, FONT_STYLE_MEDIUM, 8};
     case rewrite_text_role_t::status_title:
-        return {17, FONT_STYLE_MEDIUM, 4};
+        return {34, FONT_STYLE_MEDIUM, 8};
     case rewrite_text_role_t::status_detail:
-        return {15, FONT_STYLE_LIGHT, 4};
+        return {30, FONT_STYLE_LIGHT, 8};
     case rewrite_text_role_t::settings_label:
-        return {16, FONT_STYLE_MEDIUM, 4};
+        return {32, FONT_STYLE_MEDIUM, 8};
     case rewrite_text_role_t::settings_detail:
-        return {14, FONT_STYLE_LIGHT, 4};
+        return {28, FONT_STYLE_LIGHT, 8};
     case rewrite_text_role_t::action_label:
-        return {14, FONT_STYLE_MEDIUM, 0};
+        return {28, FONT_STYLE_MEDIUM, 0};
     case rewrite_text_role_t::splash_title:
-        return {28, FONT_STYLE_MEDIUM, 6};
+        return {42, FONT_STYLE_MEDIUM, 10};
     case rewrite_text_role_t::splash_detail:
-        return {18, FONT_STYLE_LIGHT, 6};
+        return {32, FONT_STYLE_LIGHT, 10};
     case rewrite_text_role_t::fallback_brand:
-        return {24, FONT_STYLE_MEDIUM, 4};
+        return {40, FONT_STYLE_MEDIUM, 8};
     case rewrite_text_role_t::body:
     default:
-        return {14, FONT_STYLE_REGULAR, 4};
+        return {28, FONT_STYLE_REGULAR, 8};
     }
 }
 
@@ -888,7 +888,7 @@ void draw_embed_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y,
 
 std::string rewrite_dir() {
     const char* value = std::getenv("SKEETS_REWRITE_DIR");
-    return value && *value ? value : "/mnt/onboard/.adds/sKeets-rewrite";
+    return value && *value ? value : "/mnt/onboard/.adds/sKeets";
 }
 
 std::string rewrite_asset_path(const char* filename) {
@@ -910,11 +910,11 @@ bool load_local_image_asset(image_t& image, const std::string& path, int max_w, 
 
 void load_brand_assets(rewrite_app_t& app) {
     load_local_image_asset(app.header_logo,
-                           rewrite_asset_path("sKeets_top_bar_white.png"),
+                           rewrite_asset_path("skeets_top_bar_asset"),
                            kHeaderLogoMaxWidth,
                            kHeaderLogoMaxHeight);
     load_local_image_asset(app.splash_logo,
-                           rewrite_asset_path("sKeets_splash_white.png"),
+                           rewrite_asset_path("skeets_splash_asset"),
                            kSplashLogoMaxWidth,
                            kSplashLogoMaxHeight);
 }
@@ -946,7 +946,7 @@ void draw_header_brand(rewrite_app_t& app, const rewrite_rect_t& header_rect) {
               brand_y,
               "sKeets",
               rewrite_text_role_t::fallback_brand,
-              COLOR_WHITE,
+              COLOR_BLACK,
               kColorHeader);
 }
 
@@ -1459,9 +1459,9 @@ std::vector<std::string> power_lines(const rewrite_app_t& app) {
 void render_screen(rewrite_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
-    const int header_height = std::max(108, height / 11);
-    const int button_height = std::max(110, height / 10);
-    const int status_height = std::max(132, height / 10);
+    const int header_height = std::max(128, height / 9);
+    const int button_height = std::max(132, height / 9);
+    const int status_height = std::max(176, height / 7);
     const int cards_height = height - header_height - button_height - status_height - (kOuterMargin * 5);
     const int row_height = std::max(180, cards_height / 2);
     const int half_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
@@ -1531,7 +1531,7 @@ void render_loading_screen(rewrite_app_t& app,
                            bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
-    const int splash_top = std::max(120, height / 7);
+    const int splash_top = std::max(72, height / 10);
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
@@ -1542,13 +1542,13 @@ void render_loading_screen(rewrite_app_t& app,
                            width / 2,
                            splash_top + 24,
                            "sKeets",
-                           kColorHeader,
+                           COLOR_BLACK,
                            COLOR_WHITE,
                            rewrite_text_role_t::splash_title);
     }
 
     const int logo_bottom = splash_top + (app.splash_logo.height > 0 ? app.splash_logo.height : line_height(rewrite_text_role_t::splash_title));
-    const int title_y = logo_bottom + 54;
+    const int title_y = logo_bottom + 40;
     draw_centered_text(app,
                        width / 2,
                        title_y,
@@ -1579,9 +1579,9 @@ void render_loading_screen(rewrite_app_t& app,
 void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
-    const int header_height = std::max(108, height / 11);
-    const int button_height = std::max(110, height / 10);
-    const int status_height = std::max(132, height / 10);
+    const int header_height = std::max(128, height / 9);
+    const int button_height = std::max(132, height / 9);
+    const int status_height = std::max(176, height / 7);
     const int cards_height = height - header_height - button_height - status_height - (kOuterMargin * 5);
     const int row_height = std::max(180, cards_height / 2);
     const int half_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
@@ -1594,17 +1594,17 @@ void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
                                      network_rect.y + network_rect.height + kOuterMargin,
                                      width - (kOuterMargin * 2),
                                      status_height};
-    const int button_width = (width - (kOuterMargin * 2) - kCardGap) / 2;
-    app.diagnostics_back_button = {{kOuterMargin, height - button_height - kOuterMargin, button_width, button_height}, "< Back"};
-    app.diagnostics_refresh_button = {{app.diagnostics_back_button.rect.x + button_width + kCardGap,
-                                       app.diagnostics_back_button.rect.y,
-                                       button_width,
+    app.diagnostics_back_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, "< Back"};
+    app.diagnostics_refresh_button = {{kOuterMargin,
+                                       height - button_height - kOuterMargin,
+                                       width - (kOuterMargin * 2),
                                        button_height},
                                       "Refresh"};
 
     rewrite_framebuffer_clear(app.framebuffer, COLOR_WHITE);
     const rewrite_rect_t header_rect{0, 0, width, header_height};
     rewrite_framebuffer_fill_rect(app.framebuffer, header_rect, kColorHeader);
+    draw_button(app, app.diagnostics_back_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
     draw_card(app, auth_rect, "Authentication", auth_lines(app));
@@ -1630,7 +1630,6 @@ void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
                       COLOR_BLACK,
                       kColorStatus);
 
-    draw_button(app, app.diagnostics_back_button, kColorButtonSecondary);
     draw_button(app, app.diagnostics_refresh_button, kColorButtonPrimary);
 
     std::string error_message;
@@ -1647,8 +1646,8 @@ void render_diagnostics_screen(rewrite_app_t& app, bool full_refresh) {
 void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
-    const int header_height = std::max(72, height / 14);
-    const int button_height = std::max(90, height / 12);
+    const int header_height = std::max(96, height / 11);
+    const int button_height = std::max(120, height / 10);
     const int content_top = header_height;
     const int content_bottom = height - button_height - kOuterMargin;
     const int content_width = width - (kOuterMargin * 2);
@@ -1913,7 +1912,7 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
 void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
-    const int header_height = std::max(72, height / 14);
+    const int header_height = std::max(96, height / 11);
     const int content_right = width - kOuterMargin - kThreadScrollbarWidth - kThreadScrollbarGap;
     const int content_width = content_right - kOuterMargin;
     const int content_bottom = height - kOuterMargin;
@@ -2210,8 +2209,8 @@ void draw_settings_action_row(rewrite_app_t& app,
 void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
-    const int header_height = std::max(72, height / 14);
-    const int row_height = std::max(104, height / 10);
+    const int header_height = std::max(96, height / 11);
+    const int row_height = std::max(156, height / 8);
     const int row_gap = 16;
     const int content_width = width - (kOuterMargin * 2);
     const int first_row_y = header_height + kOuterMargin;
@@ -2371,7 +2370,7 @@ int main(int argc, char* argv[]) {
     }
 
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName("sKeets-rewrite");
+    QCoreApplication::setApplicationName("sKeets");
 
     // Load our bundled CA certificate bundle so Qt can verify TLS chains.
     // Qt on embedded Linux doesn't check SSL_CERT_FILE — it only looks at
@@ -2421,6 +2420,7 @@ int main(int argc, char* argv[]) {
         font_set_ot_enabled(false);
     }
     font_init(&rewrite_app.text_fb);
+    rewrite_app.text_fb.font_h = font_line_height(28, FONT_STYLE_REGULAR);
     load_brand_assets(rewrite_app);
 
     if (!rewrite_input_open(rewrite_app.input,

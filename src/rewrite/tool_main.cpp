@@ -61,7 +61,7 @@ int do_ntx_io(const char* command_arg, const char* value_arg) {
 void print_usage(const char* argv0) {
     std::fprintf(stderr,
                  "usage: %s probe-shell | ntx-io <cmd> <arg>\n",
-                 argv0 ? argv0 : "sKeets-rewrite-tool");
+                 argv0 ? argv0 : "sKeets-tool");
 }
 
 } // namespace
