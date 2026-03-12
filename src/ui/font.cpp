@@ -3,6 +3,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <algorithm>
+#include <string>
+#include <vector>
 #include <fbink.h>
 
 #define FONT_SIZE_PX 14
@@ -12,6 +15,9 @@ static int s_screen_w = 1448;
 static int s_font_w   = 8;
 static int s_font_h   = 16;
 static bool s_ot_enabled = false;
+
+int font_measure_string(const char *s);
+static std::vector<std::string> wrap_text_lines(int max_w, const char *s);
 
 static FG_COLOR_INDEX_T gray_to_fg(uint8_t gray) {
     return (FG_COLOR_INDEX_T)(gray / 17U);
@@ -49,66 +55,93 @@ static int font_draw_wrapped_fallback(fb_t *fb, int x, int y, int max_w,
                                       int line_spacing) {
     if (!s || !*s || max_w <= 0) return y;
 
-    const int chars_per_line = max_w / s_font_w > 0 ? max_w / s_font_w : 1;
-    char line[512];
-    int line_len = 0;
+    const auto lines = wrap_text_lines(max_w, s);
     int cursor_y = y;
-    const char *word = s;
-
-    while (*word) {
-        while (*word == ' ') word++;
-        if (!*word) break;
-
-        const char *word_end = word;
-        while (*word_end && *word_end != ' ') word_end++;
-        int word_len = (int)(word_end - word);
-
-        if (line_len > 0 && line_len + 1 + word_len > chars_per_line) {
-            line[line_len] = '\0';
-            font_draw_string_fallback(fb, x, cursor_y, line, fg, bg);
-            cursor_y += s_font_h + line_spacing;
-            line_len = 0;
+    for (size_t index = 0; index < lines.size(); ++index) {
+        if (!lines[index].empty()) {
+            font_draw_string_fallback(fb, x, cursor_y, lines[index].c_str(), fg, bg);
         }
-
-        if (word_len > chars_per_line) {
-            int offset = 0;
-            while (offset < word_len) {
-                int chunk = chars_per_line;
-                if (chunk > word_len - offset) chunk = word_len - offset;
-                memcpy(line, word + offset, (size_t)chunk);
-                line[chunk] = '\0';
-                font_draw_string_fallback(fb, x, cursor_y, line, fg, bg);
-                cursor_y += s_font_h + line_spacing;
-                offset += chunk;
-            }
-            word = word_end;
-            continue;
+        cursor_y += s_font_h;
+        if (index + 1 < lines.size()) {
+            cursor_y += std::max(0, line_spacing);
         }
-
-        if (line_len > 0) line[line_len++] = ' ';
-        /* B9: guard against buffer overflow for very long words */
-        if (line_len + word_len + 1 > (int)sizeof(line) - 1) {
-            if (line_len > 0) {
-                line[line_len] = '\0';
-                font_draw_string_fallback(fb, x, cursor_y, line, fg, bg);
-                cursor_y += s_font_h + line_spacing;
-                line_len = 0;
-            }
-            int max_chunk = (int)sizeof(line) - 2;
-            if (word_len > max_chunk) word_len = max_chunk;
-        }
-        memcpy(line + line_len, word, (size_t)word_len);
-        line_len += word_len;
-        word = word_end;
-    }
-
-    if (line_len > 0) {
-        line[line_len] = '\0';
-        font_draw_string_fallback(fb, x, cursor_y, line, fg, bg);
-        cursor_y += s_font_h + line_spacing;
     }
 
     return cursor_y;
+}
+
+static std::vector<std::string> wrap_text_lines(int max_w, const char *s) {
+    std::vector<std::string> lines;
+    if (!s || !*s || max_w <= 0) {
+        lines.push_back("");
+        return lines;
+    }
+
+    auto push_wrapped_word = [&](const std::string& word) {
+        if (word.empty()) return;
+        size_t start = 0;
+        while (start < word.size()) {
+            size_t best = start + 1;
+            for (size_t end = start + 1; end <= word.size(); ++end) {
+                const std::string candidate = word.substr(start, end - start);
+                if (font_measure_string(candidate.c_str()) <= max_w) {
+                    best = end;
+                    continue;
+                }
+                break;
+            }
+            if (best <= start) best = start + 1;
+            lines.push_back(word.substr(start, best - start));
+            start = best;
+        }
+    };
+
+    std::string current;
+    const char *cursor = s;
+    while (*cursor) {
+        if (*cursor == '\n') {
+            lines.push_back(current);
+            current.clear();
+            ++cursor;
+            continue;
+        }
+
+        while (*cursor == ' ') ++cursor;
+        if (!*cursor) break;
+        if (*cursor == '\n') continue;
+
+        const char *word_end = cursor;
+        while (*word_end && *word_end != ' ' && *word_end != '\n') ++word_end;
+        const std::string word(cursor, (size_t)(word_end - cursor));
+        const std::string candidate = current.empty() ? word : current + " " + word;
+        if (font_measure_string(candidate.c_str()) <= max_w) {
+            current = candidate;
+        } else {
+            if (!current.empty()) {
+                lines.push_back(current);
+                current.clear();
+            }
+            if (font_measure_string(word.c_str()) <= max_w) {
+                current = word;
+            } else {
+                push_wrapped_word(word);
+            }
+        }
+        cursor = word_end;
+    }
+
+    if (!current.empty()) {
+        lines.push_back(current);
+    }
+    if (lines.empty()) {
+        lines.push_back("");
+    }
+    return lines;
+}
+
+static int wrapped_text_height_for_lines(size_t line_count, int line_spacing) {
+    if (line_count == 0) return s_font_h;
+    return (int)line_count * s_font_h + (int)(line_count - 1) * std::max(0, line_spacing);
 }
 
 /* ── Init ─────────────────────────────────────────────────────────── */
@@ -193,65 +226,25 @@ int font_draw_wrapped(fb_t *fb, int x, int y, int max_w,
     if (!fb || fb->fd < 0) return y + s_font_h;
     if (!s_ot_enabled) return font_draw_wrapped_fallback(fb, x, y, max_w, s, fg, bg, line_spacing);
 
-    FBInkOTConfig ot_cfg = {};
-    ot_cfg.size_px = FONT_SIZE_PX;
-    ot_cfg.margins.left   = (short int)x;
-    ot_cfg.margins.top    = (short int)y;
-    short int right = (short int)(fb->width - x - max_w);
-    ot_cfg.margins.right  = right > 0 ? right : 0;
-    ot_cfg.margins.bottom = 0;
-
-    FBInkConfig cfg = {};
-    cfg.no_refresh = true;
-    cfg.is_bgless  = true;
-    cfg.fg_color   = fg;
-
-    FBInkOTFit fit = {};
-    int ret = fbink_print_ot(fb->fd, s, &ot_cfg, &cfg, &fit);
-    if (ret == -ENODATA || ret == -ENOSYS) {
-        fprintf(stderr, "font_draw_wrapped: OpenType unavailable, using fallback\n");
-        s_ot_enabled = false;
-        return font_draw_wrapped_fallback(fb, x, y, max_w, s, fg, bg, line_spacing);
+    const auto lines = wrap_text_lines(max_w, s);
+    int cursor_y = y;
+    for (size_t index = 0; index < lines.size(); ++index) {
+        if (!lines[index].empty()) {
+            font_draw_string(fb, x, cursor_y, lines[index].c_str(), fg, bg);
+        }
+        cursor_y += s_font_h;
+        if (index + 1 < lines.size()) {
+            cursor_y += std::max(0, line_spacing);
+        }
     }
-
-    /* fbink_print_ot returns the new top margin (= y after text) on success. */
-    if (ret > y) return ret;
-    if (fit.bbox.height > 0) return y + (int)fit.bbox.height;
-    return y + s_font_h;
+    return cursor_y;
 }
 
 int font_measure_wrapped(int max_w, const char *s, int line_spacing) {
     if (!s || !*s || max_w <= 0) return s_font_h;
     if (s_fbfd < 0 || !s_ot_enabled) {
-        int chars_per_line = max_w / s_font_w;
-        if (chars_per_line <= 0) chars_per_line = 1;
-        int len   = (int)strlen(s);
-        int lines = (len + chars_per_line - 1) / chars_per_line;
-        if (lines < 1) lines = 1;
-        return lines * (s_font_h + line_spacing);
+        return wrapped_text_height_for_lines(wrap_text_lines(max_w, s).size(), line_spacing);
     }
 
-    FBInkOTConfig ot_cfg = {};
-    ot_cfg.size_px      = FONT_SIZE_PX;
-    ot_cfg.margins.left = 0;
-    ot_cfg.margins.top  = 0;
-    short int right = (short int)(s_screen_w - max_w);
-    ot_cfg.margins.right  = right > 0 ? right : 0;
-    ot_cfg.margins.bottom = 0;
-    ot_cfg.compute_only   = true;
-
-    FBInkOTFit fit = {};
-    int ret = fbink_print_ot(s_fbfd, s, &ot_cfg, NULL, &fit);
-    if (ret == -ENODATA || ret == -ENOSYS) {
-        s_ot_enabled = false;
-        int chars_per_line = max_w / s_font_w;
-        if (chars_per_line <= 0) chars_per_line = 1;
-        int len   = (int)strlen(s);
-        int lines = (len + chars_per_line - 1) / chars_per_line;
-        if (lines < 1) lines = 1;
-        return lines * (s_font_h + line_spacing);
-    }
-
-    if (fit.bbox.height > 0) return (int)fit.bbox.height;
-    return s_font_h;
+    return wrapped_text_height_for_lines(wrap_text_lines(max_w, s).size(), line_spacing);
 }

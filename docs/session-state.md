@@ -14,16 +14,16 @@ protocol path. The rewrite is no longer just an auth bootstrap shell: it now
 renders a usable text-first feed view with author, timestamp, body text, image
 placeholders, and stats.
 
-The current milestone is **richer embed rendering and image-fallback cleanup**.
-Phase 3 interaction support is working in the rewrite, and Phase 3.5 settings
-plus image-gated rendering are now working on-device in both feed and thread
-views. Saved-session restore now uses the ATProto refresh-token path, so
-expired access JWTs are rotated during bootstrap and during rewrite runtime
-requests instead of forcing a relogin.
+The current milestone is **rewrite settings and moderation polish after richer
+embed rendering**. Phase 3 interaction support is working in the rewrite, and
+Phase 3.5 settings now cover both image-gated rendering and default-off
+moderation preferences in feed and thread views. Saved-session restore now uses
+the ATProto refresh-token path, so expired access JWTs are rotated during
+bootstrap and during rewrite runtime requests instead of forcing a relogin.
 
 ### Latest verified build
 
-- **build_timestamp**: `2026-03-12` (latest successful package after session refresh-token restore and richer embed work)
+- **build_timestamp**: `2026-03-12` (latest successful package after moderation settings, hidden-content filtering, and wrapped-text clipping fixes)
 - **Package**: `build-kobo/KoboRoot.tgz`
 - **Build command**: `NINJA_PACKAGE_TARGET=kobo-package-rewrite ./docker-build.sh`
 
@@ -51,7 +51,7 @@ requests instead of forcing a relogin.
 | **Phase 1** | Scaffolding (remove compose/login views, add auth_view) | **PARTIALLY DONE** — rewrite has its own file structure |
 | **Phase 2** | Credential file login (login.txt flow) | **DONE** ✅ |
 | **Phase 3** | Like and repost support | Working on-device |
-| **Phase 3.5** | Settings view: dual image toggles | Working on-device with feed/thread image rendering |
+| **Phase 3.5** | Settings view: image + moderation toggles | Working on-device with feed/thread image rendering and label gating |
 | **Phase 4** | Input improvements (swipe, long-press) | Deferred again — swipe experiment removed after poor device behavior |
 | **Phase 5** | Framebuffer & reliability improvements | In progress — rewrite redraw scoping work has started |
 | **Phase 5.5** | Bug fixes (JWT refresh, thread recursion, etc.) | Not started |
@@ -73,7 +73,7 @@ requests instead of forcing a relogin.
 12. Stats labels now render as readable word labels (`<Like>`, `Reply`, `<Repost>`) instead of single-letter abbreviations
 13. Active feed/thread actions use clearer flipped-caret states (`>Like<`, `>Repost<`) without changing hit-target widths
 14. Feed and thread stat updates redraw only the affected stat row with partial e-ink refreshes
-15. Feed and thread headers open a settings screen with persisted `profile_images_enabled` / `embed_images_enabled` toggles
+15. Feed and thread headers open a settings screen with persisted `profile_images_enabled` / `embed_images_enabled` toggles plus default-off moderation toggles for `allow_nudity_content`, `allow_porn_content`, and `allow_suggestive_content`
 16. Feed and thread avatars render on-device through the shared async image cache when profile images are enabled
 17. Feed image embeds render on-device when embed images are enabled
 18. Thread view now renders image embeds when opening a post with media
@@ -82,6 +82,8 @@ requests instead of forcing a relogin.
 21. Feed and thread image embeds now preserve per-image alt text so the rewrite can show text fallbacks when embed images are disabled
 22. Unsupported media embeds such as video or GIF-style posts now render a left-aligned preview thumbnail, when available, with alt text beside it instead of disappearing entirely
 23. Non-full feed and thread repaints now refresh only the content region rather than the full screen, reducing unnecessary e-ink flashing during async image updates
+24. Posts carrying matching moderation labels are now hidden by default in feed and thread until the corresponding Nudity, Porn, or Suggestive setting is enabled
+25. Wrapped text in the active bitmap fallback path no longer clips or overlaps on-device; feed body text, alt-text blocks, and preview text now pre-measure against the same line breaks they render with
 
 ### What is still worth validating further
 
@@ -90,7 +92,8 @@ requests instead of forcing a relogin.
 3. Thread layouts remain stable when larger images load after initial render
 4. The cached JPEG coercion path remains robust across a wider mix of Bluesky CDN image URLs
 5. Newly landed thread fixes still need on-device validation: thread-side repost/unrepost taps are now wired, and long threads now use a right-side scrollbar with pre-measured clipping instead of bottom paging controls or drawing past the bottom edge
-6. Newly landed media fallback behavior still needs on-device validation: image alt-text blocks should appear when embed images are disabled, and unsupported media previews should show left-aligned thumbnails with adjacent alt text
+6. Newly landed media fallback behavior still needs on-device validation: image alt-text blocks should appear when embed images are disabled, and unsupported media previews should keep reasonable thumbnail/text sizing now that the clipping bug is fixed
+7. Newly landed moderation settings still need on-device validation: label-matched posts should show the hidden-content message by default and reappear immediately when the corresponding setting is enabled
 
 ---
 
@@ -127,10 +130,12 @@ The main entry point for the rewrite app. Changes this session:
 - **CA cert loading** (lines ~420-445): After QCoreApplication init, loads bundled CA certs from `<rewrite_dir>/ssl/certs/ca-certificates.crt` via `QSslCertificate::fromDevice()` and sets as default SSL config.
 - **Localized stat refresh helpers**: Feed and thread action handlers redraw only the relevant stats row and trigger a partial or grayscale-partial framebuffer refresh for that rectangle.
 - **Clearer active-state labels**: Interactive labels keep stable widths while showing active state via flipped carets (`>Like<`, `>Repost<`).
-- **Settings view**: Adds a rewrite-native settings screen reachable from feed and thread headers, with persistent `profile_images_enabled` and `embed_images_enabled` toggles plus a sign-out action that clears the saved session.
+- **Settings view**: Adds a rewrite-native settings screen reachable from feed and thread headers, with persistent `profile_images_enabled`, `embed_images_enabled`, `allow_nudity_content`, `allow_porn_content`, and `allow_suggestive_content` toggles plus a sign-out action that clears the saved session.
 - **Avatar/embed rendering**: Reuses the shared async image cache to draw feed/thread avatars and image embeds when the corresponding settings are enabled.
 - **Alt-text fallbacks**: Image embeds now retain per-image alt text and render text-only fallback blocks when embed images are disabled.
 - **Unsupported media previews**: Video/GIF-style embeds now surface a smaller preview thumbnail, when available, with alt text laid out to its right.
+- **Moderation gating**: Posts now retain non-negated ATProto label values so feed and thread rendering can hide nudity, porn, or suggestive content by default until the matching setting is enabled.
+- **Wrapped-text clipping fix**: The active bitmap fallback text path now measures wrapped blocks from the same word-wrap logic it draws, which fixed the remaining on-device clipping/overlap seen around feed bodies and preview text.
 - **CDN compatibility fix**: Rewrites Bluesky CDN image URLs to request `@jpeg` so the current decoder path can render avatars and embeds on-device.
 - **Thread media rendering**: The thread view now renders image embeds as well as feed cards, rather than dropping media after navigation.
 - **Async redraw handling**: Pumps Qt events in the main loop and triggers a repaint when `image_cache_redraw_needed()` signals that a download completed.
@@ -141,6 +146,9 @@ The main entry point for the rewrite app. Changes this session:
 
 ### `src/util/image_cache.cpp` / `src/util/image.cpp`
 - The shared image cache now logs concise fetch/decode state, retries transient failures, reopens raw disk-cache files correctly, and normalizes Bluesky CDN image URLs to `@jpeg` before hashing, fetch, and cache storage.
+
+### `src/ui/font.cpp`
+- Wrapped-text measurement and drawing now share the same line-breaking logic in the active bitmap fallback path, which fixed the last on-device clipping/overlap regression after preview cards and alt-text blocks were introduced.
 
 ### `CMakeLists.txt`
 - The rewrite target now compiles and links the shared `src/ui/fb.cpp`, `src/util/image.cpp`, and `src/util/image_cache.cpp` sources, and links the `stb_image` interface dependency so the rewrite can reuse the legacy image pipeline.
@@ -233,17 +241,21 @@ Status: working on-device.
 Implemented result:
 - Feed and thread headers expose a `Settings` action
 - The rewrite has a dedicated settings screen with Back and Sign Out actions
-- `profile_images_enabled` defaults to on and `embed_images_enabled` defaults to off, and both values persist in `config.ini`
+- `profile_images_enabled` defaults to on, while `embed_images_enabled`, `allow_nudity_content`, `allow_porn_content`, and `allow_suggestive_content` default to off, and all five values persist in `config.ini`
 - Feed and thread avatars render through the shared async image cache when profile images are enabled
 - The embed-images toggle controls image embed rendering in both feed and thread views
 - The rewrite repaints automatically when async image downloads complete
 - When embed images are disabled, the rewrite now shows per-image alt text instead of dropping image attachments entirely
 - Unsupported media embeds now show a smaller preview thumbnail, when available, with alt text beside it
+- Posts with matching moderation labels now replace their body/embed area with a hidden-content message that points the user back to Settings
+- Wrapped text in the active bitmap fallback path no longer clips or overlaps on-device after the draw/measure mismatch was removed
 - Bluesky CDN image URLs are rewritten to `@jpeg` to avoid WebP decode failures in the current decoder path
 
 Remaining polish:
 - Confirm toggles persist across relaunches and sign-out/sign-in cycles
 - Confirm async-loaded avatars and embeds repaint cleanly with the new bounded content-region redraws
+- Confirm moderation labels seen in the wild map cleanly onto the Nudity, Porn, and Suggestive buckets without obvious false positives
+- Re-check unsupported-media and external preview-card sizing/spacing on-device; the remaining audit did not find another obvious code-level measurement mismatch after the clipping fix
 - Consider a cleaner image decode path if WebP support is needed later without CDN coercion
 
 ### 2. Phase 3 interaction polish

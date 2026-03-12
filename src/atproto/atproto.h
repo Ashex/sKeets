@@ -32,6 +32,7 @@ struct Post {
     std::string media_preview_url;
     std::string media_alt_text;
     std::string media_label;
+    std::vector<std::string> moderation_labels;
     std::string reply_parent_uri, reply_parent_cid;
     std::string reply_root_uri,   reply_root_cid;
     std::vector<std::shared_ptr<Post>> replies;

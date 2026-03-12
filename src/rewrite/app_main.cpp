@@ -135,10 +135,16 @@ struct rewrite_app_t {
     // Settings view state
     bool profile_images_enabled = true;
     bool embed_images_enabled = false;
+    bool allow_nudity_content = false;
+    bool allow_porn_content = false;
+    bool allow_suggestive_content = false;
     rewrite_view_mode_t settings_return_view = rewrite_view_mode_t::feed;
     rewrite_button_t settings_back_button;
     rewrite_button_t settings_profile_button;
     rewrite_button_t settings_embed_button;
+    rewrite_button_t settings_nudity_button;
+    rewrite_button_t settings_porn_button;
+    rewrite_button_t settings_suggestive_button;
     rewrite_button_t settings_sign_out_button;
 };
 
@@ -153,6 +159,15 @@ void handle_signal(int) {
 
 std::string bool_label(bool value) {
     return value ? "yes" : "no";
+}
+
+std::string to_lower_ascii(std::string text) {
+    for (char& ch : text) {
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = static_cast<char>(ch - 'A' + 'a');
+        }
+    }
+    return text;
 }
 
 std::string sanitize_bitmap_text(const std::string& text) {
@@ -191,8 +206,9 @@ std::string sanitize_bitmap_text(const std::string& text) {
 int measure_quote_embed_height(const rewrite_app_t& app, int width, const Bsky::Post* quoted) {
     if (!quoted) return 0;
     const int inner_width = std::max(40, width - kQuoteIndent - 8);
+    const std::string text = sanitize_bitmap_text(quoted->text);
     const int body_height = font_measure_wrapped(inner_width,
-                                                 quoted->text.c_str(),
+                                                 text.c_str(),
                                                  4);
     return app.text_fb.font_h + 4 + body_height + 8;
 }
@@ -232,21 +248,32 @@ void draw_quote_embed(rewrite_app_t& app, int x, int y, int width, const Bsky::P
 
 int target_preview_thumb_width(const rewrite_app_t& app, int available_width);
 
+bool preview_text_needs_stacked_layout(int side_text_height, int thumb_height, bool has_thumb) {
+    return has_thumb && side_text_height > thumb_height;
+}
+
 int measure_external_embed_height(const rewrite_app_t& app, int width, const Bsky::Post& post, bool embed_images) {
     const bool has_thumb = embed_images && !post.ext_thumb_url.empty();
     const bool alt_prefixed_description = post.ext_description.rfind("ALT:", 0) == 0;
     const bool title_only = alt_prefixed_description && !post.ext_title.empty();
     const int thumb_width = has_thumb ? target_preview_thumb_width(app, width) : 0;
     const int thumb_height = has_thumb ? std::max(96, (thumb_width * 3) / 4) : 0;
-    const int text_width = has_thumb ? std::max(120, width - thumb_width - 18) : std::max(120, width - 12);
+    const int side_text_width = has_thumb ? std::max(120, width - thumb_width - 18) : std::max(120, width - 12);
+    const int full_text_width = std::max(120, width - 12);
     const std::string title = sanitize_bitmap_text(post.ext_title.empty() ? "External media" : post.ext_title);
     const std::string description = title_only
         ? std::string{}
         : sanitize_bitmap_text(post.ext_description.empty() ? "External media preview" : post.ext_description);
-    const int title_height = font_measure_wrapped(text_width, title.c_str(), 4);
-    const int description_height = description.empty() ? 0 : font_measure_wrapped(text_width, description.c_str(), 4);
-    const int text_height = title_height + (description.empty() ? 0 : (description_height + 4));
-    return std::max(thumb_height, text_height) + 12;
+    const int side_title_height = font_measure_wrapped(side_text_width, title.c_str(), 4);
+    const int side_description_height = description.empty() ? 0 : font_measure_wrapped(side_text_width, description.c_str(), 4);
+    const int side_text_height = side_title_height + (description.empty() ? 0 : (side_description_height + 4));
+    if (preview_text_needs_stacked_layout(side_text_height, thumb_height, has_thumb)) {
+        const int full_title_height = font_measure_wrapped(full_text_width, title.c_str(), 4);
+        const int full_description_height = description.empty() ? 0 : font_measure_wrapped(full_text_width, description.c_str(), 4);
+        const int full_text_height = full_title_height + (description.empty() ? 0 : (full_description_height + 4));
+        return thumb_height + 8 + full_text_height + 12;
+    }
+    return std::max(thumb_height, side_text_height) + 12;
 }
 
 std::vector<std::string> image_alt_lines(const Bsky::Post& post) {
@@ -308,11 +335,19 @@ int measure_unsupported_media_height(const rewrite_app_t& app, const Bsky::Post&
     const bool has_preview = !post.media_preview_url.empty();
     const int thumb_width = has_preview ? target_preview_thumb_width(app, width) : 0;
     const int thumb_height = has_preview ? std::max(96, (thumb_width * 3) / 4) : 0;
-    const int text_width = has_preview ? std::max(120, width - thumb_width - 18) : std::max(120, width - 12);
+    const int side_text_width = has_preview ? std::max(120, width - thumb_width - 18) : std::max(120, width - 12);
+    const int full_text_width = std::max(120, width - 12);
     const std::string label = sanitize_bitmap_text(post.media_label.empty() ? "Unsupported media" : post.media_label);
     const std::string alt = sanitize_bitmap_text(post.media_alt_text.empty() ? "Preview unavailable for this media type." : post.media_alt_text);
-    const int text_height = app.text_fb.font_h + 4 + font_measure_wrapped(text_width, alt.c_str(), 4);
-    return std::max(thumb_height, text_height) + 12;
+    const int side_label_height = font_measure_wrapped(side_text_width, label.c_str(), 4);
+    const int side_alt_height = font_measure_wrapped(side_text_width, alt.c_str(), 4);
+    const int side_text_height = side_label_height + 4 + side_alt_height;
+    if (preview_text_needs_stacked_layout(side_text_height, thumb_height, has_preview)) {
+        const int full_label_height = font_measure_wrapped(full_text_width, label.c_str(), 4);
+        const int full_alt_height = font_measure_wrapped(full_text_width, alt.c_str(), 4);
+        return thumb_height + 8 + full_label_height + 4 + full_alt_height + 12;
+    }
+    return std::max(thumb_height, side_text_height) + 12;
 }
 
 void draw_unsupported_media_block(rewrite_app_t& app, const Bsky::Post& post, int x, int& y, int width) {
@@ -326,6 +361,15 @@ void draw_unsupported_media_block(rewrite_app_t& app, const Bsky::Post& post, in
     const int thumb_y = y + 6;
     int text_x = x + 6;
     int text_width = std::max(120, width - 12);
+    int text_y = y + 6;
+    const std::string label = sanitize_bitmap_text(post.media_label.empty() ? "Unsupported media" : post.media_label);
+    const std::string alt = sanitize_bitmap_text(post.media_alt_text.empty() ? "Preview unavailable for this media type." : post.media_alt_text);
+    const int side_text_width = has_preview ? std::max(120, width - thumb_width - 18) : text_width;
+    const int side_label_height = font_measure_wrapped(side_text_width, label.c_str(), 4);
+    const int side_alt_height = font_measure_wrapped(side_text_width, alt.c_str(), 4);
+    const bool stacked_layout = preview_text_needs_stacked_layout(side_label_height + 4 + side_alt_height,
+                                                                  thumb_height,
+                                                                  has_preview);
     if (has_preview) {
         fb_fill_rect(&app.text_fb,
                      thumb_x,
@@ -344,29 +388,32 @@ void draw_unsupported_media_block(rewrite_app_t& app, const Bsky::Post& post, in
                          thumb->height,
                          thumb->pixels);
         } else {
-            const char* label = "[preview]";
+            const char* preview_label = "[preview]";
             font_draw_string(&app.text_fb,
-                             thumb_x + std::max(0, (thumb_width - font_measure_string(label)) / 2),
+                             thumb_x + std::max(0, (thumb_width - font_measure_string(preview_label)) / 2),
                              thumb_y + (thumb_height - app.text_fb.font_h) / 2,
-                             label,
+                             preview_label,
                              kColorMeta,
                              COLOR_LGRAY);
         }
         draw_border(app, rewrite_rect_t{thumb_x, thumb_y, thumb_width, thumb_height}, kColorPostBorder, 1);
-        text_x += thumb_width + 12;
-        text_width = std::max(120, width - thumb_width - 18);
+        if (stacked_layout) {
+            text_y = thumb_y + thumb_height + 8;
+        } else {
+            text_x += thumb_width + 12;
+            text_width = side_text_width;
+        }
     }
 
-    const std::string label = sanitize_bitmap_text(post.media_label.empty() ? "Unsupported media" : post.media_label);
-    const std::string alt = sanitize_bitmap_text(post.media_alt_text.empty() ? "Preview unavailable for this media type." : post.media_alt_text);
-    int text_y = y + 6;
-    font_draw_string(&app.text_fb,
-                     text_x,
-                     text_y,
-                     label.c_str(),
-                     COLOR_BLACK,
-                     COLOR_WHITE);
-    text_y += app.text_fb.font_h + 4;
+    text_y = font_draw_wrapped(&app.text_fb,
+                               text_x,
+                               text_y,
+                               text_width,
+                               label.c_str(),
+                               COLOR_BLACK,
+                               COLOR_WHITE,
+                               4);
+    text_y += 4;
     font_draw_wrapped(&app.text_fb,
                       text_x,
                       text_y,
@@ -536,6 +583,17 @@ void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky
     const int thumb_y = y + 6;
     int text_x = x + 6;
     int text_width = std::max(120, width - 12);
+    int text_y = y + 6;
+    const std::string title = sanitize_bitmap_text(post.ext_title.empty() ? "External media" : post.ext_title);
+    const std::string description = title_only
+        ? std::string{}
+        : sanitize_bitmap_text(post.ext_description.empty() ? "External media preview" : post.ext_description);
+    const int side_text_width = has_thumb ? std::max(120, width - thumb_width - 18) : text_width;
+    const int side_title_height = font_measure_wrapped(side_text_width, title.c_str(), 4);
+    const int side_description_height = description.empty() ? 0 : font_measure_wrapped(side_text_width, description.c_str(), 4);
+    const bool stacked_layout = preview_text_needs_stacked_layout(side_title_height + (description.empty() ? 0 : (side_description_height + 4)),
+                                                                  thumb_height,
+                                                                  has_thumb);
     if (has_thumb) {
         fb_fill_rect(&app.text_fb,
                      thumb_x,
@@ -565,12 +623,14 @@ void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky
                              COLOR_LGRAY);
         }
         draw_border(app, rewrite_rect_t{thumb_x, thumb_y, thumb_width, thumb_height}, kColorPostBorder, 1);
-        text_x += thumb_width + 12;
-        text_width = std::max(120, width - thumb_width - 18);
+        if (stacked_layout) {
+            text_y = thumb_y + thumb_height + 8;
+        } else {
+            text_x += thumb_width + 12;
+            text_width = side_text_width;
+        }
     }
 
-    int text_y = y + 6;
-    const std::string title = sanitize_bitmap_text(post.ext_title.empty() ? "External media" : post.ext_title);
     text_y = font_draw_wrapped(&app.text_fb,
                                text_x,
                                text_y,
@@ -580,7 +640,6 @@ void draw_external_embed(rewrite_app_t& app, int x, int y, int width, const Bsky
                                COLOR_WHITE,
                                4);
     if (!title_only) {
-        const std::string description = sanitize_bitmap_text(post.ext_description.empty() ? "External media preview" : post.ext_description);
         if (!description.empty()) {
             text_y += 4;
             font_draw_wrapped(&app.text_fb,
@@ -787,6 +846,9 @@ void load_settings(rewrite_app_t& app) {
     }
     app.profile_images_enabled = config_get_bool(config, "profile_images_enabled", true);
     app.embed_images_enabled = config_get_bool(config, "embed_images_enabled", false);
+    app.allow_nudity_content = config_get_bool(config, "allow_nudity_content", false);
+    app.allow_porn_content = config_get_bool(config, "allow_porn_content", false);
+    app.allow_suggestive_content = config_get_bool(config, "allow_suggestive_content", false);
     config_free(config);
 }
 
@@ -797,6 +859,9 @@ void save_settings(const rewrite_app_t& app) {
     }
     config_set_bool(config, "profile_images_enabled", app.profile_images_enabled);
     config_set_bool(config, "embed_images_enabled", app.embed_images_enabled);
+    config_set_bool(config, "allow_nudity_content", app.allow_nudity_content);
+    config_set_bool(config, "allow_porn_content", app.allow_porn_content);
+    config_set_bool(config, "allow_suggestive_content", app.allow_suggestive_content);
     config_save(config);
     config_free(config);
 }
@@ -853,7 +918,51 @@ void open_settings(rewrite_app_t& app, rewrite_view_mode_t return_view) {
     app.settings_return_view = return_view;
     app.view_mode = rewrite_view_mode_t::settings;
     app.status_line = "Settings";
-    app.input_line = "Toggle image preferences or sign out";
+    app.input_line = "Toggle image and moderation preferences or sign out";
+}
+
+bool label_matches_nudity(const std::string& label) {
+    return label == "nudity";
+}
+
+bool label_matches_porn(const std::string& label) {
+    return label == "porn";
+}
+
+bool label_matches_suggestive(const std::string& label) {
+    return label == "suggestive" || label == "sexual";
+}
+
+std::string moderation_hide_reason(const rewrite_app_t& app, const Bsky::Post& post) {
+    bool hide_nudity = false;
+    bool hide_porn = false;
+    bool hide_suggestive = false;
+    for (const auto& raw_label : post.moderation_labels) {
+        const std::string label = to_lower_ascii(raw_label);
+        if (!app.allow_nudity_content && label_matches_nudity(label)) {
+            hide_nudity = true;
+        }
+        if (!app.allow_porn_content && label_matches_porn(label)) {
+            hide_porn = true;
+        }
+        if (!app.allow_suggestive_content && label_matches_suggestive(label)) {
+            hide_suggestive = true;
+        }
+    }
+
+    std::string reason;
+    if (hide_nudity) reason += (reason.empty() ? "" : ", ") + std::string("Nudity");
+    if (hide_porn) reason += (reason.empty() ? "" : ", ") + std::string("Porn");
+    if (hide_suggestive) reason += (reason.empty() ? "" : ", ") + std::string("Suggestive");
+    return reason;
+}
+
+std::string hidden_post_message(const rewrite_app_t& app, const Bsky::Post& post) {
+    const std::string reason = moderation_hide_reason(app, post);
+    if (reason.empty()) {
+        return {};
+    }
+    return "Hidden content: " + reason + ". Enable this category in Settings to view it.";
 }
 
 void load_feed(rewrite_app_t& app) {
@@ -958,13 +1067,20 @@ int measure_thread_post_height(const rewrite_app_t& app,
     }
     needed += std::max(app.text_fb.font_h + 4,
                        app.profile_images_enabled ? kThreadAvatarSize + 4 : 0);
-    if (!post.text.empty()) {
+    const std::string hidden_message = hidden_post_message(app, post);
+    if (!hidden_message.empty()) {
         needed += font_measure_wrapped(text_width_for_post,
-                                       post.text.c_str(),
+                                       hidden_message.c_str(),
                                        4);
         needed += 4;
+    } else if (!post.text.empty()) {
+        const std::string text = sanitize_bitmap_text(post.text);
+        needed += font_measure_wrapped(text_width_for_post,
+                                       text.c_str(),
+                                       4);
+        needed += 4;
+        needed += measure_embed_block_height(app, post, text_width_for_post);
     }
-    needed += measure_embed_block_height(app, post, text_width_for_post);
     needed += app.text_fb.font_h + 8;
     needed += 1;
     needed += 12;
@@ -1227,12 +1343,19 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
             const int post_top = cursor_y;
             // Pre-measure to see if this post will fit
             int needed = 0;
+            const std::string hidden_message = hidden_post_message(app, post);
             if (!post.reposted_by.empty()) {
                 needed += app.text_fb.font_h + 2;
             }
             needed += std::max(app.text_fb.font_h + 4, app.profile_images_enabled ? kFeedAvatarSize + 4 : 0); // author/avatar row
-            needed += font_measure_wrapped(post_text_width - 8, post.text.c_str(), line_spacing);
-            needed += measure_embed_block_height(app, post, post_text_width - 8);
+            if (!hidden_message.empty()) {
+                needed += font_measure_wrapped(post_text_width - 8, hidden_message.c_str(), line_spacing);
+                needed += 4;
+            } else {
+                const std::string measured_post_text = sanitize_bitmap_text(post.text);
+                needed += font_measure_wrapped(post_text_width - 8, measured_post_text.c_str(), line_spacing);
+                needed += measure_embed_block_height(app, post, post_text_width - 8);
+            }
             needed += app.text_fb.font_h + kPostSeparator + 8; // stats + separator
 
             // Skip this post if it would overflow (except the first one — always show at least 1)
@@ -1302,7 +1425,20 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                                  app.profile_images_enabled ? kFeedAvatarSize + 4 : 0);
 
             // Post text
-            if (!post.text.empty()) {
+            if (!hidden_message.empty()) {
+                const int text_top = cursor_y;
+                const int text_height = font_measure_wrapped(post_text_width - 8,
+                                                             hidden_message.c_str(),
+                                                             line_spacing);
+                font_draw_wrapped(&app.text_fb,
+                                  text_left + 4, cursor_y,
+                                  post_text_width - 8,
+                                  hidden_message.c_str(),
+                                  kColorMeta, COLOR_WHITE,
+                                  line_spacing);
+                cursor_y = text_top + text_height;
+                cursor_y += 4;
+            } else if (!post.text.empty()) {
                 const std::string post_text = sanitize_bitmap_text(post.text);
                 const int text_top = cursor_y;
                 const int text_height = font_measure_wrapped(post_text_width - 8,
@@ -1318,7 +1454,9 @@ void render_feed_screen(rewrite_app_t& app, bool full_refresh) {
                 cursor_y += 4;
             }
 
-            draw_embed_block(app, post, text_left + 4, cursor_y, post_text_width - 8);
+            if (hidden_message.empty()) {
+                draw_embed_block(app, post, text_left + 4, cursor_y, post_text_width - 8);
+            }
 
             // Stats line
             const int stats_x = text_left + 4;
@@ -1503,23 +1641,41 @@ void render_thread_screen(rewrite_app_t& app, bool full_refresh) {
             cursor_y += std::max(app.text_fb.font_h + 4,
                                  app.profile_images_enabled ? kThreadAvatarSize + 4 : 0);
 
-            const std::string text = sanitize_bitmap_text(post->text);
-            const int text_top = cursor_y;
-            const int text_height = font_measure_wrapped(text_width_for_post,
-                                                         text.c_str(),
-                                                         line_spacing);
-            font_draw_wrapped(&app.text_fb,
-                              text_x,
-                              cursor_y,
-                              text_width_for_post,
-                              text.c_str(),
-                              COLOR_BLACK,
-                              COLOR_WHITE,
-                              line_spacing);
-            cursor_y = text_top + text_height;
-            cursor_y += 4;
+            const std::string hidden_message = hidden_post_message(app, *post);
+            if (!hidden_message.empty()) {
+                const int text_top = cursor_y;
+                const int text_height = font_measure_wrapped(text_width_for_post,
+                                                             hidden_message.c_str(),
+                                                             line_spacing);
+                font_draw_wrapped(&app.text_fb,
+                                  text_x,
+                                  cursor_y,
+                                  text_width_for_post,
+                                  hidden_message.c_str(),
+                                  kColorMeta,
+                                  COLOR_WHITE,
+                                  line_spacing);
+                cursor_y = text_top + text_height;
+                cursor_y += 4;
+            } else {
+                const std::string text = sanitize_bitmap_text(post->text);
+                const int text_top = cursor_y;
+                const int text_height = font_measure_wrapped(text_width_for_post,
+                                                             text.c_str(),
+                                                             line_spacing);
+                font_draw_wrapped(&app.text_fb,
+                                  text_x,
+                                  cursor_y,
+                                  text_width_for_post,
+                                  text.c_str(),
+                                  COLOR_BLACK,
+                                  COLOR_WHITE,
+                                  line_spacing);
+                cursor_y = text_top + text_height;
+                cursor_y += 4;
 
-            draw_embed_block(app, *post, text_x, cursor_y, text_width_for_post);
+                draw_embed_block(app, *post, text_x, cursor_y, text_width_for_post);
+            }
 
             const std::string like_label = thread_like_label(*post);
             const std::string reply_label = thread_reply_label(*post);
@@ -1644,6 +1800,9 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
     app.settings_back_button = {{kOuterMargin, 10, 160, header_height - 20}, "< Back"};
     app.settings_profile_button = {{kOuterMargin, first_row_y, content_width, row_height}, "Profile Images"};
     app.settings_embed_button = {{kOuterMargin, first_row_y + row_height + row_gap, content_width, row_height}, "Embed Images"};
+    app.settings_nudity_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 2, content_width, row_height}, "Nudity"};
+    app.settings_porn_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 3, content_width, row_height}, "Porn"};
+    app.settings_suggestive_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 4, content_width, row_height}, "Suggestive"};
     app.settings_sign_out_button = {{kOuterMargin,
                                      height - kOuterMargin - std::max(90, height / 12),
                                      content_width,
@@ -1668,12 +1827,27 @@ void render_settings_screen(rewrite_app_t& app, bool full_refresh) {
                       "Embed Images",
                       "Show post image placeholders and enable image loading later.",
                       app.embed_images_enabled);
+    draw_settings_row(app,
+                      app.settings_nudity_button,
+                      "Nudity",
+                      "Show posts labeled for nudity.",
+                      app.allow_nudity_content);
+    draw_settings_row(app,
+                      app.settings_porn_button,
+                      "Porn",
+                      "Show posts labeled for pornographic content.",
+                      app.allow_porn_content);
+    draw_settings_row(app,
+                      app.settings_suggestive_button,
+                      "Suggestive",
+                      "Show posts labeled for suggestive or sexual content.",
+                      app.allow_suggestive_content);
 
     font_draw_wrapped(&app.text_fb,
                       kOuterMargin,
-                      app.settings_embed_button.rect.y + app.settings_embed_button.rect.height + 20,
+                      app.settings_suggestive_button.rect.y + app.settings_suggestive_button.rect.height + 20,
                       content_width,
-                      "The rewrite is still text-first. These toggles are now persisted and will gate richer image rendering as it lands.",
+                      "These toggles are persisted. Adult-content categories default to hidden until enabled here.",
                       kColorMeta,
                       COLOR_WHITE,
                       4);
@@ -2162,6 +2336,36 @@ int main(int argc, char* argv[]) {
                 rewrite_app.status_line = "Settings updated";
                 rewrite_app.input_line = std::string("Embed images ") +
                                          (rewrite_app.embed_images_enabled ? "enabled" : "disabled");
+                render_settings_screen(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.settings_nudity_button.rect, event.x, event.y)) {
+                rewrite_app.allow_nudity_content = !rewrite_app.allow_nudity_content;
+                save_settings(rewrite_app);
+                rewrite_app.status_line = "Settings updated";
+                rewrite_app.input_line = std::string("Nudity content ") +
+                                         (rewrite_app.allow_nudity_content ? "shown" : "hidden");
+                render_settings_screen(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.settings_porn_button.rect, event.x, event.y)) {
+                rewrite_app.allow_porn_content = !rewrite_app.allow_porn_content;
+                save_settings(rewrite_app);
+                rewrite_app.status_line = "Settings updated";
+                rewrite_app.input_line = std::string("Porn content ") +
+                                         (rewrite_app.allow_porn_content ? "shown" : "hidden");
+                render_settings_screen(rewrite_app, true);
+                continue;
+            }
+
+            if (contains_point(rewrite_app.settings_suggestive_button.rect, event.x, event.y)) {
+                rewrite_app.allow_suggestive_content = !rewrite_app.allow_suggestive_content;
+                save_settings(rewrite_app);
+                rewrite_app.status_line = "Settings updated";
+                rewrite_app.input_line = std::string("Suggestive content ") +
+                                         (rewrite_app.allow_suggestive_content ? "shown" : "hidden");
                 render_settings_screen(rewrite_app, true);
                 continue;
             }

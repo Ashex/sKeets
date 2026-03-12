@@ -80,6 +80,13 @@ static Post convertPostView(const ATProto::AppBskyFeed::PostView::SharedPtr& pv)
         if (pv->mViewer->mRepost) p.viewer_repost = pv->mViewer->mRepost->toStdString();
     }
 
+    for (const auto& label : pv->mLabels) {
+        if (!label || label->mNeg) {
+            continue;
+        }
+        p.moderation_labels.push_back(label->mVal.toStdString());
+    }
+
     if (pv->mEmbed) {
         if (pv->mEmbed->mType == ATProto::AppBskyEmbed::EmbedViewType::IMAGES_VIEW) {
             p.embed_type = EmbedType::Image;
