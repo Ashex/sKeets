@@ -236,6 +236,8 @@ struct skeets_app_t {
     int saved_frontlight_brightness = -1;
     std::chrono::steady_clock::time_point last_user_activity_at{};
     skeets_view_mode_t settings_return_view = skeets_view_mode_t::feed;
+    int settings_page_start = 0;
+    int settings_page_count = 0;
     skeets_button_t settings_back_button;
     skeets_button_t settings_profile_button;
     skeets_button_t settings_embed_button;
@@ -245,6 +247,10 @@ struct skeets_app_t {
     skeets_button_t settings_screen_dim_button;
     skeets_button_t settings_diagnostics_button;
     skeets_button_t settings_sign_out_button;
+    skeets_rect_t settings_scrollbar_up_rect{};
+    skeets_rect_t settings_scrollbar_down_rect{};
+    skeets_rect_t settings_scrollbar_rect{};
+    skeets_rect_t settings_scrollbar_thumb_rect{};
 };
 
 void draw_border(skeets_app_t& app, const skeets_rect_t& rect, std::uint8_t color, int thickness = 2);
@@ -1596,9 +1602,10 @@ void open_feed_list(skeets_app_t& app) {
 
 void open_settings(skeets_app_t& app, skeets_view_mode_t return_view) {
     app.settings_return_view = return_view;
+    app.settings_page_start = 0;
     app.view_mode = skeets_view_mode_t::settings;
     app.status_line = "Settings";
-    app.input_line = "Toggle image and moderation preferences or sign out";
+    app.input_line = "Toggle preferences, use the right scrollbar for more, or sign out";
 }
 
 bool label_matches_nudity(const std::string& label) {
@@ -1847,11 +1854,83 @@ int measure_thread_post_height(const skeets_app_t& app,
     return needed;
 }
 
-int clamp_thread_page_start(int start, int total) {
+int clamp_paginated_start(int start, int total) {
     if (total <= 0) {
         return 0;
     }
     return std::max(0, std::min(start, total - 1));
+}
+
+void layout_vertical_scrollbar(int width,
+                               int header_height,
+                               int top_y,
+                               int bottom_y,
+                               skeets_rect_t& up_rect,
+                               skeets_rect_t& down_rect,
+                               skeets_rect_t& track_rect,
+                               skeets_rect_t& thumb_rect) {
+    const int scrollbar_x = width - kOuterMargin - kThreadScrollbarWidth;
+    const int scrollbar_end_cap_height = std::max(kThreadScrollbarEndCapHeight, header_height - 20);
+    const int scrollbar_track_top = top_y + scrollbar_end_cap_height + kThreadScrollbarEndCapGap;
+    const int scrollbar_track_bottom = bottom_y - scrollbar_end_cap_height - kThreadScrollbarEndCapGap;
+    const int scrollbar_height = std::max(80, scrollbar_track_bottom - scrollbar_track_top);
+
+    up_rect = {scrollbar_x, top_y, kThreadScrollbarWidth, scrollbar_end_cap_height};
+    down_rect = {scrollbar_x, bottom_y - scrollbar_end_cap_height, kThreadScrollbarWidth, scrollbar_end_cap_height};
+    track_rect = {scrollbar_x, scrollbar_track_top, kThreadScrollbarWidth, scrollbar_height};
+    thumb_rect = track_rect;
+}
+
+void draw_vertical_scrollbar(skeets_app_t& app,
+                             const skeets_rect_t& up_rect,
+                             const skeets_rect_t& down_rect,
+                             const skeets_rect_t& track_rect,
+                             skeets_rect_t& thumb_rect,
+                             int total,
+                             int rendered,
+                             int page_start) {
+    skeets_framebuffer_fill_rect(app.framebuffer, up_rect, kColorButtonSecondary);
+    draw_border(app, up_rect, kColorPostBorder, 1);
+    draw_centered_text(app,
+                       up_rect.x + (up_rect.width / 2),
+                       up_rect.y + std::max(0, (up_rect.height - line_height(skeets_text_role_t::meta)) / 2),
+                       "UP",
+                       COLOR_BLACK,
+                       kColorButtonSecondary,
+                       skeets_text_role_t::meta);
+
+    skeets_framebuffer_fill_rect(app.framebuffer, down_rect, kColorButtonSecondary);
+    draw_border(app, down_rect, kColorPostBorder, 1);
+    draw_centered_text(app,
+                       down_rect.x + (down_rect.width / 2),
+                       down_rect.y + std::max(0, (down_rect.height - line_height(skeets_text_role_t::meta)) / 2),
+                       "DN",
+                       COLOR_BLACK,
+                       kColorButtonSecondary,
+                       skeets_text_role_t::meta);
+
+    skeets_framebuffer_fill_rect(app.framebuffer, track_rect, 0xDD);
+    draw_border(app, track_rect, kColorPostBorder, 1);
+
+    if (total <= 0 || rendered <= 0) {
+        thumb_rect = track_rect;
+        return;
+    }
+
+    const int max_start = std::max(0, total - rendered);
+    const int thumb_height = std::max(40,
+                                      (track_rect.height * rendered) /
+                                          std::max(1, total));
+    const int travel = std::max(0, track_rect.height - thumb_height);
+    int thumb_y = track_rect.y;
+    if (max_start > 0 && travel > 0) {
+        thumb_y += (page_start * travel) / max_start;
+    }
+    thumb_rect = {track_rect.x + 2,
+                  thumb_y + 2,
+                  std::max(4, track_rect.width - 4),
+                  std::max(12, thumb_height - 4)};
+    skeets_framebuffer_fill_rect(app.framebuffer, thumb_rect, kColorButtonPrimary);
 }
 
 skeets_rect_t make_stat_hit_rect(int x, int y, int width, int height) {
@@ -2488,27 +2567,17 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
     const int content_bottom = height - kOuterMargin;
     const int line_spacing = 4;
     const int scrollbar_top = header_height + kOuterMargin;
-    const int scrollbar_x = width - kOuterMargin - kThreadScrollbarWidth;
-    const int scrollbar_end_cap_height = std::max(kThreadScrollbarEndCapHeight, header_height - 20);
-    const int scrollbar_track_top = scrollbar_top + scrollbar_end_cap_height + kThreadScrollbarEndCapGap;
-    const int scrollbar_track_bottom = content_bottom - scrollbar_end_cap_height - kThreadScrollbarEndCapGap;
-    const int scrollbar_height = std::max(80, scrollbar_track_bottom - scrollbar_track_top);
 
     app.thread_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
     app.thread_settings_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, kEmojiSettings};
-    app.thread_scrollbar_up_rect = {scrollbar_x,
-                                    scrollbar_top,
-                                    kThreadScrollbarWidth,
-                                    scrollbar_end_cap_height};
-    app.thread_scrollbar_down_rect = {scrollbar_x,
-                                      content_bottom - scrollbar_end_cap_height,
-                                      kThreadScrollbarWidth,
-                                      scrollbar_end_cap_height};
-    app.thread_scrollbar_rect = {scrollbar_x,
-                                 scrollbar_track_top,
-                                 kThreadScrollbarWidth,
-                                 scrollbar_height};
-    app.thread_scrollbar_thumb_rect = app.thread_scrollbar_rect;
+    layout_vertical_scrollbar(width,
+                              header_height,
+                              scrollbar_top,
+                              content_bottom,
+                              app.thread_scrollbar_up_rect,
+                              app.thread_scrollbar_down_rect,
+                              app.thread_scrollbar_rect,
+                              app.thread_scrollbar_thumb_rect);
     app.thread_post_hits.clear();
     app.thread_page_count = 0;
 
@@ -2537,7 +2606,7 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
         std::vector<std::pair<const Bsky::Post*, int>> nodes;
         flatten_thread_posts(app.thread_result.root, 0, nodes);
         const int total = static_cast<int>(nodes.size());
-        app.thread_page_start = clamp_thread_page_start(app.thread_page_start, total);
+        app.thread_page_start = clamp_paginated_start(app.thread_page_start, total);
         int rendered = 0;
         for (int index = app.thread_page_start; index < total && cursor_y < content_bottom; ++index) {
             const auto& node = nodes[index];
@@ -2667,53 +2736,14 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
 
         app.thread_page_count = rendered;
 
-        skeets_framebuffer_fill_rect(app.framebuffer,
-                          app.thread_scrollbar_up_rect,
-                          kColorButtonSecondary);
-        draw_border(app, app.thread_scrollbar_up_rect, kColorPostBorder, 1);
-        draw_centered_text(app,
-                   app.thread_scrollbar_up_rect.x + (app.thread_scrollbar_up_rect.width / 2),
-                   app.thread_scrollbar_up_rect.y + std::max(0, (app.thread_scrollbar_up_rect.height - line_height(skeets_text_role_t::meta)) / 2),
-                   "UP",
-                   COLOR_BLACK,
-                   kColorButtonSecondary,
-                   skeets_text_role_t::meta);
-
-        skeets_framebuffer_fill_rect(app.framebuffer,
-                          app.thread_scrollbar_down_rect,
-                          kColorButtonSecondary);
-        draw_border(app, app.thread_scrollbar_down_rect, kColorPostBorder, 1);
-        draw_centered_text(app,
-                   app.thread_scrollbar_down_rect.x + (app.thread_scrollbar_down_rect.width / 2),
-                   app.thread_scrollbar_down_rect.y + std::max(0, (app.thread_scrollbar_down_rect.height - line_height(skeets_text_role_t::meta)) / 2),
-                   "DN",
-                   COLOR_BLACK,
-                   kColorButtonSecondary,
-                   skeets_text_role_t::meta);
-
-        skeets_framebuffer_fill_rect(app.framebuffer,
-                                      app.thread_scrollbar_rect,
-                                      0xDD);
-        draw_border(app, app.thread_scrollbar_rect, kColorPostBorder, 1);
-
-        if (total > 0 && rendered > 0) {
-            const int max_start = std::max(0, total - rendered);
-            const int thumb_height = std::max(40,
-                                              (app.thread_scrollbar_rect.height * rendered) /
-                                                  std::max(1, total));
-            const int travel = std::max(0, app.thread_scrollbar_rect.height - thumb_height);
-            int thumb_y = app.thread_scrollbar_rect.y;
-            if (max_start > 0 && travel > 0) {
-                thumb_y += (app.thread_page_start * travel) / max_start;
-            }
-            app.thread_scrollbar_thumb_rect = {app.thread_scrollbar_rect.x + 2,
-                                               thumb_y + 2,
-                                               std::max(4, app.thread_scrollbar_rect.width - 4),
-                                               std::max(12, thumb_height - 4)};
-            skeets_framebuffer_fill_rect(app.framebuffer,
-                                          app.thread_scrollbar_thumb_rect,
-                                          kColorButtonPrimary);
-        }
+        draw_vertical_scrollbar(app,
+                                app.thread_scrollbar_up_rect,
+                                app.thread_scrollbar_down_rect,
+                                app.thread_scrollbar_rect,
+                                app.thread_scrollbar_thumb_rect,
+                                total,
+                                rendered,
+                                app.thread_page_start);
     }
 
     std::string error_message;
@@ -2848,29 +2878,41 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     const int height = app.framebuffer.info.screen_height;
     const int header_height = std::max(96, height / 11);
     const int row_gap = 12;
-    const int content_width = width - (kOuterMargin * 2);
+    const int content_right = width - kOuterMargin - kThreadScrollbarWidth - kThreadScrollbarGap;
+    const int content_width = content_right - kOuterMargin;
     const int first_row_y = header_height + kOuterMargin;
     const int sign_out_height = std::max(90, height / 12);
     const int sign_out_y = height - kOuterMargin - sign_out_height;
     const int settings_note_y = sign_out_y - kSettingsNoteHeight;
-    const int screen_dim_height = 72;
-    const int screen_dim_y = settings_note_y - row_gap - screen_dim_height;
-    constexpr int kPrimarySettingsRowCount = 6;
-    const int available_rows_height = std::max(0, screen_dim_y - first_row_y - row_gap);
+    const int settings_content_bottom = settings_note_y - row_gap;
+    const int scrollbar_top = header_height + kOuterMargin;
+    constexpr int kVisibleSettingsRowCount = 6;
+    constexpr int kScrollableSettingsRowCount = 7;
+    const int available_rows_height = std::max(0, settings_content_bottom - first_row_y);
     const int row_height = std::max(kMinSettingsRowHeight,
-                                    (available_rows_height - (row_gap * (kPrimarySettingsRowCount - 1))) /
-                                        std::max(1, kPrimarySettingsRowCount));
+                                    (available_rows_height - (row_gap * (kVisibleSettingsRowCount - 1))) /
+                                        std::max(1, kVisibleSettingsRowCount));
 
     app.settings_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
-    app.settings_profile_button = {{kOuterMargin, first_row_y, content_width, row_height}, "Profile Images"};
-    app.settings_embed_button = {{kOuterMargin, first_row_y + row_height + row_gap, content_width, row_height}, "Embed Images"};
-    app.settings_nudity_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 2, content_width, row_height}, "Nudity"};
-    app.settings_porn_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 3, content_width, row_height}, "Porn"};
-    app.settings_suggestive_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 4, content_width, row_height}, "Suggestive"};
-    app.settings_diagnostics_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 5, content_width, row_height}, "Diagnostics"};
-    app.settings_screen_dim_button = {{kOuterMargin, screen_dim_y, content_width, screen_dim_height}, "Screen Dim"};
     app.settings_sign_out_button = {{kOuterMargin, sign_out_y, content_width, sign_out_height},
                                     kButtonSignOut};
+    layout_vertical_scrollbar(width,
+                              header_height,
+                              scrollbar_top,
+                              settings_content_bottom,
+                              app.settings_scrollbar_up_rect,
+                              app.settings_scrollbar_down_rect,
+                              app.settings_scrollbar_rect,
+                              app.settings_scrollbar_thumb_rect);
+    app.settings_profile_button.rect = {};
+    app.settings_embed_button.rect = {};
+    app.settings_nudity_button.rect = {};
+    app.settings_porn_button.rect = {};
+    app.settings_suggestive_button.rect = {};
+    app.settings_diagnostics_button.rect = {};
+    app.settings_screen_dim_button.rect = {};
+    app.settings_page_start = clamp_paginated_start(app.settings_page_start, kScrollableSettingsRowCount);
+    app.settings_page_count = 0;
 
     skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
@@ -2879,41 +2921,82 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     draw_button(app, app.settings_back_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
-    draw_settings_row(app,
-                      app.settings_profile_button,
-                      "Profile Images",
-                      "Load avatar images when image rendering is available.",
-                      app.profile_images_enabled);
-    draw_settings_row(app,
-                      app.settings_embed_button,
-                      "Embed Images",
-                      "Show post image placeholders and enable image loading later.",
-                      app.embed_images_enabled);
-    draw_settings_row(app,
-                      app.settings_nudity_button,
-                      "Nudity",
-                      "Show posts labeled for nudity.",
-                      app.allow_nudity_content);
-    draw_settings_row(app,
-                      app.settings_porn_button,
-                      "Porn",
-                      "Show posts labeled for pornographic content.",
-                      app.allow_porn_content);
-    draw_settings_row(app,
-                      app.settings_suggestive_button,
-                      "Suggestive",
-                      "Show posts labeled for suggestive or sexual content.",
-                      app.allow_suggestive_content);
-    draw_settings_action_row(app,
-                             app.settings_diagnostics_button,
-                             "Diagnostics",
-                             "Open the device and authentication diagnostics screen that used to appear at startup.",
-                             kEmojiOpen);
-    draw_settings_value_row(app,
-                            app.settings_screen_dim_button,
-                            "Screen Dim Timeout",
-                            "Tap to cycle the idle timeout before the frontlight turns off until the next input.",
-                            format_screen_dim_timeout(app.screen_dim_timeout_seconds));
+    int rendered = 0;
+    for (int index = app.settings_page_start;
+         index < kScrollableSettingsRowCount && rendered < kVisibleSettingsRowCount;
+         ++index) {
+        const int row_y = first_row_y + rendered * (row_height + row_gap);
+        switch (index) {
+        case 0:
+            app.settings_profile_button = {{kOuterMargin, row_y, content_width, row_height}, "Profile Images"};
+            draw_settings_row(app,
+                              app.settings_profile_button,
+                              "Profile Images",
+                              "Load avatar images when image rendering is available.",
+                              app.profile_images_enabled);
+            break;
+        case 1:
+            app.settings_embed_button = {{kOuterMargin, row_y, content_width, row_height}, "Embed Images"};
+            draw_settings_row(app,
+                              app.settings_embed_button,
+                              "Embed Images",
+                              "Show post image placeholders and enable image loading later.",
+                              app.embed_images_enabled);
+            break;
+        case 2:
+            app.settings_nudity_button = {{kOuterMargin, row_y, content_width, row_height}, "Nudity"};
+            draw_settings_row(app,
+                              app.settings_nudity_button,
+                              "Nudity",
+                              "Show posts labeled for nudity.",
+                              app.allow_nudity_content);
+            break;
+        case 3:
+            app.settings_porn_button = {{kOuterMargin, row_y, content_width, row_height}, "Porn"};
+            draw_settings_row(app,
+                              app.settings_porn_button,
+                              "Porn",
+                              "Show posts labeled for pornographic content.",
+                              app.allow_porn_content);
+            break;
+        case 4:
+            app.settings_suggestive_button = {{kOuterMargin, row_y, content_width, row_height}, "Suggestive"};
+            draw_settings_row(app,
+                              app.settings_suggestive_button,
+                              "Suggestive",
+                              "Show posts labeled for suggestive or sexual content.",
+                              app.allow_suggestive_content);
+            break;
+        case 5:
+            app.settings_diagnostics_button = {{kOuterMargin, row_y, content_width, row_height}, "Diagnostics"};
+            draw_settings_action_row(app,
+                                     app.settings_diagnostics_button,
+                                     "Diagnostics",
+                                     "Open the device and authentication diagnostics screen that used to appear at startup.",
+                                     kEmojiOpen);
+            break;
+        case 6:
+            app.settings_screen_dim_button = {{kOuterMargin, row_y, content_width, row_height}, "Screen Dim"};
+            draw_settings_value_row(app,
+                                    app.settings_screen_dim_button,
+                                    "Screen Dim Timeout",
+                                    "Tap to cycle the idle timeout before the frontlight turns off until the next input.",
+                                    format_screen_dim_timeout(app.screen_dim_timeout_seconds));
+            break;
+        default:
+            break;
+        }
+        rendered++;
+    }
+    app.settings_page_count = rendered;
+    draw_vertical_scrollbar(app,
+                            app.settings_scrollbar_up_rect,
+                            app.settings_scrollbar_down_rect,
+                            app.settings_scrollbar_rect,
+                            app.settings_scrollbar_thumb_rect,
+                            kScrollableSettingsRowCount,
+                            rendered,
+                            app.settings_page_start);
 
     draw_wrapped_text(app,
                       kOuterMargin,
@@ -3561,6 +3644,52 @@ int main(int argc, char* argv[]) {
                 skeets_app.input_line = "Screen dim timeout set to " +
                                          format_screen_dim_timeout(skeets_app.screen_dim_timeout_seconds);
                 render_settings_screen(skeets_app, true);
+                continue;
+            }
+
+            if (contains_point(skeets_app.settings_scrollbar_up_rect, event.x, event.y)) {
+                if (skeets_app.settings_page_start > 0) {
+                    const int page_step = std::max(1, skeets_app.settings_page_count - 1);
+                    skeets_app.settings_page_start = std::max(0, skeets_app.settings_page_start - page_step);
+                    render_settings_screen(skeets_app, true);
+                } else {
+                    skeets_app.status_line = "Already at top of settings";
+                    skeets_app.input_line = touch_message.str();
+                    render_settings_screen(skeets_app, false);
+                }
+                continue;
+            }
+
+            if (contains_point(skeets_app.settings_scrollbar_down_rect, event.x, event.y)) {
+                constexpr int kScrollableSettingsRowCount = 7;
+                const int max_start = std::max(0, kScrollableSettingsRowCount - std::max(1, skeets_app.settings_page_count));
+                if (skeets_app.settings_page_start < max_start) {
+                    const int page_step = std::max(1, skeets_app.settings_page_count - 1);
+                    skeets_app.settings_page_start = std::min(max_start, skeets_app.settings_page_start + page_step);
+                    render_settings_screen(skeets_app, true);
+                } else {
+                    skeets_app.status_line = "Already at bottom of settings";
+                    skeets_app.input_line = touch_message.str();
+                    render_settings_screen(skeets_app, false);
+                }
+                continue;
+            }
+
+            if (contains_point(skeets_app.settings_scrollbar_rect, event.x, event.y)) {
+                constexpr int kScrollableSettingsRowCount = 7;
+                const int max_start = std::max(0, kScrollableSettingsRowCount - std::max(1, skeets_app.settings_page_count));
+                if (max_start > 0 && skeets_app.settings_scrollbar_rect.height > 1) {
+                    const int relative_y = std::max(0,
+                                                    std::min(event.y - skeets_app.settings_scrollbar_rect.y,
+                                                             skeets_app.settings_scrollbar_rect.height - 1));
+                    skeets_app.settings_page_start = (relative_y * max_start) /
+                                                     std::max(1, skeets_app.settings_scrollbar_rect.height - 1);
+                    render_settings_screen(skeets_app, true);
+                } else {
+                    skeets_app.status_line = "Settings already fit on-screen";
+                    skeets_app.input_line = touch_message.str();
+                    render_settings_screen(skeets_app, false);
+                }
                 continue;
             }
 
