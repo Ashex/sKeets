@@ -90,6 +90,10 @@ constexpr const char* kEmojiReply = "💬";
 constexpr const char* kEmojiRepost = "🌀";
 constexpr const char* kButtonSignOut = "Log Out";
 constexpr int kDefaultScreenDimTimeoutSeconds = 300;
+constexpr int kMinSettingsRowHeight = 96;
+constexpr int kSettingsNoteHeight = 52;
+constexpr int kSettingsValueChipHeight = 52;
+constexpr std::uint8_t kColorDimScreen = 0xD4;
 
 enum class skeets_view_mode_t {
     dashboard,
@@ -220,7 +224,8 @@ struct skeets_app_t {
     bool allow_suggestive_content = false;
     int screen_dim_timeout_seconds = kDefaultScreenDimTimeoutSeconds;
     bool screen_dimmed = false;
-    std::chrono::steady_clock::time_point last_user_activity_at = std::chrono::steady_clock::now();
+    bool ignore_touch_release_after_wake = false;
+    std::chrono::steady_clock::time_point last_user_activity_at{};
     skeets_view_mode_t settings_return_view = skeets_view_mode_t::feed;
     skeets_button_t settings_back_button;
     skeets_button_t settings_profile_button;
@@ -262,11 +267,12 @@ std::string format_screen_dim_timeout(int seconds) {
     }
 
     const int minutes = seconds / 60;
-    if ((seconds % 60) == 0) {
+    const int remainder_seconds = seconds % 60;
+    if (remainder_seconds == 0) {
         return std::to_string(minutes) + " min";
     }
 
-    return std::to_string(minutes) + " min " + std::to_string(seconds % 60) + " sec";
+    return std::to_string(minutes) + " min " + std::to_string(remainder_seconds) + " sec";
 }
 
 int next_screen_dim_timeout_seconds(int current) {
@@ -277,6 +283,10 @@ int next_screen_dim_timeout_seconds(int current) {
         }
     }
     return kTimeoutOptions[0];
+}
+
+int sanitize_screen_dim_timeout_seconds(int seconds) {
+    return std::max(0, seconds);
 }
 
 void mark_user_activity(skeets_app_t& app) {
@@ -1347,10 +1357,8 @@ void load_settings(skeets_app_t& app) {
     app.allow_nudity_content = config_get_bool(config, "allow_nudity_content", false);
     app.allow_porn_content = config_get_bool(config, "allow_porn_content", false);
     app.allow_suggestive_content = config_get_bool(config, "allow_suggestive_content", false);
-    app.screen_dim_timeout_seconds = std::max(0,
-                                              config_get_int(config,
-                                                             "screen_dim_timeout_seconds",
-                                                             kDefaultScreenDimTimeoutSeconds));
+    app.screen_dim_timeout_seconds = sanitize_screen_dim_timeout_seconds(
+        config_get_int(config, "screen_dim_timeout_seconds", kDefaultScreenDimTimeoutSeconds));
     config_free(config);
 }
 
@@ -1364,7 +1372,9 @@ void save_settings(const skeets_app_t& app) {
     config_set_bool(config, "allow_nudity_content", app.allow_nudity_content);
     config_set_bool(config, "allow_porn_content", app.allow_porn_content);
     config_set_bool(config, "allow_suggestive_content", app.allow_suggestive_content);
-    config_set_int(config, "screen_dim_timeout_seconds", std::max(0, app.screen_dim_timeout_seconds));
+    config_set_int(config,
+                   "screen_dim_timeout_seconds",
+                   sanitize_screen_dim_timeout_seconds(app.screen_dim_timeout_seconds));
     config_save(config);
     config_free(config);
 }
@@ -2682,9 +2692,9 @@ void draw_settings_value_row(skeets_app_t& app,
 
     const int value_width = 132;
     const skeets_rect_t value_rect{row.rect.x + row.rect.width - value_width - 24,
-                                   row.rect.y + (row.rect.height - 52) / 2,
+                                   row.rect.y + (row.rect.height - kSettingsValueChipHeight) / 2,
                                    value_width,
-                                   52};
+                                   kSettingsValueChipHeight};
     skeets_framebuffer_fill_rect(app.framebuffer, value_rect, kColorButtonSecondary);
     draw_border(app, value_rect, COLOR_BLACK, 2);
     draw_centered_text(app,
@@ -2705,12 +2715,12 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     const int first_row_y = header_height + kOuterMargin;
     const int sign_out_height = std::max(90, height / 12);
     const int sign_out_y = height - kOuterMargin - sign_out_height;
-    const int settings_note_y = sign_out_y - 52;
+    const int settings_note_y = sign_out_y - kSettingsNoteHeight;
     const int screen_dim_height = 72;
     const int screen_dim_y = settings_note_y - row_gap - screen_dim_height;
     constexpr int kPrimarySettingsRowCount = 6;
     const int available_rows_height = std::max(0, screen_dim_y - first_row_y - row_gap);
-    const int row_height = std::max(96,
+    const int row_height = std::max(kMinSettingsRowHeight,
                                     (available_rows_height - (row_gap * (kPrimarySettingsRowCount - 1))) /
                                         std::max(1, kPrimarySettingsRowCount));
 
@@ -2829,15 +2839,21 @@ void render_dimmed_screen(skeets_app_t& app, bool full_refresh) {
     const int center_x = app.framebuffer.info.screen_width / 2;
     const int center_y = app.framebuffer.info.screen_height / 2;
 
-    skeets_framebuffer_clear(app.framebuffer, 0xD4);
-    draw_centered_text(app, center_x, center_y - 84, "sKeets", COLOR_BLACK, 0xD4, skeets_text_role_t::author);
-    draw_centered_text(app, center_x, center_y - 20, "Screen dimmed", COLOR_BLACK, 0xD4, skeets_text_role_t::card_title);
+    skeets_framebuffer_clear(app.framebuffer, kColorDimScreen);
+    draw_centered_text(app, center_x, center_y - 84, "sKeets", COLOR_BLACK, kColorDimScreen, skeets_text_role_t::author);
+    draw_centered_text(app,
+                       center_x,
+                       center_y - 20,
+                       "Screen dimmed",
+                       COLOR_BLACK,
+                       kColorDimScreen,
+                       skeets_text_role_t::card_title);
     draw_centered_text(app,
                        center_x,
                        center_y + 48,
                        "Tap the screen or press a key to wake it.",
                        kColorMeta,
-                       0xD4,
+                       kColorDimScreen,
                        skeets_text_role_t::status_detail);
 
     std::string error_message;
@@ -2996,6 +3012,7 @@ int main(int argc, char* argv[]) {
     } else {
         render_screen(skeets_app, true);
     }
+    mark_user_activity(skeets_app);
 
     auto last_probe = std::chrono::steady_clock::now();
     while (!g_stop_requested) {
@@ -3043,8 +3060,11 @@ int main(int argc, char* argv[]) {
         mark_user_activity(skeets_app);
         if (skeets_app.screen_dimmed) {
             skeets_app.screen_dimmed = false;
-            skeets_app.status_line = "Screen restored";
-            skeets_app.input_line = "Resumed after the idle dim screen.";
+            // A touch-down wake will still be followed by the touch release from the same tap.
+            // Swallow that release so waking the screen does not also activate the underlying UI.
+            skeets_app.ignore_touch_release_after_wake =
+                event.type == skeets_input_event_type_t::touch_down ||
+                event.type == skeets_input_event_type_t::touch_move;
             render_active_view(skeets_app, true);
             continue;
         }
@@ -3064,6 +3084,11 @@ int main(int argc, char* argv[]) {
         }
 
         if (event.type != skeets_input_event_type_t::touch_up) {
+            continue;
+        }
+
+        if (skeets_app.ignore_touch_release_after_wake) {
+            skeets_app.ignore_touch_release_after_wake = false;
             continue;
         }
 
