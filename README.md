@@ -13,7 +13,7 @@ A [Bluesky](https://bsky.app) (ATProto) social client for the **Kobo Clara Colou
 - Quote post and external link rendering
 - Repost attribution display
 - Settings persistence via INI config file
-- Configurable idle screen dim timeout with tap-to-wake
+- Configurable idle frontlight-off timeout with wake-on-input
 - Optimised for 1448×1072 e-ink display with MXCFB partial refresh
 
 ## Getting Started

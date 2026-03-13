@@ -25,11 +25,15 @@
 #include <dlfcn.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
+#include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -90,10 +94,12 @@ constexpr const char* kEmojiReply = "💬";
 constexpr const char* kEmojiRepost = "🌀";
 constexpr const char* kButtonSignOut = "Log Out";
 constexpr int kDefaultScreenDimTimeoutSeconds = 300;
+constexpr int kBacklightPowerOffValue = 0;
+// Kobo frontlight sysfs uses bl_power=31 while the light rail is enabled.
+constexpr int kBacklightPowerOnValue = 31;
 constexpr int kMinSettingsRowHeight = 96;
 constexpr int kSettingsNoteHeight = 52;
 constexpr int kSettingsValueChipHeight = 52;
-constexpr std::uint8_t kColorDimScreen = 0xD4;
 
 enum class skeets_view_mode_t {
     dashboard,
@@ -225,6 +231,9 @@ struct skeets_app_t {
     int screen_dim_timeout_seconds = kDefaultScreenDimTimeoutSeconds;
     bool screen_dimmed = false;
     bool ignore_touch_release_after_wake = false;
+    bool frontlight_control_available = true;
+    std::string frontlight_brightness_path;
+    int saved_frontlight_brightness = -1;
     std::chrono::steady_clock::time_point last_user_activity_at{};
     skeets_view_mode_t settings_return_view = skeets_view_mode_t::feed;
     skeets_button_t settings_back_button;
@@ -287,6 +296,134 @@ int next_screen_dim_timeout_seconds(int current) {
 
 int sanitize_screen_dim_timeout_seconds(int seconds) {
     return std::max(0, seconds);
+}
+
+bool path_exists(const std::string& path) {
+    std::error_code error;
+    return std::filesystem::exists(path, error);
+}
+
+std::optional<int> read_int_file(const std::string& path) {
+    std::ifstream file(path);
+    if (!file) {
+        return std::nullopt;
+    }
+
+    std::string value_text;
+    std::getline(file, value_text);
+    if (!file && value_text.empty()) {
+        return std::nullopt;
+    }
+
+    size_t parsed_length = 0;
+    int value = 0;
+    try {
+        value = std::stoi(value_text, &parsed_length);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+
+    if (std::any_of(value_text.begin() + static_cast<std::ptrdiff_t>(parsed_length),
+                    value_text.end(),
+                    [](char ch) { return !std::isspace(static_cast<unsigned char>(ch)); })) {
+        return std::nullopt;
+    }
+    return value;
+}
+
+bool write_text_file(const std::string& path, const std::string& value) {
+    std::ofstream file(path);
+    if (!file) {
+        return false;
+    }
+    file << value;
+    return static_cast<bool>(file);
+}
+
+std::string brightness_bl_power_path(const std::string& brightness_path) {
+    const std::filesystem::path sysfs_path(brightness_path);
+    if (!sysfs_path.has_parent_path()) {
+        return {};
+    }
+    return (sysfs_path.parent_path() / "bl_power").string();
+}
+
+std::string detect_frontlight_brightness_path() {
+    if (const char* env_path = std::getenv("SKEETS_FRONTLIGHT_BRIGHTNESS_SYSFS"); env_path && *env_path) {
+        return env_path;
+    }
+
+    constexpr const char* kCandidates[] = {
+        "/sys/class/backlight/mxc_msp430.0/brightness",
+        "/sys/class/backlight/lm3630a_led/brightness",
+        "/sys/class/backlight/lm3630a_ledb/brightness",
+        "/sys/class/backlight/lm3630a_led1b/brightness",
+    };
+    for (const char* candidate : kCandidates) {
+        if (path_exists(candidate)) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+bool set_frontlight_brightness(const std::string& brightness_path, int brightness) {
+    if (brightness_path.empty()) {
+        return false;
+    }
+
+    const int nonnegative_brightness = std::max(0, brightness);
+    const std::string bl_power_path = brightness_bl_power_path(brightness_path);
+    if (path_exists(bl_power_path)) {
+        if (!write_text_file(bl_power_path,
+                             std::to_string(nonnegative_brightness > 0 ? kBacklightPowerOnValue
+                                                                       : kBacklightPowerOffValue))) {
+            return false;
+        }
+    }
+
+    return write_text_file(brightness_path, std::to_string(nonnegative_brightness));
+}
+
+bool dim_frontlight(skeets_app_t& app) {
+    if (!app.frontlight_control_available) {
+        return false;
+    }
+    if (app.frontlight_brightness_path.empty()) {
+        app.frontlight_brightness_path = detect_frontlight_brightness_path();
+    }
+    if (app.frontlight_brightness_path.empty()) {
+        app.frontlight_control_available = false;
+        return false;
+    }
+
+    const auto current_brightness = read_int_file(app.frontlight_brightness_path);
+    if (!current_brightness) {
+        app.frontlight_control_available = false;
+        return false;
+    }
+    if (*current_brightness <= 0) {
+        return false;
+    }
+
+    if (!set_frontlight_brightness(app.frontlight_brightness_path, 0)) {
+        app.frontlight_control_available = false;
+        return false;
+    }
+
+    app.saved_frontlight_brightness = *current_brightness;
+    return true;
+}
+
+void restore_frontlight(skeets_app_t& app) {
+    if (app.saved_frontlight_brightness < 0 || app.frontlight_brightness_path.empty()) {
+        app.saved_frontlight_brightness = -1;
+        return;
+    }
+
+    if (set_frontlight_brightness(app.frontlight_brightness_path, app.saved_frontlight_brightness)) {
+        app.saved_frontlight_brightness = -1;
+    }
 }
 
 void mark_user_activity(skeets_app_t& app) {
@@ -2775,7 +2912,7 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     draw_settings_value_row(app,
                             app.settings_screen_dim_button,
                             "Screen Dim Timeout",
-                            "Tap to cycle the idle timeout before the display switches to the dim wake screen.",
+                            "Tap to cycle the idle timeout before the frontlight turns off until the next input.",
                             format_screen_dim_timeout(app.screen_dim_timeout_seconds));
 
     draw_wrapped_text(app,
@@ -2834,43 +2971,7 @@ void render_fatal_screen(skeets_framebuffer_t& framebuffer, fb_t& text_fb, const
     }
 }
 
-void render_dimmed_screen(skeets_app_t& app, bool full_refresh) {
-    const skeets_rect_t screen_rect = full_screen_rect(app);
-    const int center_x = app.framebuffer.info.screen_width / 2;
-    const int center_y = app.framebuffer.info.screen_height / 2;
-
-    skeets_framebuffer_clear(app.framebuffer, kColorDimScreen);
-    draw_centered_text(app, center_x, center_y - 84, "sKeets", COLOR_BLACK, kColorDimScreen, skeets_text_role_t::author);
-    draw_centered_text(app,
-                       center_x,
-                       center_y - 20,
-                       "Screen dimmed",
-                       COLOR_BLACK,
-                       kColorDimScreen,
-                       skeets_text_role_t::card_title);
-    draw_centered_text(app,
-                       center_x,
-                       center_y + 48,
-                       "Tap the screen or press a key to wake it.",
-                       kColorMeta,
-                       kColorDimScreen,
-                       skeets_text_role_t::status_detail);
-
-    std::string error_message;
-    if (!skeets_framebuffer_refresh(app.framebuffer,
-                                     ui_refresh_mode(app, full_refresh),
-                                     screen_rect,
-                                     true,
-                                     &error_message)) {
-        std::fprintf(stderr, "rewrite app: dim refresh failed: %s\n", error_message.c_str());
-    }
-}
-
 void render_active_view(skeets_app_t& app, bool full_refresh) {
-    if (app.screen_dimmed) {
-        render_dimmed_screen(app, full_refresh);
-        return;
-    }
     if (app.view_mode == skeets_view_mode_t::feed) {
         render_feed_screen(app, full_refresh);
         return;
@@ -3037,11 +3138,15 @@ int main(int argc, char* argv[]) {
 
             const auto now = std::chrono::steady_clock::now();
             if (!skeets_app.screen_dimmed &&
+                skeets_app.frontlight_control_available &&
                 skeets_app.screen_dim_timeout_seconds > 0 &&
                 now - skeets_app.last_user_activity_at >=
                     std::chrono::seconds(skeets_app.screen_dim_timeout_seconds)) {
-                skeets_app.screen_dimmed = true;
-                render_dimmed_screen(skeets_app, false);
+                if (dim_frontlight(skeets_app)) {
+                    skeets_app.screen_dimmed = true;
+                } else if (skeets_app.frontlight_control_available) {
+                    mark_user_activity(skeets_app);
+                }
             }
             if (now - last_probe >= std::chrono::seconds(20)) {
                 refresh_runtime_state(skeets_app);
@@ -3060,12 +3165,12 @@ int main(int argc, char* argv[]) {
         mark_user_activity(skeets_app);
         if (skeets_app.screen_dimmed) {
             skeets_app.screen_dimmed = false;
+            restore_frontlight(skeets_app);
             // A touch-down wake will still be followed by the touch release from the same tap.
             // Swallow that release so waking the screen does not also activate the underlying UI.
             skeets_app.ignore_touch_release_after_wake =
                 event.type == skeets_input_event_type_t::touch_down ||
                 event.type == skeets_input_event_type_t::touch_move;
-            render_active_view(skeets_app, true);
             continue;
         }
 
@@ -3543,6 +3648,7 @@ int main(int argc, char* argv[]) {
         render_screen(skeets_app, false);
     }
 
+    restore_frontlight(skeets_app);
     skeets_input_close(skeets_app.input);
     clear_embed_cache_on_exit();
     free_brand_assets(skeets_app);
