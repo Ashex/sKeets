@@ -65,6 +65,7 @@ constexpr int kThreadScrollbarWidth = 36;
 constexpr int kThreadScrollbarGap = 12;
 constexpr int kThreadScrollbarEndCapHeight = 72;
 constexpr int kThreadScrollbarEndCapGap = 10;
+constexpr int kScrollableSettingsRowCount = 7;
 constexpr int kEmbedImageGap = 6;
 constexpr int kHeaderLogoMaxWidth = 280;
 constexpr int kHeaderLogoMaxHeight = 64;
@@ -2887,7 +2888,6 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     const int settings_content_bottom = settings_note_y - row_gap;
     const int scrollbar_top = header_height + kOuterMargin;
     constexpr int kVisibleSettingsRowCount = 6;
-    constexpr int kScrollableSettingsRowCount = 7;
     const int available_rows_height = std::max(0, settings_content_bottom - first_row_y);
     const int row_height = std::max(kMinSettingsRowHeight,
                                     (available_rows_height - (row_gap * (kVisibleSettingsRowCount - 1))) /
@@ -2924,7 +2924,7 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     int rendered = 0;
     for (int index = app.settings_page_start;
          index < kScrollableSettingsRowCount && rendered < kVisibleSettingsRowCount;
-         ++index) {
+         ++index, ++rendered) {
         const int row_y = first_row_y + rendered * (row_height + row_gap);
         switch (index) {
         case 0:
@@ -2986,7 +2986,6 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
         default:
             break;
         }
-        rendered++;
     }
     app.settings_page_count = rendered;
     draw_vertical_scrollbar(app,
@@ -3661,7 +3660,6 @@ int main(int argc, char* argv[]) {
             }
 
             if (contains_point(skeets_app.settings_scrollbar_down_rect, event.x, event.y)) {
-                constexpr int kScrollableSettingsRowCount = 7;
                 const int max_start = std::max(0, kScrollableSettingsRowCount - std::max(1, skeets_app.settings_page_count));
                 if (skeets_app.settings_page_start < max_start) {
                     const int page_step = std::max(1, skeets_app.settings_page_count - 1);
@@ -3676,7 +3674,6 @@ int main(int argc, char* argv[]) {
             }
 
             if (contains_point(skeets_app.settings_scrollbar_rect, event.x, event.y)) {
-                constexpr int kScrollableSettingsRowCount = 7;
                 const int max_start = std::max(0, kScrollableSettingsRowCount - std::max(1, skeets_app.settings_page_count));
                 if (max_start > 0 && skeets_app.settings_scrollbar_rect.height > 1) {
                     const int relative_y = std::max(0,
