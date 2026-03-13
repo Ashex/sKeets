@@ -95,9 +95,10 @@ constexpr const char* kEmojiReply = "💬";
 constexpr const char* kEmojiRepost = "🌀";
 constexpr const char* kButtonSignOut = "Log Out";
 constexpr int kDefaultScreenDimTimeoutSeconds = 300;
-constexpr int kBacklightPowerOffValue = 0;
-// Kobo frontlight sysfs uses bl_power=31 while the light rail is enabled.
-constexpr int kBacklightPowerOnValue = 31;
+// Default brightness to restore when the sysfs value reads 0 but the light
+// was physically on (Nickel sometimes sets the hardware via i2c without
+// updating the sysfs brightness register).
+constexpr int kFallbackRestoreBrightness = 50;
 constexpr int kMinSettingsRowHeight = 96;
 constexpr int kSettingsNoteHeight = 52;
 constexpr int kSettingsValueChipHeight = 52;
@@ -347,14 +348,6 @@ bool write_text_file(const std::string& path, const std::string& value) {
     return static_cast<bool>(file);
 }
 
-std::string brightness_bl_power_path(const std::string& brightness_path) {
-    const std::filesystem::path sysfs_path(brightness_path);
-    if (!sysfs_path.has_parent_path()) {
-        return {};
-    }
-    return (sysfs_path.parent_path() / "bl_power").string();
-}
-
 std::string detect_frontlight_brightness_path() {
     if (const char* env_path = std::getenv("SKEETS_FRONTLIGHT_BRIGHTNESS_SYSFS"); env_path && *env_path) {
         return env_path;
@@ -374,22 +367,14 @@ std::string detect_frontlight_brightness_path() {
     return {};
 }
 
+// KOReader's approach for mxc_msp430: only write to the brightness file.
+// The brightness range is 0–100. bl_power is a status register that should
+// not be written on modern Kobo devices with the mxc_msp430 controller.
 bool set_frontlight_brightness(const std::string& brightness_path, int brightness) {
     if (brightness_path.empty()) {
         return false;
     }
-
-    const int nonnegative_brightness = std::max(0, brightness);
-    const std::string bl_power_path = brightness_bl_power_path(brightness_path);
-    if (path_exists(bl_power_path)) {
-        if (!write_text_file(bl_power_path,
-                             std::to_string(nonnegative_brightness > 0 ? kBacklightPowerOnValue
-                                                                       : kBacklightPowerOffValue))) {
-            return false;
-        }
-    }
-
-    return write_text_file(brightness_path, std::to_string(nonnegative_brightness));
+    return write_text_file(brightness_path, std::to_string(std::max(0, brightness)));
 }
 
 bool dim_frontlight(skeets_app_t& app) {
@@ -406,19 +391,28 @@ bool dim_frontlight(skeets_app_t& app) {
 
     const auto current_brightness = read_int_file(app.frontlight_brightness_path);
     if (!current_brightness) {
+        std::fprintf(stderr, "rewrite app: dim: could not read brightness from %s\n",
+                     app.frontlight_brightness_path.c_str());
         app.frontlight_control_available = false;
         return false;
     }
-    if (*current_brightness <= 0) {
-        return false;
-    }
+
+    std::fprintf(stderr, "rewrite app: dim: brightness=%d\n", *current_brightness);
+
+    // Save the current brightness so we can restore it later.
+    // If brightness reads as 0 but the light is physically on (Nickel set it
+    // via i2c), use a fallback value so we have something visible to restore.
+    app.saved_frontlight_brightness = (*current_brightness > 0)
+        ? *current_brightness
+        : kFallbackRestoreBrightness;
 
     if (!set_frontlight_brightness(app.frontlight_brightness_path, 0)) {
         app.frontlight_control_available = false;
         return false;
     }
 
-    app.saved_frontlight_brightness = *current_brightness;
+    std::fprintf(stderr, "rewrite app: dim: wrote brightness=0, will restore to %d\n",
+                 app.saved_frontlight_brightness);
     return true;
 }
 
@@ -428,9 +422,16 @@ void restore_frontlight(skeets_app_t& app) {
         return;
     }
 
-    if (set_frontlight_brightness(app.frontlight_brightness_path, app.saved_frontlight_brightness)) {
-        app.saved_frontlight_brightness = -1;
-    }
+    std::fprintf(stderr, "rewrite app: restore: writing brightness=%d\n",
+                 app.saved_frontlight_brightness);
+    set_frontlight_brightness(app.frontlight_brightness_path, app.saved_frontlight_brightness);
+
+    // Verify the write.
+    const auto readback = read_int_file(app.frontlight_brightness_path);
+    std::fprintf(stderr, "rewrite app: restore: brightness readback=%s\n",
+                 readback ? std::to_string(*readback).c_str() : "failed");
+
+    app.saved_frontlight_brightness = -1;
 }
 
 void mark_user_activity(skeets_app_t& app) {
