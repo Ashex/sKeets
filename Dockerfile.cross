@@ -106,8 +106,8 @@ RUN mkdir /qt-build-target && cd /qt-build-target \
     && cmake --install . \
     && rm -rf /qt-build-target /qt-src
 
-# ── Stage 2: Final cross-compilation image ────────────────────────
-FROM ubuntu:24.04
+# ── Stage 3: Final cross-compilation image ────────────────────────
+FROM ubuntu:24.04 AS cross-compiler
 
 ENV DEBIAN_FRONTEND=noninteractive
 
