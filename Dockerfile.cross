@@ -52,11 +52,14 @@ FROM ubuntu:24.04 AS qt-target-builder
 ENV DEBIAN_FRONTEND=noninteractive
 ENV QT_VERSION=6.5.2
 
-# armhf packages live on ports.ubuntu.com, not archive.ubuntu.com
+# On amd64: archive.ubuntu.com only serves amd64, so add ports for armhf.
+# On arm64: ports.ubuntu.com already serves both arm64 and armhf — no changes needed.
 RUN dpkg --add-architecture armhf \
-    && sed -i 's/^Types:/Architectures: amd64\nTypes:/' /etc/apt/sources.list.d/ubuntu.sources \
-    && printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble noble-updates noble-backports\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble-security\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
-        > /etc/apt/sources.list.d/armhf-ports.sources \
+    && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        sed -i 's/^Types:/Architectures: amd64\nTypes:/' /etc/apt/sources.list.d/ubuntu.sources; \
+        printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble noble-updates noble-backports\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble-security\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+            > /etc/apt/sources.list.d/armhf-ports.sources; \
+    fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build pkg-config python3 perl \
@@ -109,11 +112,14 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# armhf packages live on ports.ubuntu.com, not archive.ubuntu.com
+# On amd64: archive.ubuntu.com only serves amd64, so add ports for armhf.
+# On arm64: ports.ubuntu.com already serves both arm64 and armhf — no changes needed.
 RUN dpkg --add-architecture armhf \
-    && sed -i 's/^Types:/Architectures: amd64\nTypes:/' /etc/apt/sources.list.d/ubuntu.sources \
-    && printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble noble-updates noble-backports\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble-security\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
-        > /etc/apt/sources.list.d/armhf-ports.sources \
+    && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        sed -i 's/^Types:/Architectures: amd64\nTypes:/' /etc/apt/sources.list.d/ubuntu.sources; \
+        printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble noble-updates noble-backports\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble-security\nComponents: main universe multiverse restricted\nArchitectures: armhf\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+            > /etc/apt/sources.list.d/armhf-ports.sources; \
+    fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         # ── Build tools ──
