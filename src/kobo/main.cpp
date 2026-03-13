@@ -65,7 +65,7 @@ constexpr int kThreadScrollbarWidth = 36;
 constexpr int kThreadScrollbarGap = 12;
 constexpr int kThreadScrollbarEndCapHeight = 72;
 constexpr int kThreadScrollbarEndCapGap = 10;
-constexpr int kScrollableSettingsRowCount = 7;
+constexpr int kScrollableSettingsRowCount = 8;
 constexpr int kEmbedImageGap = 6;
 constexpr int kHeaderLogoMaxWidth = 280;
 constexpr int kHeaderLogoMaxHeight = 64;
@@ -102,6 +102,14 @@ constexpr int kFallbackRestoreBrightness = 50;
 constexpr int kMinSettingsRowHeight = 96;
 constexpr int kSettingsNoteHeight = 52;
 constexpr int kSettingsValueChipHeight = 52;
+
+constexpr int kScreenDimTimeoutOptions[] = {0, 10, 30, 60, 300, 600};
+constexpr int kScreenDimTimeoutOptionCount = static_cast<int>(std::size(kScreenDimTimeoutOptions));
+constexpr int kPickerOptionHeight = 72;
+constexpr int kPickerPadding = 18;
+constexpr std::uint8_t kColorPickerOverlay = 0x40;
+constexpr int kSliderTrackHeight = 20;
+constexpr int kSliderThumbWidth = 8;
 
 enum class skeets_view_mode_t {
     dashboard,
@@ -247,12 +255,24 @@ struct skeets_app_t {
     skeets_button_t settings_porn_button;
     skeets_button_t settings_suggestive_button;
     skeets_button_t settings_screen_dim_button;
+    skeets_button_t settings_brightness_button;
     skeets_button_t settings_diagnostics_button;
     skeets_button_t settings_sign_out_button;
     skeets_rect_t settings_scrollbar_up_rect{};
     skeets_rect_t settings_scrollbar_down_rect{};
     skeets_rect_t settings_scrollbar_rect{};
     skeets_rect_t settings_scrollbar_thumb_rect{};
+
+    // Screen dim picker overlay
+    bool screen_dim_picker_visible = false;
+    skeets_rect_t screen_dim_picker_backdrop{};
+    skeets_rect_t screen_dim_picker_panel{};
+    skeets_rect_t screen_dim_picker_option_rects[6]{};
+
+    // Brightness slider
+    int frontlight_brightness = -1;  // -1 = use device default on first launch
+    int launch_brightness = -1;      // captured from sysfs at startup
+    skeets_rect_t brightness_slider_track{};
 };
 
 void draw_border(skeets_app_t& app, const skeets_rect_t& rect, std::uint8_t color, int thickness = 2);
@@ -290,16 +310,6 @@ std::string format_screen_dim_timeout(int seconds) {
     }
 
     return std::to_string(minutes) + " min " + std::to_string(remainder_seconds) + " sec";
-}
-
-int next_screen_dim_timeout_seconds(int current) {
-    constexpr int kTimeoutOptions[] = {0, 30, 60, 300, 600, 1800};
-    for (const int candidate : kTimeoutOptions) {
-        if (candidate > current) {
-            return candidate;
-        }
-    }
-    return kTimeoutOptions[0];
 }
 
 int sanitize_screen_dim_timeout_seconds(int seconds) {
@@ -399,12 +409,15 @@ bool dim_frontlight(skeets_app_t& app) {
 
     std::fprintf(stderr, "rewrite app: dim: brightness=%d\n", *current_brightness);
 
-    // Save the current brightness so we can restore it later.
-    // If brightness reads as 0 but the light is physically on (Nickel set it
-    // via i2c), use a fallback value so we have something visible to restore.
-    app.saved_frontlight_brightness = (*current_brightness > 0)
-        ? *current_brightness
-        : kFallbackRestoreBrightness;
+    // Use the user's brightness setting if configured, otherwise fall back to
+    // the current sysfs value (or the fallback constant if sysfs reads 0).
+    if (app.frontlight_brightness > 0) {
+        app.saved_frontlight_brightness = app.frontlight_brightness;
+    } else {
+        app.saved_frontlight_brightness = (*current_brightness > 0)
+            ? *current_brightness
+            : kFallbackRestoreBrightness;
+    }
 
     if (!set_frontlight_brightness(app.frontlight_brightness_path, 0)) {
         app.frontlight_control_available = false;
@@ -1504,6 +1517,7 @@ void load_settings(skeets_app_t& app) {
     app.allow_suggestive_content = config_get_bool(config, "allow_suggestive_content", false);
     app.screen_dim_timeout_seconds = sanitize_screen_dim_timeout_seconds(
         config_get_int(config, "screen_dim_timeout_seconds", kDefaultScreenDimTimeoutSeconds));
+    app.frontlight_brightness = config_get_int(config, "frontlight_brightness", -1);
     config_free(config);
 }
 
@@ -1520,6 +1534,7 @@ void save_settings(const skeets_app_t& app) {
     config_set_int(config,
                    "screen_dim_timeout_seconds",
                    sanitize_screen_dim_timeout_seconds(app.screen_dim_timeout_seconds));
+    config_set_int(config, "frontlight_brightness", app.frontlight_brightness);
     config_save(config);
     config_free(config);
 }
@@ -2875,6 +2890,119 @@ void draw_settings_value_row(skeets_app_t& app,
                        skeets_text_role_t::button);
 }
 
+void draw_settings_slider_row(skeets_app_t& app,
+                               const skeets_button_t& row,
+                               skeets_rect_t& slider_track_out,
+                               const std::string& label,
+                               const std::string& detail,
+                               int value,
+                               int min_val,
+                               int max_val) {
+    skeets_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
+    draw_border(app, row.rect, kColorPostBorder, 2);
+
+    const int text_x = row.rect.x + kCardPadding;
+    const int text_y = row.rect.y + 12;
+    draw_text(app, text_x, text_y, label, skeets_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+
+    const int label_bottom = text_y + line_height(skeets_text_role_t::settings_label) + 6;
+    draw_wrapped_text(app,
+                      text_x,
+                      label_bottom,
+                      row.rect.width - 120,
+                      detail,
+                      skeets_text_role_t::settings_detail,
+                      kColorMeta,
+                      kColorCard);
+
+    // Value label on the right
+    const std::string val_str = std::to_string(value) + "%";
+    const int val_label_x = row.rect.x + row.rect.width - 80;
+    draw_text(app, val_label_x, text_y, val_str, skeets_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+
+    // Slider track below the description
+    const int track_x = text_x;
+    const int track_width = row.rect.width - kCardPadding * 2;
+    const int track_y = row.rect.y + row.rect.height - kSliderTrackHeight - 14;
+
+    const skeets_rect_t track_rect{track_x, track_y, track_width, kSliderTrackHeight};
+    slider_track_out = track_rect;
+
+    // Track background (empty)
+    skeets_framebuffer_fill_rect(app.framebuffer, track_rect, 0xD0);
+    draw_border(app, track_rect, kColorPostBorder, 1);
+
+    // Filled portion
+    const int range = std::max(1, max_val - min_val);
+    const int clamped = std::clamp(value, min_val, max_val);
+    const int fill_width = (track_width * (clamped - min_val)) / range;
+    if (fill_width > 0) {
+        const skeets_rect_t fill_rect{track_x, track_y, fill_width, kSliderTrackHeight};
+        skeets_framebuffer_fill_rect(app.framebuffer, fill_rect, kColorButtonPrimary);
+    }
+
+    // Thumb marker
+    const int thumb_x = track_x + fill_width - kSliderThumbWidth / 2;
+    const skeets_rect_t thumb_rect{std::clamp(thumb_x, track_x, track_x + track_width - kSliderThumbWidth),
+                                   track_y - 4,
+                                   kSliderThumbWidth,
+                                   kSliderTrackHeight + 8};
+    skeets_framebuffer_fill_rect(app.framebuffer, thumb_rect, COLOR_BLACK);
+}
+
+void draw_screen_dim_picker_overlay(skeets_app_t& app) {
+    const int width = app.framebuffer.info.screen_width;
+    const int height = app.framebuffer.info.screen_height;
+
+    // Semi-transparent backdrop
+    app.screen_dim_picker_backdrop = {0, 0, width, height};
+    skeets_framebuffer_fill_rect(app.framebuffer, app.screen_dim_picker_backdrop, kColorPickerOverlay);
+
+    // Centered panel
+    const int panel_width = std::min(480, width - kOuterMargin * 4);
+    const int panel_height = kPickerPadding * 2 +
+                             kScreenDimTimeoutOptionCount * kPickerOptionHeight +
+                             (kScreenDimTimeoutOptionCount - 1) * 4 +
+                             line_height(skeets_text_role_t::settings_label) + 12;
+    const int panel_x = (width - panel_width) / 2;
+    const int panel_y = (height - panel_height) / 2;
+    app.screen_dim_picker_panel = {panel_x, panel_y, panel_width, panel_height};
+
+    skeets_framebuffer_fill_rect(app.framebuffer, app.screen_dim_picker_panel, COLOR_WHITE);
+    draw_border(app, app.screen_dim_picker_panel, COLOR_BLACK, 3);
+
+    // Title
+    const int title_x = panel_x + kPickerPadding;
+    const int title_y = panel_y + kPickerPadding;
+    draw_text(app, title_x, title_y, "Screen Dim Timeout",
+              skeets_text_role_t::settings_label, COLOR_BLACK, COLOR_WHITE);
+
+    // Option rows
+    const int options_start_y = title_y + line_height(skeets_text_role_t::settings_label) + 12;
+    const int option_width = panel_width - kPickerPadding * 2;
+
+    for (int i = 0; i < kScreenDimTimeoutOptionCount; ++i) {
+        const int opt_y = options_start_y + i * (kPickerOptionHeight + 4);
+        app.screen_dim_picker_option_rects[i] = {title_x, opt_y, option_width, kPickerOptionHeight};
+
+        const bool selected = (kScreenDimTimeoutOptions[i] == app.screen_dim_timeout_seconds);
+        const std::uint8_t bg = selected ? kColorButtonPrimary : kColorCard;
+        const std::uint8_t fg = selected ? COLOR_WHITE : COLOR_BLACK;
+
+        skeets_framebuffer_fill_rect(app.framebuffer, app.screen_dim_picker_option_rects[i], bg);
+        draw_border(app, app.screen_dim_picker_option_rects[i], COLOR_BLACK, 2);
+
+        const std::string option_text = format_screen_dim_timeout(kScreenDimTimeoutOptions[i]);
+        draw_centered_text(app,
+                           title_x + option_width / 2,
+                           opt_y + (kPickerOptionHeight - line_height(skeets_text_role_t::button)) / 2,
+                           option_text,
+                           fg,
+                           bg,
+                           skeets_text_role_t::button);
+    }
+}
+
 void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
@@ -2912,6 +3040,8 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     app.settings_suggestive_button.rect = {};
     app.settings_diagnostics_button.rect = {};
     app.settings_screen_dim_button.rect = {};
+    app.settings_brightness_button.rect = {};
+    app.brightness_slider_track = {};
     app.settings_page_start = clamp_paginated_start(app.settings_page_start, kScrollableSettingsRowCount);
     app.settings_page_count = 0;
 
@@ -2981,8 +3111,19 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
             draw_settings_value_row(app,
                                     app.settings_screen_dim_button,
                                     "Screen Dim Timeout",
-                                    "Tap to cycle the idle timeout before the frontlight turns off until the next input.",
+                                    "Tap to choose idle timeout before frontlight turns off.",
                                     format_screen_dim_timeout(app.screen_dim_timeout_seconds));
+            break;
+        case 7:
+            app.settings_brightness_button = {{kOuterMargin, row_y, content_width, row_height}, "Brightness"};
+            draw_settings_slider_row(app,
+                                     app.settings_brightness_button,
+                                     app.brightness_slider_track,
+                                     "Brightness",
+                                     "Tap the slider to adjust the frontlight level.",
+                                     std::max(0, app.frontlight_brightness),
+                                     0,
+                                     100);
             break;
         default:
             break;
@@ -3008,6 +3149,10 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
                       COLOR_WHITE);
 
     draw_button(app, app.settings_sign_out_button, kColorButtonPrimary);
+
+    if (app.screen_dim_picker_visible) {
+        draw_screen_dim_picker_overlay(app);
+    }
 
     std::string error_message;
     const skeets_rect_t screen_rect = full_screen_rect(app);
@@ -3159,6 +3304,9 @@ int main(int argc, char* argv[]) {
     skeets_app.text_fb.font_h = font_line_height(28, FONT_STYLE_REGULAR);
     load_brand_assets(skeets_app);
 
+    // Show splash immediately so the user sees something while we initialise
+    render_loading_screen(skeets_app, "Starting", "Initialising input and device state...", true);
+
     if (!skeets_input_open(skeets_app.input,
                             skeets_app.framebuffer.info.screen_width,
                             skeets_app.framebuffer.info.screen_height,
@@ -3170,9 +3318,34 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    render_loading_screen(skeets_app, "Starting", "Detecting frontlight and loading settings...", false);
+
+    // Capture device brightness at launch before loading settings
+    skeets_app.frontlight_brightness_path = detect_frontlight_brightness_path();
+    if (!skeets_app.frontlight_brightness_path.empty()) {
+        const auto hw_brightness = read_int_file(skeets_app.frontlight_brightness_path);
+        skeets_app.launch_brightness = hw_brightness.value_or(kFallbackRestoreBrightness);
+        std::fprintf(stderr, "rewrite app: launch brightness=%d\n", skeets_app.launch_brightness);
+    } else {
+        skeets_app.frontlight_control_available = false;
+    }
+
+    load_settings(skeets_app);
+
+    // Apply brightness: use saved setting if available, otherwise adopt device value
+    if (skeets_app.frontlight_brightness_path.empty()) {
+        // no frontlight
+    } else if (skeets_app.frontlight_brightness < 0) {
+        skeets_app.frontlight_brightness = skeets_app.launch_brightness;
+    } else {
+        set_frontlight_brightness(skeets_app.frontlight_brightness_path,
+                                  skeets_app.frontlight_brightness);
+    }
+
+    render_loading_screen(skeets_app, "Starting", "Checking authentication and network...", false);
+
     refresh_bootstrap_state(skeets_app);
     refresh_runtime_state(skeets_app);
-    load_settings(skeets_app);
 
     // If auth succeeded, auto-load the feed and switch to feed view
     if (skeets_app.bootstrap.authenticated) {
@@ -3580,7 +3753,32 @@ int main(int argc, char* argv[]) {
         }
 
         if (skeets_app.view_mode == skeets_view_mode_t::settings) {
+            // Picker overlay takes priority over all other settings touches
+            if (skeets_app.screen_dim_picker_visible) {
+                bool option_tapped = false;
+                for (int i = 0; i < kScreenDimTimeoutOptionCount; ++i) {
+                    if (contains_point(skeets_app.screen_dim_picker_option_rects[i], event.x, event.y)) {
+                        skeets_app.screen_dim_timeout_seconds = kScreenDimTimeoutOptions[i];
+                        save_settings(skeets_app);
+                        skeets_app.screen_dim_picker_visible = false;
+                        skeets_app.status_line = "Settings updated";
+                        skeets_app.input_line = "Screen dim timeout set to " +
+                                                 format_screen_dim_timeout(skeets_app.screen_dim_timeout_seconds);
+                        render_settings_screen(skeets_app, true);
+                        option_tapped = true;
+                        break;
+                    }
+                }
+                if (!option_tapped) {
+                    // Tap outside the panel dismisses the picker
+                    skeets_app.screen_dim_picker_visible = false;
+                    render_settings_screen(skeets_app, true);
+                }
+                continue;
+            }
+
             if (contains_point(skeets_app.settings_back_button.rect, event.x, event.y)) {
+                skeets_app.screen_dim_picker_visible = false;
                 skeets_app.view_mode = skeets_app.settings_return_view;
                 render_active_view(skeets_app, true);
                 continue;
@@ -3637,12 +3835,24 @@ int main(int argc, char* argv[]) {
             }
 
             if (contains_point(skeets_app.settings_screen_dim_button.rect, event.x, event.y)) {
-                skeets_app.screen_dim_timeout_seconds =
-                    next_screen_dim_timeout_seconds(skeets_app.screen_dim_timeout_seconds);
+                skeets_app.screen_dim_picker_visible = true;
+                render_settings_screen(skeets_app, true);
+                continue;
+            }
+
+            if (contains_point(skeets_app.brightness_slider_track, event.x, event.y)) {
+                const int track_x = skeets_app.brightness_slider_track.x;
+                const int track_w = std::max(1, skeets_app.brightness_slider_track.width);
+                const int relative_x = std::clamp(event.x - track_x, 0, track_w);
+                skeets_app.frontlight_brightness = (relative_x * 100) / track_w;
                 save_settings(skeets_app);
+                if (!skeets_app.frontlight_brightness_path.empty()) {
+                    set_frontlight_brightness(skeets_app.frontlight_brightness_path,
+                                              skeets_app.frontlight_brightness);
+                }
                 skeets_app.status_line = "Settings updated";
-                skeets_app.input_line = "Screen dim timeout set to " +
-                                         format_screen_dim_timeout(skeets_app.screen_dim_timeout_seconds);
+                skeets_app.input_line = "Brightness set to " +
+                                         std::to_string(skeets_app.frontlight_brightness) + "%";
                 render_settings_screen(skeets_app, true);
                 continue;
             }
