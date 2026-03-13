@@ -13,9 +13,7 @@ HOST_UID=1000
 HOST_GID=1000
 NINJA_PACKAGE_TARGET="${NINJA_PACKAGE_TARGET:-kobo-package}"
 
-# ── Detect host arch for Docker platform ──────────────────────────
-# The Dockerfile handles both amd64 and arm64 natively.
-# On Apple Silicon we build arm64; on Intel we build amd64.
+# Some arch detection
 HOST_ARCH="$(uname -m)"
 case "${HOST_ARCH}" in
     x86_64)  DOCKER_PLATFORM="linux/amd64" ;;

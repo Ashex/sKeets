@@ -53,7 +53,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV QT_VERSION=6.5.2
 
 # On amd64: archive.ubuntu.com only serves amd64, so add ports for armhf.
-# On arm64: ports.ubuntu.com already serves both arm64 and armhf — no changes needed.
 RUN dpkg --add-architecture armhf \
     && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
         sed -i 's/^Types:/Architectures: amd64\nTypes:/' /etc/apt/sources.list.d/ubuntu.sources; \
