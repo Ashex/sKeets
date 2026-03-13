@@ -25,11 +25,15 @@
 #include <dlfcn.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
+#include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -61,6 +65,7 @@ constexpr int kThreadScrollbarWidth = 36;
 constexpr int kThreadScrollbarGap = 12;
 constexpr int kThreadScrollbarEndCapHeight = 72;
 constexpr int kThreadScrollbarEndCapGap = 10;
+constexpr int kScrollableSettingsRowCount = 8;
 constexpr int kEmbedImageGap = 6;
 constexpr int kHeaderLogoMaxWidth = 280;
 constexpr int kHeaderLogoMaxHeight = 64;
@@ -89,6 +94,22 @@ constexpr const char* kEmojiLike = "💜";
 constexpr const char* kEmojiReply = "💬";
 constexpr const char* kEmojiRepost = "🌀";
 constexpr const char* kButtonSignOut = "Log Out";
+constexpr int kDefaultScreenDimTimeoutSeconds = 300;
+// Default brightness to restore when the sysfs value reads 0 but the light
+// was physically on (Nickel sometimes sets the hardware via i2c without
+// updating the sysfs brightness register).
+constexpr int kFallbackRestoreBrightness = 50;
+constexpr int kMinSettingsRowHeight = 96;
+constexpr int kSettingsNoteHeight = 52;
+constexpr int kSettingsValueChipHeight = 52;
+
+constexpr int kScreenDimTimeoutOptions[] = {0, 10, 30, 60, 300, 600};
+constexpr int kScreenDimTimeoutOptionCount = static_cast<int>(std::size(kScreenDimTimeoutOptions));
+constexpr int kPickerOptionHeight = 72;
+constexpr int kPickerPadding = 18;
+constexpr std::uint8_t kColorPickerOverlay = 0x40;
+constexpr int kSliderTrackHeight = 20;
+constexpr int kSliderThumbWidth = 8;
 
 enum class skeets_view_mode_t {
     dashboard,
@@ -217,15 +238,41 @@ struct skeets_app_t {
     bool allow_nudity_content = false;
     bool allow_porn_content = false;
     bool allow_suggestive_content = false;
+    int screen_dim_timeout_seconds = kDefaultScreenDimTimeoutSeconds;
+    bool screen_dimmed = false;
+    bool ignore_touch_release_after_wake = false;
+    bool frontlight_control_available = true;
+    std::string frontlight_brightness_path;
+    int saved_frontlight_brightness = -1;
+    std::chrono::steady_clock::time_point last_user_activity_at{};
     skeets_view_mode_t settings_return_view = skeets_view_mode_t::feed;
+    int settings_page_start = 0;
+    int settings_page_count = 0;
     skeets_button_t settings_back_button;
     skeets_button_t settings_profile_button;
     skeets_button_t settings_embed_button;
     skeets_button_t settings_nudity_button;
     skeets_button_t settings_porn_button;
     skeets_button_t settings_suggestive_button;
+    skeets_button_t settings_screen_dim_button;
+    skeets_button_t settings_brightness_button;
     skeets_button_t settings_diagnostics_button;
     skeets_button_t settings_sign_out_button;
+    skeets_rect_t settings_scrollbar_up_rect{};
+    skeets_rect_t settings_scrollbar_down_rect{};
+    skeets_rect_t settings_scrollbar_rect{};
+    skeets_rect_t settings_scrollbar_thumb_rect{};
+
+    // Screen dim picker overlay
+    bool screen_dim_picker_visible = false;
+    skeets_rect_t screen_dim_picker_backdrop{};
+    skeets_rect_t screen_dim_picker_panel{};
+    skeets_rect_t screen_dim_picker_option_rects[6]{};
+
+    // Brightness slider
+    int frontlight_brightness = -1;  // -1 = use device default on first launch
+    int launch_brightness = -1;      // captured from sysfs at startup
+    skeets_rect_t brightness_slider_track{};
 };
 
 void draw_border(skeets_app_t& app, const skeets_rect_t& rect, std::uint8_t color, int thickness = 2);
@@ -246,6 +293,162 @@ void handle_signal(int) {
 
 std::string bool_label(bool value) {
     return value ? "yes" : "no";
+}
+
+std::string format_screen_dim_timeout(int seconds) {
+    if (seconds <= 0) {
+        return "Off";
+    }
+    if (seconds < 60) {
+        return std::to_string(seconds) + " sec";
+    }
+
+    const int minutes = seconds / 60;
+    const int remainder_seconds = seconds % 60;
+    if (remainder_seconds == 0) {
+        return std::to_string(minutes) + " min";
+    }
+
+    return std::to_string(minutes) + " min " + std::to_string(remainder_seconds) + " sec";
+}
+
+int sanitize_screen_dim_timeout_seconds(int seconds) {
+    return std::max(0, seconds);
+}
+
+bool path_exists(const std::string& path) {
+    std::error_code error;
+    return std::filesystem::exists(path, error);
+}
+
+std::optional<int> read_int_file(const std::string& path) {
+    std::ifstream file(path);
+    if (!file) {
+        return std::nullopt;
+    }
+
+    std::string value_text;
+    std::getline(file, value_text);
+    if (!file && value_text.empty()) {
+        return std::nullopt;
+    }
+
+    size_t parsed_length = 0;
+    int value = 0;
+    try {
+        value = std::stoi(value_text, &parsed_length);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+
+    if (std::any_of(value_text.begin() + static_cast<std::ptrdiff_t>(parsed_length),
+                    value_text.end(),
+                    [](char ch) { return !std::isspace(static_cast<unsigned char>(ch)); })) {
+        return std::nullopt;
+    }
+    return value;
+}
+
+bool write_text_file(const std::string& path, const std::string& value) {
+    std::ofstream file(path);
+    if (!file) {
+        return false;
+    }
+    file << value;
+    return static_cast<bool>(file);
+}
+
+std::string detect_frontlight_brightness_path() {
+    if (const char* env_path = std::getenv("SKEETS_FRONTLIGHT_BRIGHTNESS_SYSFS"); env_path && *env_path) {
+        return env_path;
+    }
+
+    constexpr const char* kCandidates[] = {
+        "/sys/class/backlight/mxc_msp430.0/brightness",
+        "/sys/class/backlight/lm3630a_led/brightness",
+        "/sys/class/backlight/lm3630a_ledb/brightness",
+        "/sys/class/backlight/lm3630a_led1b/brightness",
+    };
+    for (const char* candidate : kCandidates) {
+        if (path_exists(candidate)) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+// KOReader's approach for mxc_msp430: only write to the brightness file.
+// The brightness range is 0–100. bl_power is a status register that should
+// not be written on modern Kobo devices with the mxc_msp430 controller.
+bool set_frontlight_brightness(const std::string& brightness_path, int brightness) {
+    if (brightness_path.empty()) {
+        return false;
+    }
+    return write_text_file(brightness_path, std::to_string(std::max(0, brightness)));
+}
+
+bool dim_frontlight(skeets_app_t& app) {
+    if (!app.frontlight_control_available) {
+        return false;
+    }
+    if (app.frontlight_brightness_path.empty()) {
+        app.frontlight_brightness_path = detect_frontlight_brightness_path();
+    }
+    if (app.frontlight_brightness_path.empty()) {
+        app.frontlight_control_available = false;
+        return false;
+    }
+
+    const auto current_brightness = read_int_file(app.frontlight_brightness_path);
+    if (!current_brightness) {
+        std::fprintf(stderr, "rewrite app: dim: could not read brightness from %s\n",
+                     app.frontlight_brightness_path.c_str());
+        app.frontlight_control_available = false;
+        return false;
+    }
+
+    std::fprintf(stderr, "rewrite app: dim: brightness=%d\n", *current_brightness);
+
+    // Use the user's brightness setting if configured, otherwise fall back to
+    // the current sysfs value (or the fallback constant if sysfs reads 0).
+    if (app.frontlight_brightness > 0) {
+        app.saved_frontlight_brightness = app.frontlight_brightness;
+    } else {
+        app.saved_frontlight_brightness = (*current_brightness > 0)
+            ? *current_brightness
+            : kFallbackRestoreBrightness;
+    }
+
+    if (!set_frontlight_brightness(app.frontlight_brightness_path, 0)) {
+        app.frontlight_control_available = false;
+        return false;
+    }
+
+    std::fprintf(stderr, "rewrite app: dim: wrote brightness=0, will restore to %d\n",
+                 app.saved_frontlight_brightness);
+    return true;
+}
+
+void restore_frontlight(skeets_app_t& app) {
+    if (app.saved_frontlight_brightness < 0 || app.frontlight_brightness_path.empty()) {
+        app.saved_frontlight_brightness = -1;
+        return;
+    }
+
+    std::fprintf(stderr, "rewrite app: restore: writing brightness=%d\n",
+                 app.saved_frontlight_brightness);
+    set_frontlight_brightness(app.frontlight_brightness_path, app.saved_frontlight_brightness);
+
+    // Verify the write.
+    const auto readback = read_int_file(app.frontlight_brightness_path);
+    std::fprintf(stderr, "rewrite app: restore: brightness readback=%s\n",
+                 readback ? std::to_string(*readback).c_str() : "failed");
+
+    app.saved_frontlight_brightness = -1;
+}
+
+void mark_user_activity(skeets_app_t& app) {
+    app.last_user_activity_at = std::chrono::steady_clock::now();
 }
 
 skeets_text_style_t text_style(skeets_text_role_t role) {
@@ -1312,6 +1515,9 @@ void load_settings(skeets_app_t& app) {
     app.allow_nudity_content = config_get_bool(config, "allow_nudity_content", false);
     app.allow_porn_content = config_get_bool(config, "allow_porn_content", false);
     app.allow_suggestive_content = config_get_bool(config, "allow_suggestive_content", false);
+    app.screen_dim_timeout_seconds = sanitize_screen_dim_timeout_seconds(
+        config_get_int(config, "screen_dim_timeout_seconds", kDefaultScreenDimTimeoutSeconds));
+    app.frontlight_brightness = config_get_int(config, "frontlight_brightness", -1);
     config_free(config);
 }
 
@@ -1325,6 +1531,10 @@ void save_settings(const skeets_app_t& app) {
     config_set_bool(config, "allow_nudity_content", app.allow_nudity_content);
     config_set_bool(config, "allow_porn_content", app.allow_porn_content);
     config_set_bool(config, "allow_suggestive_content", app.allow_suggestive_content);
+    config_set_int(config,
+                   "screen_dim_timeout_seconds",
+                   sanitize_screen_dim_timeout_seconds(app.screen_dim_timeout_seconds));
+    config_set_int(config, "frontlight_brightness", app.frontlight_brightness);
     config_save(config);
     config_free(config);
 }
@@ -1409,9 +1619,10 @@ void open_feed_list(skeets_app_t& app) {
 
 void open_settings(skeets_app_t& app, skeets_view_mode_t return_view) {
     app.settings_return_view = return_view;
+    app.settings_page_start = 0;
     app.view_mode = skeets_view_mode_t::settings;
     app.status_line = "Settings";
-    app.input_line = "Toggle image and moderation preferences or sign out";
+    app.input_line = "Toggle preferences, use the right scrollbar for more, or sign out";
 }
 
 bool label_matches_nudity(const std::string& label) {
@@ -1660,11 +1871,83 @@ int measure_thread_post_height(const skeets_app_t& app,
     return needed;
 }
 
-int clamp_thread_page_start(int start, int total) {
+int clamp_paginated_start(int start, int total) {
     if (total <= 0) {
         return 0;
     }
     return std::max(0, std::min(start, total - 1));
+}
+
+void layout_vertical_scrollbar(int width,
+                               int header_height,
+                               int top_y,
+                               int bottom_y,
+                               skeets_rect_t& up_rect,
+                               skeets_rect_t& down_rect,
+                               skeets_rect_t& track_rect,
+                               skeets_rect_t& thumb_rect) {
+    const int scrollbar_x = width - kOuterMargin - kThreadScrollbarWidth;
+    const int scrollbar_end_cap_height = std::max(kThreadScrollbarEndCapHeight, header_height - 20);
+    const int scrollbar_track_top = top_y + scrollbar_end_cap_height + kThreadScrollbarEndCapGap;
+    const int scrollbar_track_bottom = bottom_y - scrollbar_end_cap_height - kThreadScrollbarEndCapGap;
+    const int scrollbar_height = std::max(80, scrollbar_track_bottom - scrollbar_track_top);
+
+    up_rect = {scrollbar_x, top_y, kThreadScrollbarWidth, scrollbar_end_cap_height};
+    down_rect = {scrollbar_x, bottom_y - scrollbar_end_cap_height, kThreadScrollbarWidth, scrollbar_end_cap_height};
+    track_rect = {scrollbar_x, scrollbar_track_top, kThreadScrollbarWidth, scrollbar_height};
+    thumb_rect = track_rect;
+}
+
+void draw_vertical_scrollbar(skeets_app_t& app,
+                             const skeets_rect_t& up_rect,
+                             const skeets_rect_t& down_rect,
+                             const skeets_rect_t& track_rect,
+                             skeets_rect_t& thumb_rect,
+                             int total,
+                             int rendered,
+                             int page_start) {
+    skeets_framebuffer_fill_rect(app.framebuffer, up_rect, kColorButtonSecondary);
+    draw_border(app, up_rect, kColorPostBorder, 1);
+    draw_centered_text(app,
+                       up_rect.x + (up_rect.width / 2),
+                       up_rect.y + std::max(0, (up_rect.height - line_height(skeets_text_role_t::meta)) / 2),
+                       "UP",
+                       COLOR_BLACK,
+                       kColorButtonSecondary,
+                       skeets_text_role_t::meta);
+
+    skeets_framebuffer_fill_rect(app.framebuffer, down_rect, kColorButtonSecondary);
+    draw_border(app, down_rect, kColorPostBorder, 1);
+    draw_centered_text(app,
+                       down_rect.x + (down_rect.width / 2),
+                       down_rect.y + std::max(0, (down_rect.height - line_height(skeets_text_role_t::meta)) / 2),
+                       "DN",
+                       COLOR_BLACK,
+                       kColorButtonSecondary,
+                       skeets_text_role_t::meta);
+
+    skeets_framebuffer_fill_rect(app.framebuffer, track_rect, 0xDD);
+    draw_border(app, track_rect, kColorPostBorder, 1);
+
+    if (total <= 0 || rendered <= 0) {
+        thumb_rect = track_rect;
+        return;
+    }
+
+    const int max_start = std::max(0, total - rendered);
+    const int thumb_height = std::max(40,
+                                      (track_rect.height * rendered) /
+                                          std::max(1, total));
+    const int travel = std::max(0, track_rect.height - thumb_height);
+    int thumb_y = track_rect.y;
+    if (max_start > 0 && travel > 0) {
+        thumb_y += (page_start * travel) / max_start;
+    }
+    thumb_rect = {track_rect.x + 2,
+                  thumb_y + 2,
+                  std::max(4, track_rect.width - 4),
+                  std::max(12, thumb_height - 4)};
+    skeets_framebuffer_fill_rect(app.framebuffer, thumb_rect, kColorButtonPrimary);
 }
 
 skeets_rect_t make_stat_hit_rect(int x, int y, int width, int height) {
@@ -2301,27 +2584,17 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
     const int content_bottom = height - kOuterMargin;
     const int line_spacing = 4;
     const int scrollbar_top = header_height + kOuterMargin;
-    const int scrollbar_x = width - kOuterMargin - kThreadScrollbarWidth;
-    const int scrollbar_end_cap_height = std::max(kThreadScrollbarEndCapHeight, header_height - 20);
-    const int scrollbar_track_top = scrollbar_top + scrollbar_end_cap_height + kThreadScrollbarEndCapGap;
-    const int scrollbar_track_bottom = content_bottom - scrollbar_end_cap_height - kThreadScrollbarEndCapGap;
-    const int scrollbar_height = std::max(80, scrollbar_track_bottom - scrollbar_track_top);
 
     app.thread_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
     app.thread_settings_button = {{width - kOuterMargin - 176, 10, 176, header_height - 20}, kEmojiSettings};
-    app.thread_scrollbar_up_rect = {scrollbar_x,
-                                    scrollbar_top,
-                                    kThreadScrollbarWidth,
-                                    scrollbar_end_cap_height};
-    app.thread_scrollbar_down_rect = {scrollbar_x,
-                                      content_bottom - scrollbar_end_cap_height,
-                                      kThreadScrollbarWidth,
-                                      scrollbar_end_cap_height};
-    app.thread_scrollbar_rect = {scrollbar_x,
-                                 scrollbar_track_top,
-                                 kThreadScrollbarWidth,
-                                 scrollbar_height};
-    app.thread_scrollbar_thumb_rect = app.thread_scrollbar_rect;
+    layout_vertical_scrollbar(width,
+                              header_height,
+                              scrollbar_top,
+                              content_bottom,
+                              app.thread_scrollbar_up_rect,
+                              app.thread_scrollbar_down_rect,
+                              app.thread_scrollbar_rect,
+                              app.thread_scrollbar_thumb_rect);
     app.thread_post_hits.clear();
     app.thread_page_count = 0;
 
@@ -2350,7 +2623,7 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
         std::vector<std::pair<const Bsky::Post*, int>> nodes;
         flatten_thread_posts(app.thread_result.root, 0, nodes);
         const int total = static_cast<int>(nodes.size());
-        app.thread_page_start = clamp_thread_page_start(app.thread_page_start, total);
+        app.thread_page_start = clamp_paginated_start(app.thread_page_start, total);
         int rendered = 0;
         for (int index = app.thread_page_start; index < total && cursor_y < content_bottom; ++index) {
             const auto& node = nodes[index];
@@ -2480,53 +2753,14 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
 
         app.thread_page_count = rendered;
 
-        skeets_framebuffer_fill_rect(app.framebuffer,
-                          app.thread_scrollbar_up_rect,
-                          kColorButtonSecondary);
-        draw_border(app, app.thread_scrollbar_up_rect, kColorPostBorder, 1);
-        draw_centered_text(app,
-                   app.thread_scrollbar_up_rect.x + (app.thread_scrollbar_up_rect.width / 2),
-                   app.thread_scrollbar_up_rect.y + std::max(0, (app.thread_scrollbar_up_rect.height - line_height(skeets_text_role_t::meta)) / 2),
-                   "UP",
-                   COLOR_BLACK,
-                   kColorButtonSecondary,
-                   skeets_text_role_t::meta);
-
-        skeets_framebuffer_fill_rect(app.framebuffer,
-                          app.thread_scrollbar_down_rect,
-                          kColorButtonSecondary);
-        draw_border(app, app.thread_scrollbar_down_rect, kColorPostBorder, 1);
-        draw_centered_text(app,
-                   app.thread_scrollbar_down_rect.x + (app.thread_scrollbar_down_rect.width / 2),
-                   app.thread_scrollbar_down_rect.y + std::max(0, (app.thread_scrollbar_down_rect.height - line_height(skeets_text_role_t::meta)) / 2),
-                   "DN",
-                   COLOR_BLACK,
-                   kColorButtonSecondary,
-                   skeets_text_role_t::meta);
-
-        skeets_framebuffer_fill_rect(app.framebuffer,
-                                      app.thread_scrollbar_rect,
-                                      0xDD);
-        draw_border(app, app.thread_scrollbar_rect, kColorPostBorder, 1);
-
-        if (total > 0 && rendered > 0) {
-            const int max_start = std::max(0, total - rendered);
-            const int thumb_height = std::max(40,
-                                              (app.thread_scrollbar_rect.height * rendered) /
-                                                  std::max(1, total));
-            const int travel = std::max(0, app.thread_scrollbar_rect.height - thumb_height);
-            int thumb_y = app.thread_scrollbar_rect.y;
-            if (max_start > 0 && travel > 0) {
-                thumb_y += (app.thread_page_start * travel) / max_start;
-            }
-            app.thread_scrollbar_thumb_rect = {app.thread_scrollbar_rect.x + 2,
-                                               thumb_y + 2,
-                                               std::max(4, app.thread_scrollbar_rect.width - 4),
-                                               std::max(12, thumb_height - 4)};
-            skeets_framebuffer_fill_rect(app.framebuffer,
-                                          app.thread_scrollbar_thumb_rect,
-                                          kColorButtonPrimary);
-        }
+        draw_vertical_scrollbar(app,
+                                app.thread_scrollbar_up_rect,
+                                app.thread_scrollbar_down_rect,
+                                app.thread_scrollbar_rect,
+                                app.thread_scrollbar_thumb_rect,
+                                total,
+                                rendered,
+                                app.thread_page_start);
     }
 
     std::string error_message;
@@ -2620,27 +2854,196 @@ void draw_settings_action_row(skeets_app_t& app,
                                  kColorButtonSecondary);
 }
 
+void draw_settings_value_row(skeets_app_t& app,
+                             const skeets_button_t& row,
+                             const std::string& label,
+                             const std::string& detail,
+                             const std::string& value) {
+    skeets_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
+    draw_border(app, row.rect, kColorPostBorder, 2);
+
+    const int text_x = row.rect.x + kCardPadding;
+    const int text_y = row.rect.y + 12;
+    draw_text(app, text_x, text_y, label, skeets_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+    draw_wrapped_text(app,
+                      text_x,
+                      text_y + line_height(skeets_text_role_t::settings_label) + 6,
+                      row.rect.width - 220,
+                      detail,
+                      skeets_text_role_t::settings_detail,
+                      kColorMeta,
+                      kColorCard);
+
+    const int value_width = 132;
+    const skeets_rect_t value_rect{row.rect.x + row.rect.width - value_width - 24,
+                                   row.rect.y + (row.rect.height - kSettingsValueChipHeight) / 2,
+                                   value_width,
+                                   kSettingsValueChipHeight};
+    skeets_framebuffer_fill_rect(app.framebuffer, value_rect, kColorButtonSecondary);
+    draw_border(app, value_rect, COLOR_BLACK, 2);
+    draw_centered_text(app,
+                       value_rect.x + value_rect.width / 2,
+                       value_rect.y + (value_rect.height - line_height(skeets_text_role_t::button)) / 2,
+                       value,
+                       COLOR_BLACK,
+                       kColorButtonSecondary,
+                       skeets_text_role_t::button);
+}
+
+void draw_settings_slider_row(skeets_app_t& app,
+                               const skeets_button_t& row,
+                               skeets_rect_t& slider_track_out,
+                               const std::string& label,
+                               const std::string& detail,
+                               int value,
+                               int min_val,
+                               int max_val) {
+    skeets_framebuffer_fill_rect(app.framebuffer, row.rect, kColorCard);
+    draw_border(app, row.rect, kColorPostBorder, 2);
+
+    const int text_x = row.rect.x + kCardPadding;
+    const int text_y = row.rect.y + 12;
+    draw_text(app, text_x, text_y, label, skeets_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+
+    const int label_bottom = text_y + line_height(skeets_text_role_t::settings_label) + 6;
+    draw_wrapped_text(app,
+                      text_x,
+                      label_bottom,
+                      row.rect.width - 120,
+                      detail,
+                      skeets_text_role_t::settings_detail,
+                      kColorMeta,
+                      kColorCard);
+
+    // Value label on the right
+    const std::string val_str = std::to_string(value) + "%";
+    const int val_label_x = row.rect.x + row.rect.width - 80;
+    draw_text(app, val_label_x, text_y, val_str, skeets_text_role_t::settings_label, COLOR_BLACK, kColorCard);
+
+    // Slider track below the description
+    const int track_x = text_x;
+    const int track_width = row.rect.width - kCardPadding * 2;
+    const int track_y = row.rect.y + row.rect.height - kSliderTrackHeight - 14;
+
+    const skeets_rect_t track_rect{track_x, track_y, track_width, kSliderTrackHeight};
+    slider_track_out = track_rect;
+
+    // Track background (empty)
+    skeets_framebuffer_fill_rect(app.framebuffer, track_rect, 0xD0);
+    draw_border(app, track_rect, kColorPostBorder, 1);
+
+    // Filled portion
+    const int range = std::max(1, max_val - min_val);
+    const int clamped = std::clamp(value, min_val, max_val);
+    const int fill_width = (track_width * (clamped - min_val)) / range;
+    if (fill_width > 0) {
+        const skeets_rect_t fill_rect{track_x, track_y, fill_width, kSliderTrackHeight};
+        skeets_framebuffer_fill_rect(app.framebuffer, fill_rect, kColorButtonPrimary);
+    }
+
+    // Thumb marker
+    const int thumb_x = track_x + fill_width - kSliderThumbWidth / 2;
+    const skeets_rect_t thumb_rect{std::clamp(thumb_x, track_x, track_x + track_width - kSliderThumbWidth),
+                                   track_y - 4,
+                                   kSliderThumbWidth,
+                                   kSliderTrackHeight + 8};
+    skeets_framebuffer_fill_rect(app.framebuffer, thumb_rect, COLOR_BLACK);
+}
+
+void draw_screen_dim_picker_overlay(skeets_app_t& app) {
+    const int width = app.framebuffer.info.screen_width;
+    const int height = app.framebuffer.info.screen_height;
+
+    // Semi-transparent backdrop
+    app.screen_dim_picker_backdrop = {0, 0, width, height};
+    skeets_framebuffer_fill_rect(app.framebuffer, app.screen_dim_picker_backdrop, kColorPickerOverlay);
+
+    // Centered panel
+    const int panel_width = std::min(480, width - kOuterMargin * 4);
+    const int panel_height = kPickerPadding * 2 +
+                             kScreenDimTimeoutOptionCount * kPickerOptionHeight +
+                             (kScreenDimTimeoutOptionCount - 1) * 4 +
+                             line_height(skeets_text_role_t::settings_label) + 12;
+    const int panel_x = (width - panel_width) / 2;
+    const int panel_y = (height - panel_height) / 2;
+    app.screen_dim_picker_panel = {panel_x, panel_y, panel_width, panel_height};
+
+    skeets_framebuffer_fill_rect(app.framebuffer, app.screen_dim_picker_panel, COLOR_WHITE);
+    draw_border(app, app.screen_dim_picker_panel, COLOR_BLACK, 3);
+
+    // Title
+    const int title_x = panel_x + kPickerPadding;
+    const int title_y = panel_y + kPickerPadding;
+    draw_text(app, title_x, title_y, "Screen Dim Timeout",
+              skeets_text_role_t::settings_label, COLOR_BLACK, COLOR_WHITE);
+
+    // Option rows
+    const int options_start_y = title_y + line_height(skeets_text_role_t::settings_label) + 12;
+    const int option_width = panel_width - kPickerPadding * 2;
+
+    for (int i = 0; i < kScreenDimTimeoutOptionCount; ++i) {
+        const int opt_y = options_start_y + i * (kPickerOptionHeight + 4);
+        app.screen_dim_picker_option_rects[i] = {title_x, opt_y, option_width, kPickerOptionHeight};
+
+        const bool selected = (kScreenDimTimeoutOptions[i] == app.screen_dim_timeout_seconds);
+        const std::uint8_t bg = selected ? kColorButtonPrimary : kColorCard;
+        const std::uint8_t fg = selected ? COLOR_WHITE : COLOR_BLACK;
+
+        skeets_framebuffer_fill_rect(app.framebuffer, app.screen_dim_picker_option_rects[i], bg);
+        draw_border(app, app.screen_dim_picker_option_rects[i], COLOR_BLACK, 2);
+
+        const std::string option_text = format_screen_dim_timeout(kScreenDimTimeoutOptions[i]);
+        draw_centered_text(app,
+                           title_x + option_width / 2,
+                           opt_y + (kPickerOptionHeight - line_height(skeets_text_role_t::button)) / 2,
+                           option_text,
+                           fg,
+                           bg,
+                           skeets_text_role_t::button);
+    }
+}
+
 void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     const int width = app.framebuffer.info.screen_width;
     const int height = app.framebuffer.info.screen_height;
     const int header_height = std::max(96, height / 11);
-    const int row_height = std::max(156, height / 8);
-    const int row_gap = 16;
-    const int content_width = width - (kOuterMargin * 2);
+    const int row_gap = 12;
+    const int content_right = width - kOuterMargin - kThreadScrollbarWidth - kThreadScrollbarGap;
+    const int content_width = content_right - kOuterMargin;
     const int first_row_y = header_height + kOuterMargin;
+    const int sign_out_height = std::max(90, height / 12);
+    const int sign_out_y = height - kOuterMargin - sign_out_height;
+    const int settings_note_y = sign_out_y - kSettingsNoteHeight;
+    const int settings_content_bottom = settings_note_y - row_gap;
+    const int scrollbar_top = header_height + kOuterMargin;
+    constexpr int kVisibleSettingsRowCount = 6;
+    const int available_rows_height = std::max(0, settings_content_bottom - first_row_y);
+    const int row_height = std::max(kMinSettingsRowHeight,
+                                    (available_rows_height - (row_gap * (kVisibleSettingsRowCount - 1))) /
+                                        std::max(1, kVisibleSettingsRowCount));
 
     app.settings_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
-    app.settings_profile_button = {{kOuterMargin, first_row_y, content_width, row_height}, "Profile Images"};
-    app.settings_embed_button = {{kOuterMargin, first_row_y + row_height + row_gap, content_width, row_height}, "Embed Images"};
-    app.settings_nudity_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 2, content_width, row_height}, "Nudity"};
-    app.settings_porn_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 3, content_width, row_height}, "Porn"};
-    app.settings_suggestive_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 4, content_width, row_height}, "Suggestive"};
-    app.settings_diagnostics_button = {{kOuterMargin, first_row_y + (row_height + row_gap) * 5, content_width, row_height}, "Diagnostics"};
-    app.settings_sign_out_button = {{kOuterMargin,
-                                     height - kOuterMargin - std::max(90, height / 12),
-                                     content_width,
-                                     std::max(90, height / 12)},
+    app.settings_sign_out_button = {{kOuterMargin, sign_out_y, content_width, sign_out_height},
                                     kButtonSignOut};
+    layout_vertical_scrollbar(width,
+                              header_height,
+                              scrollbar_top,
+                              settings_content_bottom,
+                              app.settings_scrollbar_up_rect,
+                              app.settings_scrollbar_down_rect,
+                              app.settings_scrollbar_rect,
+                              app.settings_scrollbar_thumb_rect);
+    app.settings_profile_button.rect = {};
+    app.settings_embed_button.rect = {};
+    app.settings_nudity_button.rect = {};
+    app.settings_porn_button.rect = {};
+    app.settings_suggestive_button.rect = {};
+    app.settings_diagnostics_button.rect = {};
+    app.settings_screen_dim_button.rect = {};
+    app.settings_brightness_button.rect = {};
+    app.brightness_slider_track = {};
+    app.settings_page_start = clamp_paginated_start(app.settings_page_start, kScrollableSettingsRowCount);
+    app.settings_page_count = 0;
 
     skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
 
@@ -2649,47 +3052,107 @@ void render_settings_screen(skeets_app_t& app, bool full_refresh) {
     draw_button(app, app.settings_back_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
-    draw_settings_row(app,
-                      app.settings_profile_button,
-                      "Profile Images",
-                      "Load avatar images when image rendering is available.",
-                      app.profile_images_enabled);
-    draw_settings_row(app,
-                      app.settings_embed_button,
-                      "Embed Images",
-                      "Show post image placeholders and enable image loading later.",
-                      app.embed_images_enabled);
-    draw_settings_row(app,
-                      app.settings_nudity_button,
-                      "Nudity",
-                      "Show posts labeled for nudity.",
-                      app.allow_nudity_content);
-    draw_settings_row(app,
-                      app.settings_porn_button,
-                      "Porn",
-                      "Show posts labeled for pornographic content.",
-                      app.allow_porn_content);
-    draw_settings_row(app,
-                      app.settings_suggestive_button,
-                      "Suggestive",
-                      "Show posts labeled for suggestive or sexual content.",
-                      app.allow_suggestive_content);
-    draw_settings_action_row(app,
-                             app.settings_diagnostics_button,
-                             "Diagnostics",
-                             "Open the device and authentication diagnostics screen that used to appear at startup.",
-                             kEmojiOpen);
+    int rendered = 0;
+    for (int index = app.settings_page_start;
+         index < kScrollableSettingsRowCount && rendered < kVisibleSettingsRowCount;
+         ++index, ++rendered) {
+        const int row_y = first_row_y + rendered * (row_height + row_gap);
+        switch (index) {
+        case 0:
+            app.settings_profile_button = {{kOuterMargin, row_y, content_width, row_height}, "Profile Images"};
+            draw_settings_row(app,
+                              app.settings_profile_button,
+                              "Profile Images",
+                              "Load avatar images when image rendering is available.",
+                              app.profile_images_enabled);
+            break;
+        case 1:
+            app.settings_embed_button = {{kOuterMargin, row_y, content_width, row_height}, "Embed Images"};
+            draw_settings_row(app,
+                              app.settings_embed_button,
+                              "Embed Images",
+                              "Show post image placeholders and enable image loading later.",
+                              app.embed_images_enabled);
+            break;
+        case 2:
+            app.settings_nudity_button = {{kOuterMargin, row_y, content_width, row_height}, "Nudity"};
+            draw_settings_row(app,
+                              app.settings_nudity_button,
+                              "Nudity",
+                              "Show posts labeled for nudity.",
+                              app.allow_nudity_content);
+            break;
+        case 3:
+            app.settings_porn_button = {{kOuterMargin, row_y, content_width, row_height}, "Porn"};
+            draw_settings_row(app,
+                              app.settings_porn_button,
+                              "Porn",
+                              "Show posts labeled for pornographic content.",
+                              app.allow_porn_content);
+            break;
+        case 4:
+            app.settings_suggestive_button = {{kOuterMargin, row_y, content_width, row_height}, "Suggestive"};
+            draw_settings_row(app,
+                              app.settings_suggestive_button,
+                              "Suggestive",
+                              "Show posts labeled for suggestive or sexual content.",
+                              app.allow_suggestive_content);
+            break;
+        case 5:
+            app.settings_diagnostics_button = {{kOuterMargin, row_y, content_width, row_height}, "Diagnostics"};
+            draw_settings_action_row(app,
+                                     app.settings_diagnostics_button,
+                                     "Diagnostics",
+                                     "Open the device and authentication diagnostics screen that used to appear at startup.",
+                                     kEmojiOpen);
+            break;
+        case 6:
+            app.settings_screen_dim_button = {{kOuterMargin, row_y, content_width, row_height}, "Screen Dim"};
+            draw_settings_value_row(app,
+                                    app.settings_screen_dim_button,
+                                    "Screen Dim Timeout",
+                                    "Tap to choose idle timeout before frontlight turns off.",
+                                    format_screen_dim_timeout(app.screen_dim_timeout_seconds));
+            break;
+        case 7:
+            app.settings_brightness_button = {{kOuterMargin, row_y, content_width, row_height}, "Brightness"};
+            draw_settings_slider_row(app,
+                                     app.settings_brightness_button,
+                                     app.brightness_slider_track,
+                                     "Brightness",
+                                     "Tap the slider to adjust the frontlight level.",
+                                     std::max(0, app.frontlight_brightness),
+                                     0,
+                                     100);
+            break;
+        default:
+            break;
+        }
+    }
+    app.settings_page_count = rendered;
+    draw_vertical_scrollbar(app,
+                            app.settings_scrollbar_up_rect,
+                            app.settings_scrollbar_down_rect,
+                            app.settings_scrollbar_rect,
+                            app.settings_scrollbar_thumb_rect,
+                            kScrollableSettingsRowCount,
+                            rendered,
+                            app.settings_page_start);
 
     draw_wrapped_text(app,
                       kOuterMargin,
-                      app.settings_diagnostics_button.rect.y + app.settings_diagnostics_button.rect.height + 20,
+                      settings_note_y,
                       content_width,
-                      "These toggles are persisted. Adult-content categories default to hidden until enabled here.",
+                      "These settings are persisted. Adult-content categories default to hidden until enabled here.",
                       skeets_text_role_t::settings_detail,
                       kColorMeta,
                       COLOR_WHITE);
 
     draw_button(app, app.settings_sign_out_button, kColorButtonPrimary);
+
+    if (app.screen_dim_picker_visible) {
+        draw_screen_dim_picker_overlay(app);
+    }
 
     std::string error_message;
     const skeets_rect_t screen_rect = full_screen_rect(app);
@@ -2841,6 +3304,9 @@ int main(int argc, char* argv[]) {
     skeets_app.text_fb.font_h = font_line_height(28, FONT_STYLE_REGULAR);
     load_brand_assets(skeets_app);
 
+    // Show splash immediately so the user sees something while we initialise
+    render_loading_screen(skeets_app, "Starting", "Initialising input and device state...", true);
+
     if (!skeets_input_open(skeets_app.input,
                             skeets_app.framebuffer.info.screen_width,
                             skeets_app.framebuffer.info.screen_height,
@@ -2852,9 +3318,34 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    render_loading_screen(skeets_app, "Starting", "Detecting frontlight and loading settings...", false);
+
+    // Capture device brightness at launch before loading settings
+    skeets_app.frontlight_brightness_path = detect_frontlight_brightness_path();
+    if (!skeets_app.frontlight_brightness_path.empty()) {
+        const auto hw_brightness = read_int_file(skeets_app.frontlight_brightness_path);
+        skeets_app.launch_brightness = hw_brightness.value_or(kFallbackRestoreBrightness);
+        std::fprintf(stderr, "rewrite app: launch brightness=%d\n", skeets_app.launch_brightness);
+    } else {
+        skeets_app.frontlight_control_available = false;
+    }
+
+    load_settings(skeets_app);
+
+    // Apply brightness: use saved setting if available, otherwise adopt device value
+    if (skeets_app.frontlight_brightness_path.empty()) {
+        // no frontlight
+    } else if (skeets_app.frontlight_brightness < 0) {
+        skeets_app.frontlight_brightness = skeets_app.launch_brightness;
+    } else {
+        set_frontlight_brightness(skeets_app.frontlight_brightness_path,
+                                  skeets_app.frontlight_brightness);
+    }
+
+    render_loading_screen(skeets_app, "Starting", "Checking authentication and network...", false);
+
     refresh_bootstrap_state(skeets_app);
     refresh_runtime_state(skeets_app);
-    load_settings(skeets_app);
 
     // If auth succeeded, auto-load the feed and switch to feed view
     if (skeets_app.bootstrap.authenticated) {
@@ -2878,6 +3369,7 @@ int main(int argc, char* argv[]) {
     } else {
         render_screen(skeets_app, true);
     }
+    mark_user_activity(skeets_app);
 
     auto last_probe = std::chrono::steady_clock::now();
     while (!g_stop_requested) {
@@ -2887,28 +3379,54 @@ int main(int argc, char* argv[]) {
         error_message.clear();
         const bool have_event = skeets_input_poll(skeets_app.input, event, 500, &error_message);
         if (!have_event) {
-            if (image_cache_redraw_needed() &&
+            if (!skeets_app.screen_dimmed &&
+                image_cache_redraw_needed() &&
                 (skeets_app.view_mode == skeets_view_mode_t::feed ||
                  skeets_app.view_mode == skeets_view_mode_t::thread)) {
                 render_active_view(skeets_app, false);
             }
 
-            if (!error_message.empty()) {
+            if (!skeets_app.screen_dimmed && !error_message.empty()) {
                 skeets_app.status_line = "Input polling error";
                 skeets_app.input_line = error_message;
                 render_active_view(skeets_app, false);
             }
 
             const auto now = std::chrono::steady_clock::now();
+            if (!skeets_app.screen_dimmed &&
+                skeets_app.frontlight_control_available &&
+                skeets_app.screen_dim_timeout_seconds > 0 &&
+                now - skeets_app.last_user_activity_at >=
+                    std::chrono::seconds(skeets_app.screen_dim_timeout_seconds)) {
+                if (dim_frontlight(skeets_app)) {
+                    skeets_app.screen_dimmed = true;
+                } else if (skeets_app.frontlight_control_available) {
+                    mark_user_activity(skeets_app);
+                }
+            }
             if (now - last_probe >= std::chrono::seconds(20)) {
                 refresh_runtime_state(skeets_app);
-                if (skeets_app.view_mode != skeets_view_mode_t::feed) {
+                if (!skeets_app.screen_dimmed && skeets_app.view_mode != skeets_view_mode_t::feed) {
                     skeets_app.status_line = skeets_app.bootstrap.headline;
                     skeets_app.input_line = skeets_app.bootstrap.detail;
                 }
-                render_active_view(skeets_app, false);
+                if (!skeets_app.screen_dimmed) {
+                    render_active_view(skeets_app, false);
+                }
                 last_probe = now;
             }
+            continue;
+        }
+
+        mark_user_activity(skeets_app);
+        if (skeets_app.screen_dimmed) {
+            skeets_app.screen_dimmed = false;
+            restore_frontlight(skeets_app);
+            // A touch-down wake will still be followed by the touch release from the same tap.
+            // Swallow that release so waking the screen does not also activate the underlying UI.
+            skeets_app.ignore_touch_release_after_wake =
+                event.type == skeets_input_event_type_t::touch_down ||
+                event.type == skeets_input_event_type_t::touch_move;
             continue;
         }
 
@@ -2927,6 +3445,11 @@ int main(int argc, char* argv[]) {
         }
 
         if (event.type != skeets_input_event_type_t::touch_up) {
+            continue;
+        }
+
+        if (skeets_app.ignore_touch_release_after_wake) {
+            skeets_app.ignore_touch_release_after_wake = false;
             continue;
         }
 
@@ -3230,7 +3753,32 @@ int main(int argc, char* argv[]) {
         }
 
         if (skeets_app.view_mode == skeets_view_mode_t::settings) {
+            // Picker overlay takes priority over all other settings touches
+            if (skeets_app.screen_dim_picker_visible) {
+                bool option_tapped = false;
+                for (int i = 0; i < kScreenDimTimeoutOptionCount; ++i) {
+                    if (contains_point(skeets_app.screen_dim_picker_option_rects[i], event.x, event.y)) {
+                        skeets_app.screen_dim_timeout_seconds = kScreenDimTimeoutOptions[i];
+                        save_settings(skeets_app);
+                        skeets_app.screen_dim_picker_visible = false;
+                        skeets_app.status_line = "Settings updated";
+                        skeets_app.input_line = "Screen dim timeout set to " +
+                                                 format_screen_dim_timeout(skeets_app.screen_dim_timeout_seconds);
+                        render_settings_screen(skeets_app, true);
+                        option_tapped = true;
+                        break;
+                    }
+                }
+                if (!option_tapped) {
+                    // Tap outside the panel dismisses the picker
+                    skeets_app.screen_dim_picker_visible = false;
+                    render_settings_screen(skeets_app, true);
+                }
+                continue;
+            }
+
             if (contains_point(skeets_app.settings_back_button.rect, event.x, event.y)) {
+                skeets_app.screen_dim_picker_visible = false;
                 skeets_app.view_mode = skeets_app.settings_return_view;
                 render_active_view(skeets_app, true);
                 continue;
@@ -3283,6 +3831,73 @@ int main(int argc, char* argv[]) {
                 skeets_app.input_line = std::string("Suggestive content ") +
                                          (skeets_app.allow_suggestive_content ? "shown" : "hidden");
                 render_settings_screen(skeets_app, true);
+                continue;
+            }
+
+            if (contains_point(skeets_app.settings_screen_dim_button.rect, event.x, event.y)) {
+                skeets_app.screen_dim_picker_visible = true;
+                render_settings_screen(skeets_app, true);
+                continue;
+            }
+
+            if (contains_point(skeets_app.brightness_slider_track, event.x, event.y)) {
+                const int track_x = skeets_app.brightness_slider_track.x;
+                const int track_w = std::max(1, skeets_app.brightness_slider_track.width);
+                const int relative_x = std::clamp(event.x - track_x, 0, track_w);
+                skeets_app.frontlight_brightness = (relative_x * 100) / track_w;
+                save_settings(skeets_app);
+                if (!skeets_app.frontlight_brightness_path.empty()) {
+                    set_frontlight_brightness(skeets_app.frontlight_brightness_path,
+                                              skeets_app.frontlight_brightness);
+                }
+                skeets_app.status_line = "Settings updated";
+                skeets_app.input_line = "Brightness set to " +
+                                         std::to_string(skeets_app.frontlight_brightness) + "%";
+                render_settings_screen(skeets_app, true);
+                continue;
+            }
+
+            if (contains_point(skeets_app.settings_scrollbar_up_rect, event.x, event.y)) {
+                if (skeets_app.settings_page_start > 0) {
+                    const int page_step = std::max(1, skeets_app.settings_page_count - 1);
+                    skeets_app.settings_page_start = std::max(0, skeets_app.settings_page_start - page_step);
+                    render_settings_screen(skeets_app, true);
+                } else {
+                    skeets_app.status_line = "Already at top of settings";
+                    skeets_app.input_line = touch_message.str();
+                    render_settings_screen(skeets_app, false);
+                }
+                continue;
+            }
+
+            if (contains_point(skeets_app.settings_scrollbar_down_rect, event.x, event.y)) {
+                const int max_start = std::max(0, kScrollableSettingsRowCount - std::max(1, skeets_app.settings_page_count));
+                if (skeets_app.settings_page_start < max_start) {
+                    const int page_step = std::max(1, skeets_app.settings_page_count - 1);
+                    skeets_app.settings_page_start = std::min(max_start, skeets_app.settings_page_start + page_step);
+                    render_settings_screen(skeets_app, true);
+                } else {
+                    skeets_app.status_line = "Already at bottom of settings";
+                    skeets_app.input_line = touch_message.str();
+                    render_settings_screen(skeets_app, false);
+                }
+                continue;
+            }
+
+            if (contains_point(skeets_app.settings_scrollbar_rect, event.x, event.y)) {
+                const int max_start = std::max(0, kScrollableSettingsRowCount - std::max(1, skeets_app.settings_page_count));
+                if (max_start > 0 && skeets_app.settings_scrollbar_rect.height > 1) {
+                    const int relative_y = std::max(0,
+                                                    std::min(event.y - skeets_app.settings_scrollbar_rect.y,
+                                                             skeets_app.settings_scrollbar_rect.height - 1));
+                    skeets_app.settings_page_start = (relative_y * max_start) /
+                                                     std::max(1, skeets_app.settings_scrollbar_rect.height - 1);
+                    render_settings_screen(skeets_app, true);
+                } else {
+                    skeets_app.status_line = "Settings already fit on-screen";
+                    skeets_app.input_line = touch_message.str();
+                    render_settings_screen(skeets_app, false);
+                }
                 continue;
             }
 
@@ -3370,6 +3985,7 @@ int main(int argc, char* argv[]) {
         render_screen(skeets_app, false);
     }
 
+    restore_frontlight(skeets_app);
     skeets_input_close(skeets_app.input);
     clear_embed_cache_on_exit();
     free_brand_assets(skeets_app);
