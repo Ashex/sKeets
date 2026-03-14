@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+#include <unistd.h>
 
 #define CONFIG_MAX_ENTRIES 128
 
@@ -71,6 +72,23 @@ int config_save(config_t *cfg) {
     fprintf(f, "# sKeets config\n");
     for (int i = 0; i < cfg->count; i++)
         fprintf(f, "%s=%s\n", cfg->entries[i].key, cfg->entries[i].value);
+    
+    // Flush to kernel buffers
+    if (fflush(f) != 0) {
+        std::fprintf(stderr, "config_save: fflush failed for '%s': %s (errno=%d)\n",
+                     cfg->path, std::strerror(errno), errno);
+        fclose(f);
+        return -1;
+    }
+    
+    // Sync to persistent storage (critical on embedded devices)
+    int fd = fileno(f);
+    if (fd >= 0 && fsync(fd) != 0) {
+        std::fprintf(stderr, "config_save: fsync failed for '%s': %s (errno=%d)\n",
+                     cfg->path, std::strerror(errno), errno);
+        // Don't fail - data may still reach disk on fclose
+    }
+    
     if (fclose(f) != 0) {
         std::fprintf(stderr, "config_save: fclose failed for '%s': %s (errno=%d)\n",
                      cfg->path, std::strerror(errno), errno);
