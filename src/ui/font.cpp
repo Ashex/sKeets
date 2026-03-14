@@ -199,6 +199,10 @@ void font_set_ot_enabled(bool enabled) {
     s_ot_enabled = enabled;
 }
 
+bool font_ot_enabled(void) {
+    return s_ot_enabled;
+}
+
 int font_cell_w(void) { return s_font_w; }
 int font_cell_h(void) { return s_font_h; }
 int font_line_height(int size_px, font_style_t style) { return font_line_height_internal(size_px, style); }

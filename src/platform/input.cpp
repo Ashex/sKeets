@@ -231,11 +231,34 @@ bool scan_input_device(const std::string& path,
     if (has_key) {
         std::array<unsigned long, (KEY_MAX / (sizeof(unsigned long) * CHAR_BIT)) + 1> key_bits{};
         if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits.data()) >= 0) {
-            info.is_key_device = test_bit(key_bits, BTN_TOUCH) || test_bit(key_bits, KEY_POWER) ||
-                                 test_bit(key_bits, KEY_NEXTSONG) || test_bit(key_bits, KEY_PREVIOUSSONG);
+            // Accept any device that reports EV_KEY.  On Kobo devices,
+            // page-turn buttons can be on "gpio-keys" with arbitrary key
+            // codes that vary between models, so we cannot enumerate them
+            // all.  The only devices we want to exclude are pure touchscreen
+            // drivers that only report touch-tool bits and nothing else,
+            // but even those are useful for BTN_TOUCH snow-protocol support
+            // so we accept them too.
+            info.is_key_device = true;
+
+            std::fprintf(stderr, "input scan: %s name='%s' has_key=1 BTN_TOUCH=%d"
+                         " POWER=%d PAGEUP=%d PAGEDOWN=%d NEXTSONG=%d PREVIOUSSONG=%d HOME=%d"
+                         " => is_key=%d\n",
+                         path.c_str(), info.name.c_str(),
+                         test_bit(key_bits, BTN_TOUCH) ? 1 : 0,
+                         test_bit(key_bits, KEY_POWER) ? 1 : 0,
+                         test_bit(key_bits, KEY_PAGEUP) ? 1 : 0,
+                         test_bit(key_bits, KEY_PAGEDOWN) ? 1 : 0,
+                         test_bit(key_bits, KEY_NEXTSONG) ? 1 : 0,
+                         test_bit(key_bits, KEY_PREVIOUSSONG) ? 1 : 0,
+                         test_bit(key_bits, KEY_HOME) ? 1 : 0,
+                         info.is_key_device ? 1 : 0);
         }
     }
 
+    std::fprintf(stderr, "input scan: %s name='%s' is_touch=%d is_key=%d\n",
+                 path.c_str(), info.name.c_str(),
+                 info.is_touch_device ? 1 : 0,
+                 info.is_key_device ? 1 : 0);
     return info.is_touch_device || info.is_key_device;
 }
 
@@ -368,8 +391,16 @@ bool skeets_input_open(skeets_input_t& input,
 
         const int index = static_cast<int>(input.devices.size());
         input.devices.push_back(std::move(info));
-        if (input.devices[index].is_touch_device && input.touch_device_index < 0) input.touch_device_index = index;
-        if (input.devices[index].is_key_device && input.key_device_index < 0) input.key_device_index = index;
+        if (input.devices[index].is_touch_device && input.touch_device_index < 0) {
+            input.touch_device_index = index;
+            std::fprintf(stderr, "input open: touch device [%d] = %s (%s)\n", index,
+                         input.devices[index].path.c_str(), input.devices[index].name.c_str());
+        }
+        if (input.devices[index].is_key_device && input.key_device_index < 0) {
+            input.key_device_index = index;
+            std::fprintf(stderr, "input open: key device [%d] = %s (%s)\n", index,
+                         input.devices[index].path.c_str(), input.devices[index].name.c_str());
+        }
     }
     closedir(dir);
 
@@ -445,9 +476,10 @@ bool skeets_input_poll(skeets_input_t& input,
                 handle_touch_abs(input, device, raw_event);
             } else if (raw_event.type == EV_KEY) {
                 handle_touch_key(input, raw_event, event);
-                if (event.type == skeets_input_event_type_t::key_press &&
-                    device_indexes[index] == input.key_device_index) {
+                if (event.type == skeets_input_event_type_t::key_press && device.is_key_device) {
                     event.source_path = device.path;
+                    std::fprintf(stderr, "input poll: key_press code=%d from %s (%s)\n",
+                                 event.key_code, device.path.c_str(), device.name.c_str());
                     return true;
                 }
             } else if (device.is_touch_device && raw_event.type == EV_SYN && raw_event.code == SYN_REPORT) {

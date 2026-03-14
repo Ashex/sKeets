@@ -24,6 +24,10 @@ void font_init(fb_t *fb);
  * built-in bitmap font support. */
 void font_set_ot_enabled(bool enabled);
 
+/* Returns true when OpenType (TrueType) font rendering is active.
+ * When false, only the built-in bitmap VGA font is available (ASCII only). */
+bool font_ot_enabled(void);
+
 /* Returns current font cell width in pixels. */
 int font_cell_w(void);
 

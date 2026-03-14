@@ -214,6 +214,12 @@ struct skeets_app_t {
     std::vector<skeets_button_t> feed_list_rows;
     skeets_button_t feed_list_button;
     skeets_button_t feed_list_back_button;
+    int feed_list_page_start = 0;
+    int feed_list_page_count = 0;
+    skeets_rect_t feed_list_scrollbar_up_rect{};
+    skeets_rect_t feed_list_scrollbar_down_rect{};
+    skeets_rect_t feed_list_scrollbar_rect{};
+    skeets_rect_t feed_list_scrollbar_thumb_rect{};
     skeets_button_t feed_back_button;
     skeets_button_t feed_refresh_button;
     skeets_button_t feed_next_button;
@@ -585,7 +591,28 @@ std::string to_lower_ascii(std::string text) {
     return text;
 }
 
-std::string sanitize_bitmap_text(const std::string& text) {
+std::string sanitize_display_text(const std::string& text) {
+    // When OpenType fonts are loaded, pass UTF-8 through — the renderer
+    // (FreeType/HarfBuzz via FBInk) handles the full Unicode range.
+    // Only strip C0/C1 control characters that would confuse the layout.
+    if (font_ot_enabled()) {
+        std::string out;
+        out.reserve(text.size());
+        for (size_t i = 0; i < text.size(); ++i) {
+            const unsigned char c = static_cast<unsigned char>(text[i]);
+            if (c < 0x20 && c != '\n' && c != '\t') continue;  // strip controls except newline/tab
+            if (c == 0x7F) continue;                            // DEL
+            if (c == 0xC2 && i + 1 < text.size()) {            // C1 control block U+0080..U+009F
+                const unsigned char c1 = static_cast<unsigned char>(text[i + 1]);
+                if (c1 >= 0x80 && c1 <= 0x9F) { ++i; continue; }
+            }
+            out.push_back(static_cast<char>(c));
+        }
+        return out;
+    }
+
+    // Bitmap VGA fallback: only ASCII is renderable.  Replace non-ASCII
+    // with ASCII approximations where possible, '?' otherwise.
     std::string out;
     out.reserve(text.size());
     for (size_t i = 0; i < text.size(); ++i) {
@@ -621,7 +648,7 @@ std::string sanitize_bitmap_text(const std::string& text) {
 int measure_quote_embed_height(const skeets_app_t& app, int width, const Bsky::Post* quoted) {
     if (!quoted) return 0;
     const int inner_width = std::max(40, width - kQuoteIndent - 8);
-    const std::string text = sanitize_bitmap_text(quoted->text);
+    const std::string text = sanitize_display_text(quoted->text);
     const int body_height = font_measure_wrapped(inner_width,
                                                  text.c_str(),
                                                  4);
@@ -642,7 +669,7 @@ void draw_quote_embed(skeets_app_t& app, int x, int y, int width, const Bsky::Po
     std::string author = quoted->author.display_name.empty()
         ? "@" + quoted->author.handle
         : quoted->author.display_name + "  @" + quoted->author.handle;
-    author = sanitize_bitmap_text(author);
+    author = sanitize_display_text(author);
     font_draw_string(&app.text_fb,
                      quote_x,
                      quote_y,
@@ -650,7 +677,7 @@ void draw_quote_embed(skeets_app_t& app, int x, int y, int width, const Bsky::Po
                      kColorMeta,
                      COLOR_WHITE);
     quote_y += app.text_fb.font_h + 2;
-    const std::string text = sanitize_bitmap_text(quoted->text);
+    const std::string text = sanitize_display_text(quoted->text);
     font_draw_wrapped(&app.text_fb,
                       quote_x,
                       quote_y,
@@ -680,10 +707,10 @@ int measure_external_embed_height(const skeets_app_t& app, int width, const Bsky
     const int thumb_height = has_thumb ? std::max(96, (thumb_width * 3) / 4) : 0;
     const int side_text_width = has_thumb ? std::max(120, width - thumb_width - 18) : std::max(120, width - 12);
     const int full_text_width = std::max(120, width - 12);
-    const std::string title = sanitize_bitmap_text(post.ext_title.empty() ? "External media" : post.ext_title);
+    const std::string title = sanitize_display_text(post.ext_title.empty() ? "External media" : post.ext_title);
     const std::string description = title_only
         ? std::string{}
-        : sanitize_bitmap_text(post.ext_description.empty() ? "External media preview" : post.ext_description);
+        : sanitize_display_text(post.ext_description.empty() ? "External media preview" : post.ext_description);
     const int side_title_height = font_measure_wrapped(side_text_width, title.c_str(), 4);
     const int side_description_height = description.empty() ? 0 : font_measure_wrapped(side_text_width, description.c_str(), 4);
     const int side_text_height = side_title_height + (description.empty() ? 0 : (side_description_height + 4));
@@ -702,7 +729,7 @@ std::vector<std::string> image_alt_lines(const Bsky::Post& post) {
     for (int index = 0; index < image_count; ++index) {
         std::string alt;
         if (index < static_cast<int>(post.image_alts.size())) {
-            alt = sanitize_bitmap_text(post.image_alts[index]);
+            alt = sanitize_display_text(post.image_alts[index]);
         }
         if (alt.empty()) {
             alt = image_count == 1
@@ -759,8 +786,8 @@ int measure_unsupported_media_height(const skeets_app_t& app, const Bsky::Post& 
     const int thumb_height = has_preview ? std::max(96, (thumb_width * 3) / 4) : 0;
     const int side_text_width = has_preview ? std::max(120, width - thumb_width - 18) : std::max(120, width - 12);
     const int full_text_width = std::max(120, width - 12);
-    const std::string label = sanitize_bitmap_text(post.media_label.empty() ? "Unsupported media" : post.media_label);
-    const std::string alt = sanitize_bitmap_text(post.media_alt_text.empty() ? "Preview unavailable for this media type." : post.media_alt_text);
+    const std::string label = sanitize_display_text(post.media_label.empty() ? "Unsupported media" : post.media_label);
+    const std::string alt = sanitize_display_text(post.media_alt_text.empty() ? "Preview unavailable for this media type." : post.media_alt_text);
     const int side_label_height = font_measure_wrapped(side_text_width, label.c_str(), 4);
     const int side_alt_height = font_measure_wrapped(side_text_width, alt.c_str(), 4);
     const int side_text_height = side_label_height + 4 + side_alt_height;
@@ -784,8 +811,8 @@ void draw_unsupported_media_block(skeets_app_t& app, const Bsky::Post& post, int
     int text_x = x + 6;
     int text_width = std::max(120, width - 12);
     int text_y = y + 6;
-    const std::string label = sanitize_bitmap_text(post.media_label.empty() ? "Unsupported media" : post.media_label);
-    const std::string alt = sanitize_bitmap_text(post.media_alt_text.empty() ? "Preview unavailable for this media type." : post.media_alt_text);
+    const std::string label = sanitize_display_text(post.media_label.empty() ? "Unsupported media" : post.media_label);
+    const std::string alt = sanitize_display_text(post.media_alt_text.empty() ? "Preview unavailable for this media type." : post.media_alt_text);
     const int side_text_width = has_preview ? std::max(120, width - thumb_width - 18) : text_width;
     const int side_label_height = font_measure_wrapped(side_text_width, label.c_str(), 4);
     const int side_alt_height = font_measure_wrapped(side_text_width, alt.c_str(), 4);
@@ -1067,10 +1094,10 @@ void draw_external_embed(skeets_app_t& app, int x, int y, int width, const Bsky:
     int text_x = x + 6;
     int text_width = std::max(120, width - 12);
     int text_y = y + 6;
-    const std::string title = sanitize_bitmap_text(post.ext_title.empty() ? "External media" : post.ext_title);
+    const std::string title = sanitize_display_text(post.ext_title.empty() ? "External media" : post.ext_title);
     const std::string description = title_only
         ? std::string{}
-        : sanitize_bitmap_text(post.ext_description.empty() ? "External media preview" : post.ext_description);
+        : sanitize_display_text(post.ext_description.empty() ? "External media preview" : post.ext_description);
     const int side_text_width = has_thumb ? std::max(120, width - thumb_width - 18) : text_width;
     const int side_title_height = font_measure_wrapped(side_text_width, title.c_str(), 4);
     const int side_description_height = description.empty() ? 0 : font_measure_wrapped(side_text_width, description.c_str(), 4);
@@ -1540,6 +1567,7 @@ void save_settings(const skeets_app_t& app) {
 }
 
 void clear_saved_session(skeets_app_t& app) {
+    std::fprintf(stderr, "clear_saved_session: CLEARING session from config\n");
     config_t* config = config_open(skeets_config_path());
     if (config) {
         config_set_str(config, "handle", "");
@@ -1569,15 +1597,33 @@ void clear_saved_session(skeets_app_t& app) {
 }
 
 void persist_session(skeets_app_t& app, const Bsky::Session& session) {
-    config_t* config = config_open(skeets_config_path());
-    if (config) {
+    const char* config_path = skeets_config_path();
+
+    if (session.handle.empty() && session.access_jwt.empty() && session.did.empty()) {
+        std::fprintf(stderr, "persist_session: SKIPPING save — session is empty (would overwrite valid config)\n");
+        return;
+    }
+
+    std::fprintf(stderr, "persist_session: saving handle='%s' did='%s' pds='%s' access_len=%zu refresh_len=%zu\n",
+                 session.handle.c_str(), session.did.c_str(), session.pds_url.c_str(),
+                 session.access_jwt.size(), session.refresh_jwt.size());
+
+    config_t* config = config_open(config_path);
+    if (!config) {
+        std::fprintf(stderr, "persist_session: config_open returned NULL for '%s'\n", config_path);
+    } else {
         config_set_str(config, "handle", session.handle.c_str());
         config_set_str(config, "access_jwt", session.access_jwt.c_str());
         config_set_str(config, "refresh_jwt", session.refresh_jwt.c_str());
         config_set_str(config, "did", session.did.c_str());
         config_set_str(config, "pds_url", session.pds_url.c_str());
         config_set_str(config, "appview_url", session.appview_url.c_str());
-        config_save(config);
+        int result = config_save(config);
+        if (result != 0) {
+            std::fprintf(stderr, "persist_session: config_save FAILED (result=%d)\n", result);
+        } else {
+            std::fprintf(stderr, "persist_session: config_save succeeded\n");
+        }
         config_free(config);
     }
     app.bootstrap.session = session;
@@ -1858,7 +1904,7 @@ int measure_thread_post_height(const skeets_app_t& app,
                                        4);
         needed += 4;
     } else if (!post.text.empty()) {
-        const std::string text = sanitize_bitmap_text(post.text);
+        const std::string text = sanitize_display_text(post.text);
         needed += font_measure_wrapped(text_width_for_post,
                                        text.c_str(),
                                        4);
@@ -2324,7 +2370,7 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
                 needed += font_measure_wrapped(post_text_width - 8, hidden_message.c_str(), line_spacing);
                 needed += 4;
             } else {
-                const std::string measured_post_text = sanitize_bitmap_text(post.text);
+                const std::string measured_post_text = sanitize_display_text(post.text);
                 needed += font_measure_wrapped(post_text_width - 8, measured_post_text.c_str(), line_spacing);
                 needed += measure_embed_block_height(app, post, post_text_width - 8);
             }
@@ -2335,7 +2381,7 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
 
             // Repost attribution
             if (!post.reposted_by.empty()) {
-                std::string repost_line = sanitize_bitmap_text(">> Reposted by @" + post.reposted_by);
+                std::string repost_line = sanitize_display_text(">> Reposted by @" + post.reposted_by);
                 draw_text(app,
                           text_left,
                           cursor_y,
@@ -2350,7 +2396,7 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
             std::string author = post.author.display_name.empty()
                 ? "@" + post.author.handle
                 : post.author.display_name + "  @" + post.author.handle;
-            author = sanitize_bitmap_text(author);
+            author = sanitize_display_text(author);
 
             char time_buf[64];
             str_format_time(time_buf, sizeof(time_buf), static_cast<long>(post.indexed_at));
@@ -2426,7 +2472,7 @@ void render_feed_screen(skeets_app_t& app, bool full_refresh) {
                 cursor_y = text_top + text_height;
                 cursor_y += 4;
             } else if (!post.text.empty()) {
-                const std::string post_text = sanitize_bitmap_text(post.text);
+                const std::string post_text = sanitize_display_text(post.text);
                 const int text_top = cursor_y;
                 const int text_height = font_measure_wrapped(post_text_width - 8,
                                                              post_text.c_str(),
@@ -2510,11 +2556,25 @@ void render_feed_list_screen(skeets_app_t& app, bool full_refresh) {
     const int header_height = std::max(96, height / 11);
     const int row_height = std::max(116, height / 10);
     const int row_gap = 16;
-    const int content_width = width - (kOuterMargin * 2);
+    const int content_right = width - kOuterMargin - kThreadScrollbarWidth - kThreadScrollbarGap;
+    const int content_width = content_right - kOuterMargin;
     const int first_row_y = header_height + kOuterMargin;
+    const int content_bottom = height - kOuterMargin;
+    const int total = static_cast<int>(app.available_feeds.size());
 
     app.feed_list_back_button = {{kOuterMargin, 10, 160, header_height - 20}, kEmojiBack};
     app.feed_list_rows.clear();
+
+    // Clamp page_start
+    if (app.feed_list_page_start >= total) app.feed_list_page_start = std::max(0, total - 1);
+    if (app.feed_list_page_start < 0) app.feed_list_page_start = 0;
+
+    // Layout scrollbar
+    layout_vertical_scrollbar(width, header_height, first_row_y, content_bottom,
+                              app.feed_list_scrollbar_up_rect,
+                              app.feed_list_scrollbar_down_rect,
+                              app.feed_list_scrollbar_rect,
+                              app.feed_list_scrollbar_thumb_rect);
 
     skeets_framebuffer_clear(app.framebuffer, COLOR_WHITE);
     const skeets_rect_t header_rect{0, 0, width, header_height};
@@ -2522,6 +2582,7 @@ void render_feed_list_screen(skeets_app_t& app, bool full_refresh) {
     draw_button(app, app.feed_list_back_button, kColorButtonSecondary);
     draw_header_brand(app, header_rect);
 
+    int rendered = 0;
     if (app.available_feeds.empty()) {
         draw_wrapped_text(app,
                           kOuterMargin,
@@ -2532,9 +2593,9 @@ void render_feed_list_screen(skeets_app_t& app, bool full_refresh) {
                           COLOR_BLACK,
                           COLOR_WHITE);
     } else {
-        for (size_t index = 0; index < app.available_feeds.size(); ++index) {
-            const int row_y = first_row_y + static_cast<int>(index) * (row_height + row_gap);
-            if (row_y + row_height > height - kOuterMargin) {
+        for (int index = app.feed_list_page_start; index < total; ++index) {
+            const int row_y = first_row_y + rendered * (row_height + row_gap);
+            if (row_y + row_height > content_bottom) {
                 break;
             }
 
@@ -2561,8 +2622,20 @@ void render_feed_list_screen(skeets_app_t& app, bool full_refresh) {
                               skeets_text_role_t::settings_detail,
                               kColorMeta,
                               fill);
+            rendered++;
         }
     }
+    app.feed_list_page_count = rendered;
+
+    // Draw scrollbar
+    draw_vertical_scrollbar(app,
+                            app.feed_list_scrollbar_up_rect,
+                            app.feed_list_scrollbar_down_rect,
+                            app.feed_list_scrollbar_rect,
+                            app.feed_list_scrollbar_thumb_rect,
+                            total,
+                            rendered,
+                            app.feed_list_page_start);
 
     std::string error_message;
     const skeets_rect_t screen_rect = full_screen_rect(app);
@@ -2654,7 +2727,7 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
             std::string author = post->author.display_name.empty()
                 ? "@" + post->author.handle
                 : post->author.display_name + "  @" + post->author.handle;
-            author = sanitize_bitmap_text(author);
+            author = sanitize_display_text(author);
 
             const int author_y = cursor_y;
             if (app.profile_images_enabled) {
@@ -2708,7 +2781,7 @@ void render_thread_screen(skeets_app_t& app, bool full_refresh) {
                 cursor_y = text_top + text_height;
                 cursor_y += 4;
             } else {
-                const std::string text = sanitize_bitmap_text(post->text);
+                const std::string text = sanitize_display_text(post->text);
                 const int text_top = cursor_y;
                 const int text_height = font_measure_wrapped(text_width_for_post,
                                                              text.c_str(),
@@ -3438,6 +3511,103 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
+            // Physical page-turn buttons (Kobo Libra Colour, etc.)
+            // Different Kobo models report different key codes for the same buttons:
+            //   - KEY_PAGEDOWN/KEY_PAGEUP: standard page-turn codes
+            //   - KEY_NEXTSONG/KEY_PREVIOUSSONG: some older Kobo models
+            //   - KEY_BACK (158) / KEY_FORWARD (159): some Kobo gpio-keys
+            //   - KEY_F23 (193) / KEY_F24 (194): Libra Colour gpio-keys
+            const bool is_page_forward = event.key_code == KEY_PAGEDOWN ||
+                                         event.key_code == KEY_NEXTSONG ||
+                                         event.key_code == KEY_FORWARD ||
+                                         event.key_code == KEY_F24;
+            const bool is_page_back    = event.key_code == KEY_PAGEUP ||
+                                         event.key_code == KEY_PREVIOUSSONG ||
+                                         event.key_code == KEY_BACK ||
+                                         event.key_code == KEY_F23;
+
+            if (is_page_forward || is_page_back) {
+                if (skeets_app.view_mode == skeets_view_mode_t::feed) {
+                    if (is_page_forward) {
+                        if (advance_feed_page(skeets_app)) {
+                            render_feed_screen(skeets_app, true);
+                        }
+                    } else {
+                        if (!skeets_app.feed_page_history.empty()) {
+                            skeets_app.feed_page_start = skeets_app.feed_page_history.back();
+                            skeets_app.feed_page_history.pop_back();
+                            render_feed_screen(skeets_app, true);
+                        }
+                    }
+                    continue;
+                }
+
+                if (skeets_app.view_mode == skeets_view_mode_t::thread) {
+                    std::vector<std::pair<const Bsky::Post*, int>> nodes;
+                    if (skeets_app.thread_result.state == skeets_thread_state_t::loaded) {
+                        flatten_thread_posts(skeets_app.thread_result.root, 0, nodes);
+                    }
+                    const int total = static_cast<int>(nodes.size());
+                    const int visible = std::max(1, skeets_app.thread_page_count);
+                    const int max_start = std::max(0, total - visible);
+                    if (is_page_forward) {
+                        if (skeets_app.thread_page_start < max_start) {
+                            const int page_step = std::max(1, visible - 1);
+                            skeets_app.thread_page_start = std::min(max_start, skeets_app.thread_page_start + page_step);
+                            render_thread_screen(skeets_app, true);
+                        }
+                    } else {
+                        if (skeets_app.thread_page_start > 0) {
+                            const int page_step = std::max(1, visible - 1);
+                            skeets_app.thread_page_start = std::max(0, skeets_app.thread_page_start - page_step);
+                            render_thread_screen(skeets_app, true);
+                        }
+                    }
+                    continue;
+                }
+
+                if (skeets_app.view_mode == skeets_view_mode_t::settings) {
+                    const int max_start = std::max(0, kScrollableSettingsRowCount - std::max(1, skeets_app.settings_page_count));
+                    if (is_page_forward) {
+                        if (skeets_app.settings_page_start < max_start) {
+                            const int page_step = std::max(1, skeets_app.settings_page_count - 1);
+                            skeets_app.settings_page_start = std::min(max_start, skeets_app.settings_page_start + page_step);
+                            render_settings_screen(skeets_app, true);
+                        }
+                    } else {
+                        if (skeets_app.settings_page_start > 0) {
+                            const int page_step = std::max(1, skeets_app.settings_page_count - 1);
+                            skeets_app.settings_page_start = std::max(0, skeets_app.settings_page_start - page_step);
+                            render_settings_screen(skeets_app, true);
+                        }
+                    }
+                    continue;
+                }
+
+                if (skeets_app.view_mode == skeets_view_mode_t::feed_list) {
+                    const int total = static_cast<int>(skeets_app.available_feeds.size());
+                    const int visible = std::max(1, skeets_app.feed_list_page_count);
+                    const int max_start = std::max(0, total - visible);
+                    if (is_page_forward) {
+                        if (skeets_app.feed_list_page_start < max_start) {
+                            const int page_step = std::max(1, visible - 1);
+                            skeets_app.feed_list_page_start = std::min(max_start, skeets_app.feed_list_page_start + page_step);
+                            render_feed_list_screen(skeets_app, true);
+                        }
+                    } else {
+                        if (skeets_app.feed_list_page_start > 0) {
+                            const int page_step = std::max(1, visible - 1);
+                            skeets_app.feed_list_page_start = std::max(0, skeets_app.feed_list_page_start - page_step);
+                            render_feed_list_screen(skeets_app, true);
+                        }
+                    }
+                    continue;
+                }
+
+                // For other views (dashboard, diagnostics) just ignore
+                continue;
+            }
+
             skeets_app.status_line = "Unhandled key press";
             skeets_app.input_line = "Linux input code " + std::to_string(event.key_code);
             render_screen(skeets_app, false);
@@ -3591,12 +3761,54 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
+            // Feed list scrollbar: UP
+            if (contains_point(skeets_app.feed_list_scrollbar_up_rect, event.x, event.y)) {
+                if (skeets_app.feed_list_page_start > 0) {
+                    const int page_step = std::max(1, skeets_app.feed_list_page_count - 1);
+                    skeets_app.feed_list_page_start = std::max(0, skeets_app.feed_list_page_start - page_step);
+                    render_feed_list_screen(skeets_app, true);
+                }
+                continue;
+            }
+
+            // Feed list scrollbar: DOWN
+            if (contains_point(skeets_app.feed_list_scrollbar_down_rect, event.x, event.y)) {
+                const int total = static_cast<int>(skeets_app.available_feeds.size());
+                const int max_start = std::max(0, total - std::max(1, skeets_app.feed_list_page_count));
+                if (skeets_app.feed_list_page_start < max_start) {
+                    const int page_step = std::max(1, skeets_app.feed_list_page_count - 1);
+                    skeets_app.feed_list_page_start = std::min(max_start, skeets_app.feed_list_page_start + page_step);
+                    render_feed_list_screen(skeets_app, true);
+                }
+                continue;
+            }
+
+            // Feed list scrollbar: track drag
+            if (contains_point(skeets_app.feed_list_scrollbar_rect, event.x, event.y)) {
+                const int total = static_cast<int>(skeets_app.available_feeds.size());
+                const int visible = std::max(1, skeets_app.feed_list_page_count);
+                const int max_start = std::max(0, total - visible);
+                if (max_start > 0) {
+                    const int relative_y = std::max(0,
+                        std::min(event.y - skeets_app.feed_list_scrollbar_rect.y,
+                                 skeets_app.feed_list_scrollbar_rect.height - 1));
+                    skeets_app.feed_list_page_start = (relative_y * max_start) /
+                        std::max(1, skeets_app.feed_list_scrollbar_rect.height - 1);
+                    render_feed_list_screen(skeets_app, true);
+                }
+                continue;
+            }
+
             for (size_t index = 0; index < skeets_app.feed_list_rows.size() && index < skeets_app.available_feeds.size(); ++index) {
                 if (!contains_point(skeets_app.feed_list_rows[index].rect, event.x, event.y)) {
                     continue;
                 }
 
-                skeets_app.active_feed_source = skeets_app.available_feeds[index];
+                // Map visible row index back to feed index (offset by page_start)
+                const int feed_index = skeets_app.feed_list_page_start + static_cast<int>(index);
+                if (feed_index >= static_cast<int>(skeets_app.available_feeds.size())) break;
+
+                skeets_app.active_feed_source = skeets_app.available_feeds[feed_index];
                 skeets_app.view_mode = skeets_view_mode_t::feed;
                 render_loading_screen(skeets_app,
                                       "Loading feed",
