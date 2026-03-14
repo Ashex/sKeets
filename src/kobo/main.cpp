@@ -1540,6 +1540,7 @@ void save_settings(const skeets_app_t& app) {
 }
 
 void clear_saved_session(skeets_app_t& app) {
+    std::fprintf(stderr, "clear_saved_session: CLEARING session from config\n");
     config_t* config = config_open(skeets_config_path());
     if (config) {
         config_set_str(config, "handle", "");
@@ -1570,7 +1571,15 @@ void clear_saved_session(skeets_app_t& app) {
 
 void persist_session(skeets_app_t& app, const Bsky::Session& session) {
     const char* config_path = skeets_config_path();
-    std::fprintf(stderr, "persist_session: config_path='%s'\n", config_path);
+
+    if (session.handle.empty() && session.access_jwt.empty() && session.did.empty()) {
+        std::fprintf(stderr, "persist_session: SKIPPING save — session is empty (would overwrite valid config)\n");
+        return;
+    }
+
+    std::fprintf(stderr, "persist_session: saving handle='%s' did='%s' pds='%s' access_len=%zu refresh_len=%zu\n",
+                 session.handle.c_str(), session.did.c_str(), session.pds_url.c_str(),
+                 session.access_jwt.size(), session.refresh_jwt.size());
 
     config_t* config = config_open(config_path);
     if (!config) {

@@ -106,7 +106,15 @@ bool has_saved_session(const Bsky::Session& session) {
 
 void save_session(const Bsky::Session& session) {
     const char* config_path = skeets_config_path();
-    std::fprintf(stderr, "bootstrap: save_session: config_path='%s'\n", config_path);
+
+    if (session.handle.empty() && session.access_jwt.empty() && session.did.empty()) {
+        std::fprintf(stderr, "bootstrap: save_session: SKIPPING — session is empty (would overwrite valid config)\n");
+        return;
+    }
+
+    std::fprintf(stderr, "bootstrap: save_session: saving handle='%s' did='%s' pds='%s' access_len=%zu refresh_len=%zu\n",
+                 session.handle.c_str(), session.did.c_str(), session.pds_url.c_str(),
+                 session.access_jwt.size(), session.refresh_jwt.size());
 
     config_t* config = config_open(config_path);
     if (!config) {
