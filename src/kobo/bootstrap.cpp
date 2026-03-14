@@ -91,8 +91,14 @@ bool has_saved_session(const Bsky::Session& session) {
 }
 
 void save_session(const Bsky::Session& session) {
-    config_t* config = config_open(skeets_config_path());
-    if (!config) return;
+    const char* config_path = skeets_config_path();
+    std::fprintf(stderr, "bootstrap: save_session: config_path='%s'\n", config_path);
+
+    config_t* config = config_open(config_path);
+    if (!config) {
+        std::fprintf(stderr, "bootstrap: save_session: config_open returned NULL for '%s'\n", config_path);
+        return;
+    }
 
     config_set_str(config, "handle", session.handle.c_str());
     config_set_str(config, "access_jwt", session.access_jwt.c_str());
@@ -100,7 +106,13 @@ void save_session(const Bsky::Session& session) {
     config_set_str(config, "did", session.did.c_str());
     config_set_str(config, "pds_url", session.pds_url.c_str());
     config_set_str(config, "appview_url", session.appview_url.c_str());
-    config_save(config);
+
+    int result = config_save(config);
+    if (result != 0) {
+        std::fprintf(stderr, "bootstrap: save_session: config_save FAILED for '%s' (result=%d)\n", config_path, result);
+    } else {
+        std::fprintf(stderr, "bootstrap: save_session: config_save succeeded for '%s'\n", config_path);
+    }
     config_free(config);
 }
 

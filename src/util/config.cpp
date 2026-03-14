@@ -1,9 +1,10 @@
 #include "config.h"
 #include "str.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cerrno>
 
 #define CONFIG_MAX_ENTRIES 128
 
@@ -57,13 +58,25 @@ void config_free(config_t *cfg) {
 }
 
 int config_save(config_t *cfg) {
-    if (!cfg) return -1;
+    if (!cfg) {
+        std::fprintf(stderr, "config_save: cfg is NULL\n");
+        return -1;
+    }
     FILE *f = fopen(cfg->path, "w");
-    if (!f) return -1;
+    if (!f) {
+        std::fprintf(stderr, "config_save: failed to open '%s' for writing: %s (errno=%d)\n",
+                     cfg->path, std::strerror(errno), errno);
+        return -1;
+    }
     fprintf(f, "# sKeets config\n");
     for (int i = 0; i < cfg->count; i++)
         fprintf(f, "%s=%s\n", cfg->entries[i].key, cfg->entries[i].value);
-    fclose(f);
+    if (fclose(f) != 0) {
+        std::fprintf(stderr, "config_save: fclose failed for '%s': %s (errno=%d)\n",
+                     cfg->path, std::strerror(errno), errno);
+        return -1;
+    }
+    std::fprintf(stderr, "config_save: successfully wrote %d entries to '%s'\n", cfg->count, cfg->path);
     return 0;
 }
 
