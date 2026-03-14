@@ -96,11 +96,30 @@ skeets_input_protocol_t detect_input_protocol() {
 int run_input_diag() {
     std::fprintf(stderr, "rewrite diag: input.begin\n");
 
+    // Query actual framebuffer dimensions instead of hardcoding a single device's resolution.
+    int fb_width = 0;
+    int fb_height = 0;
+    {
+        skeets_framebuffer_t probe_fb;
+        std::string fb_err;
+        if (skeets_framebuffer_open(probe_fb, &fb_err)) {
+            fb_width = probe_fb.info.screen_width;
+            fb_height = probe_fb.info.screen_height;
+            skeets_framebuffer_close(probe_fb);
+            std::fprintf(stderr, "rewrite diag: input.detected_fb=%dx%d\n", fb_width, fb_height);
+        } else {
+            fb_width = 1072;
+            fb_height = 1448;
+            std::fprintf(stderr, "rewrite diag: input.fb_probe_failed=%s (using %dx%d fallback)\n",
+                         fb_err.c_str(), fb_width, fb_height);
+        }
+    }
+
     skeets_input_t input;
     input.debug_raw_events = true;
     input.raw_event_log_budget = 64;
     std::string error_message;
-    if (!skeets_input_open(input, 1072, 1448, detect_input_protocol(), &error_message)) {
+    if (!skeets_input_open(input, fb_width, fb_height, detect_input_protocol(), &error_message)) {
         std::fprintf(stderr, "rewrite diag: input.open_failed=%s\n", error_message.c_str());
         return 5;
     }
