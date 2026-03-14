@@ -30,12 +30,19 @@ static config_entry_t *find_entry(config_t *cfg, const char *key) {
 
 config_t *config_open(const char *path) {
     config_t *cfg = (config_t *)calloc(1, sizeof(config_t));
-    if (!cfg) return NULL;
+    if (!cfg) {
+        std::fprintf(stderr, "config_open: calloc failed for '%s'\n", path ? path : "(null)");
+        return NULL;
+    }
     str_safe_copy(cfg->path, path, sizeof(cfg->path));
 
     FILE *f = fopen(path, "r");
-    if (!f) return cfg; /* new config, no file yet */
+    if (!f) {
+        std::fprintf(stderr, "config_open: file '%s' not found (errno=%d), returning empty config\n", path, errno);
+        return cfg; /* new config, no file yet */
+    }
 
+    std::fprintf(stderr, "config_open: reading '%s'\n", path);
     char line[CONFIG_MAX_KEY + CONFIG_MAX_VALUE + 4];
     while (fgets(line, sizeof(line), f)) {
         str_trim(line);
@@ -51,6 +58,7 @@ config_t *config_open(const char *path) {
         config_set_str(cfg, k, v);
     }
     fclose(f);
+    std::fprintf(stderr, "config_open: loaded %d entries from '%s'\n", cfg->count, path);
     return cfg;
 }
 
