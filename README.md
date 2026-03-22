@@ -2,19 +2,23 @@
 
 ![sKeets Logo](src/img/skeets_splash_asset "sKeets for Kobo")
 
-A [Bluesky](https://bsky.app) (ATProto) social client for the **Kobo Clara Colour** e-ink reader, written in C++23.
+A [Bluesky](https://bsky.app) (ATProto) social client for the Kobo e-ink reader.
 
 ## Features
 
-- Login via `login.txt` (see Getting Started below)
+- Login (see Getting Started below)
 - Scrollable home timeline feed with swipe gestures
 - Post thread / comments view with recursive reply display
 - Optional profile image and post image display (off by default)
 - Quote post and external link rendering
-- Repost attribution display
 - Settings persistence via INI config file
 - Configurable idle frontlight-off timeout with wake-on-input
-- Optimised for 1448×1072 e-ink display with MXCFB partial refresh
+
+## Supported Devices
+
+* Clara Colour
+* Libra Colour
+* Elipsa 2E
 
 ## Getting Started
 
@@ -50,23 +54,9 @@ sKeets/
 │   └── arm-kobo-linux-gnueabihf.cmake  ARM cross-compilation toolchain
 ├── src/
 │   ├── kobo/                   Main app entry points and feed/thread logic
-│   │   ├── main.cpp
-│   │   ├── bootstrap.h/cpp
-│   │   ├── actions.h/cpp
-│   │   ├── feed.h/cpp
-│   │   ├── thread.h/cpp
-│   │   ├── diag_main.cpp
-│   │   └── tool_main.cpp
 │   ├── platform/               Kobo hardware abstractions
-│   │   ├── device.h/cpp
-│   │   ├── framebuffer.h/cpp
-│   │   ├── input.h/cpp
-│   │   ├── network.h/cpp
-│   │   └── power.h/cpp
 │   ├── atproto/                ATProto / Bluesky API layer
 │   ├── ui/                     Shared framebuffer/font helpers
-│   │   ├── fb.h/cpp
-│   │   └── font.h/cpp
 │   └── util/                   Config, image, path, and string utilities
 ```
 
@@ -122,7 +112,6 @@ The package also installs these launcher helpers:
 - `/mnt/onboard/.adds/sKeets/launch-input-diag.sh`
 - `/mnt/onboard/.adds/sKeets/launch-power-diag.sh`
 - `/mnt/onboard/.adds/sKeets/launch-network-diag.sh`
-- `/mnt/onboard/.adds/sKeets/launch-phase2-diag.sh`
 
 ### Native (for development / testing on ARM Linux)
 
@@ -161,12 +150,6 @@ ninja kobo-package
 
 ```
 menu_item :main  :sKeets sKeets      :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-app.sh
-menu_item :main  :sKeets Diag     :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-diag.sh
-menu_item :main  :sKeets FB Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-fb-diag.sh
-menu_item :main  :sKeets Input Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-input-diag.sh
-menu_item :main  :sKeets Power Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-power-diag.sh
-menu_item :main  :sKeets Network Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-network-diag.sh
-menu_item :main  :sKeets Phase2 Diag  :cmd_spawn  :quiet:/mnt/onboard/.adds/sKeets/launch-phase2-diag.sh
 ```
 
 The packaged `run.sh` wrapper kills Nickel and its companion processes so sKeets can
