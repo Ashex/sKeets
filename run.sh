@@ -76,10 +76,27 @@ exec >>"${LOG}" 2>&1
 
 hydrate_probe_env
 
+# Clara Colour (spaColour/393): snow protocol, needs mirror_x
 if [ -z "${APP_TOUCH_MIRROR_X}" ] && \
    { [ "${APP_CODENAME}" = "spaColour" ] || [ "${APP_PRODUCT_ID}" = "393" ]; } && \
    [ "${APP_TOUCH_PROTOCOL}" = "snow" ]; then
     APP_TOUCH_MIRROR_X=1
+fi
+
+# Libra Colour (monza/390): standard multitouch, needs mirror_y (not mirror_x)
+if [ -z "${APP_TOUCH_MIRROR_Y}" ] && \
+   { [ "${APP_CODENAME}" = "monza" ] || [ "${APP_PRODUCT_ID}" = "390" ]; }; then
+    APP_TOUCH_MIRROR_Y=1
+fi
+
+# Elipsa 2E (condor/389): standard multitouch, needs mirror_y (not mirror_x)
+if [ -z "${APP_TOUCH_MIRROR_Y}" ] && \
+   { [ "${APP_CODENAME}" = "condor" ] || [ "${APP_PRODUCT_ID}" = "389" ]; }; then
+    APP_TOUCH_MIRROR_Y=1
+fi
+
+if [ -z "${APP_TOUCH_MIRROR_X}" ]; then
+    APP_TOUCH_MIRROR_X=0
 fi
 
 if [ -z "${APP_TOUCH_MIRROR_Y}" ]; then
@@ -158,6 +175,11 @@ stop_watchdog() {
 cleanup_app_mode() {
     echo "sKeets cleanup at $(date), rebooting..."
     stop_watchdog
+    # Flush all pending writes and give the eMMC controller time to commit
+    # them to persistent storage.  Without this delay FAT32 metadata can be
+    # lost on reboot, causing files to disappear or be renamed to FSCK*.
+    sync
+    sleep 2
     sync
     reboot
 }

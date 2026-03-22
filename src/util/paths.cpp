@@ -1,5 +1,6 @@
 #include "paths.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <mutex>
 #include <string>
@@ -84,8 +85,20 @@ const char *skeets_cache_dir() {
 
 int skeets_ensure_data_dirs() {
     const path_state_t &state = paths();
-    if (!mkdirs(state.data_dir)) return -1;
-    if (!mkdirs(state.cache_dir)) return -1;
+    fprintf(stderr, "paths: ensuring data directories exist\n");
+    fprintf(stderr, "paths: data_dir='%s'\n", state.data_dir.c_str());
+    fprintf(stderr, "paths: config_path='%s'\n", state.config_path.c_str());
+    fprintf(stderr, "paths: cache_dir='%s'\n", state.cache_dir.c_str());
+    
+    if (!mkdirs(state.data_dir)) {
+        fprintf(stderr, "paths: FAILED to create data_dir='%s'\n", state.data_dir.c_str());
+        return -1;
+    }
+    if (!mkdirs(state.cache_dir)) {
+        fprintf(stderr, "paths: FAILED to create cache_dir='%s'\n", state.cache_dir.c_str());
+        return -1;
+    }
+    fprintf(stderr, "paths: data directories ready\n");
     return 0;
 }
 

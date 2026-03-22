@@ -70,9 +70,15 @@ bool file_exists(const char* path) {
 }
 
 Bsky::Session load_saved_session() {
+    const char* config_path = skeets_config_path();
+    std::fprintf(stderr, "bootstrap: load_saved_session: config_path='%s'\n", config_path);
+
     Bsky::Session session;
-    config_t* config = config_open(skeets_config_path());
-    if (!config) return session;
+    config_t* config = config_open(config_path);
+    if (!config) {
+        std::fprintf(stderr, "bootstrap: load_saved_session: config_open returned NULL\n");
+        return session;
+    }
 
     session.handle = config_get_str(config, "handle", "");
     session.access_jwt = config_get_str(config, "access_jwt", "");
@@ -82,6 +88,14 @@ Bsky::Session load_saved_session() {
     session.appview_url = config_get_str(config,
                                          "appview_url",
                                          config_get_str(config, "appview", kDefaultAppView));
+    
+    std::fprintf(stderr, "bootstrap: load_saved_session: loaded handle='%s' did='%s' pds='%s' has_access=%zu has_refresh=%zu\n",
+                 session.handle.empty() ? "(empty)" : session.handle.c_str(),
+                 session.did.empty() ? "(empty)" : session.did.c_str(),
+                 session.pds_url.empty() ? "(empty)" : session.pds_url.c_str(),
+                 session.access_jwt.size(),
+                 session.refresh_jwt.size());
+    
     config_free(config);
     return session;
 }
@@ -91,8 +105,22 @@ bool has_saved_session(const Bsky::Session& session) {
 }
 
 void save_session(const Bsky::Session& session) {
-    config_t* config = config_open(skeets_config_path());
-    if (!config) return;
+    const char* config_path = skeets_config_path();
+
+    if (session.handle.empty() && session.access_jwt.empty() && session.did.empty()) {
+        std::fprintf(stderr, "bootstrap: save_session: SKIPPING — session is empty (would overwrite valid config)\n");
+        return;
+    }
+
+    std::fprintf(stderr, "bootstrap: save_session: saving handle='%s' did='%s' pds='%s' access_len=%zu refresh_len=%zu\n",
+                 session.handle.c_str(), session.did.c_str(), session.pds_url.c_str(),
+                 session.access_jwt.size(), session.refresh_jwt.size());
+
+    config_t* config = config_open(config_path);
+    if (!config) {
+        std::fprintf(stderr, "bootstrap: save_session: config_open returned NULL for '%s'\n", config_path);
+        return;
+    }
 
     config_set_str(config, "handle", session.handle.c_str());
     config_set_str(config, "access_jwt", session.access_jwt.c_str());
@@ -100,7 +128,13 @@ void save_session(const Bsky::Session& session) {
     config_set_str(config, "did", session.did.c_str());
     config_set_str(config, "pds_url", session.pds_url.c_str());
     config_set_str(config, "appview_url", session.appview_url.c_str());
-    config_save(config);
+
+    int result = config_save(config);
+    if (result != 0) {
+        std::fprintf(stderr, "bootstrap: save_session: config_save FAILED for '%s' (result=%d)\n", config_path, result);
+    } else {
+        std::fprintf(stderr, "bootstrap: save_session: config_save succeeded for '%s'\n", config_path);
+    }
     config_free(config);
 }
 
@@ -143,16 +177,22 @@ skeets_bootstrap_result_t make_error_result(const std::string& error_message, bo
 } // namespace
 
 skeets_bootstrap_result_t skeets_run_bootstrap() {
+    std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: starting\n");
+    
     if (skeets_ensure_data_dirs() != 0) {
+        std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: failed to create data dirs\n");
         return make_error_result("Failed to create rewrite data directories", false);
     }
 
+    std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: loading saved session\n");
     Bsky::Session saved_session = load_saved_session();
 
     Bsky::Session restored_session;
     std::string saved_session_error;
     if (has_saved_session(saved_session)) {
+        std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: found saved session, attempting restore\n");
         if (restore_saved_session_with_retry(saved_session, restored_session, saved_session_error)) {
+            std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: session restore succeeded\n");
             save_session(restored_session);
             skeets_bootstrap_result_t result;
             result.state = skeets_bootstrap_state_t::session_restored;
@@ -163,21 +203,31 @@ skeets_bootstrap_result_t skeets_run_bootstrap() {
             result.used_saved_session = true;
             return result;
         }
+        std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: session restore failed: %s\n", saved_session_error.c_str());
+    } else {
+        std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: no saved session found\n");
     }
 
+    std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: checking for login.txt\n");
     bool found_login_file = false;
     const skeets_login_txt_t login = read_login_txt(found_login_file);
     if (!found_login_file) {
+        std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: no login.txt found\n");
         if (has_saved_session(saved_session)) {
+            std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: returning error (had session but restore failed)\n");
             return make_error_result(saved_session_error.empty() ? "Saved session resume failed" : saved_session_error, false);
         }
+        std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: returning waiting for login\n");
         return make_waiting_result();
     }
 
+    std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: login.txt found, handle='%s'\n", login.handle.c_str());
     if (login.handle.empty() || login.password.empty()) {
+        std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: login.txt missing handle or password\n");
         return make_error_result("login.txt is missing required handle or password fields", true);
     }
 
+    std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: attempting createSession\n");
     bool created = false;
     std::string error_message;
     Bsky::Session created_session;
@@ -194,6 +244,7 @@ skeets_bootstrap_result_t skeets_run_bootstrap() {
         return make_error_result(error_message.empty() ? "Login failed" : error_message, true);
     }
 
+    std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: createSession succeeded, saving session\n");
     created_session.appview_url = login.appview_url.empty() ? kDefaultAppView : login.appview_url;
     save_session(created_session);
 
@@ -204,6 +255,7 @@ skeets_bootstrap_result_t skeets_run_bootstrap() {
     result.detail = "Session tokens were saved under the rewrite app root.";
     result.authenticated = true;
     result.consumed_login_file = true;
+    std::fprintf(stderr, "bootstrap: skeets_run_bootstrap: returning success\n");
     return result;
 }
 

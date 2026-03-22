@@ -1,9 +1,11 @@
 #include "config.h"
 #include "str.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cerrno>
+#include <unistd.h>
 
 #define CONFIG_MAX_ENTRIES 128
 
@@ -28,12 +30,19 @@ static config_entry_t *find_entry(config_t *cfg, const char *key) {
 
 config_t *config_open(const char *path) {
     config_t *cfg = (config_t *)calloc(1, sizeof(config_t));
-    if (!cfg) return NULL;
+    if (!cfg) {
+        std::fprintf(stderr, "config_open: calloc failed for '%s'\n", path ? path : "(null)");
+        return NULL;
+    }
     str_safe_copy(cfg->path, path, sizeof(cfg->path));
 
     FILE *f = fopen(path, "r");
-    if (!f) return cfg; /* new config, no file yet */
+    if (!f) {
+        std::fprintf(stderr, "config_open: file '%s' not found (errno=%d), returning empty config\n", path, errno);
+        return cfg; /* new config, no file yet */
+    }
 
+    std::fprintf(stderr, "config_open: reading '%s'\n", path);
     char line[CONFIG_MAX_KEY + CONFIG_MAX_VALUE + 4];
     while (fgets(line, sizeof(line), f)) {
         str_trim(line);
@@ -49,6 +58,7 @@ config_t *config_open(const char *path) {
         config_set_str(cfg, k, v);
     }
     fclose(f);
+    std::fprintf(stderr, "config_open: loaded %d entries from '%s'\n", cfg->count, path);
     return cfg;
 }
 
@@ -57,13 +67,42 @@ void config_free(config_t *cfg) {
 }
 
 int config_save(config_t *cfg) {
-    if (!cfg) return -1;
+    if (!cfg) {
+        std::fprintf(stderr, "config_save: cfg is NULL\n");
+        return -1;
+    }
     FILE *f = fopen(cfg->path, "w");
-    if (!f) return -1;
+    if (!f) {
+        std::fprintf(stderr, "config_save: failed to open '%s' for writing: %s (errno=%d)\n",
+                     cfg->path, std::strerror(errno), errno);
+        return -1;
+    }
     fprintf(f, "# sKeets config\n");
     for (int i = 0; i < cfg->count; i++)
         fprintf(f, "%s=%s\n", cfg->entries[i].key, cfg->entries[i].value);
-    fclose(f);
+    
+    // Flush to kernel buffers
+    if (fflush(f) != 0) {
+        std::fprintf(stderr, "config_save: fflush failed for '%s': %s (errno=%d)\n",
+                     cfg->path, std::strerror(errno), errno);
+        fclose(f);
+        return -1;
+    }
+    
+    // Sync to persistent storage (critical on embedded devices)
+    int fd = fileno(f);
+    if (fd >= 0 && fsync(fd) != 0) {
+        std::fprintf(stderr, "config_save: fsync failed for '%s': %s (errno=%d)\n",
+                     cfg->path, std::strerror(errno), errno);
+        // Don't fail - data may still reach disk on fclose
+    }
+    
+    if (fclose(f) != 0) {
+        std::fprintf(stderr, "config_save: fclose failed for '%s': %s (errno=%d)\n",
+                     cfg->path, std::strerror(errno), errno);
+        return -1;
+    }
+    std::fprintf(stderr, "config_save: successfully wrote %d entries to '%s'\n", cfg->count, cfg->path);
     return 0;
 }
 
